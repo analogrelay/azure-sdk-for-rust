@@ -9,6 +9,7 @@ use std::{borrow::Cow, sync::Arc};
 use time::OffsetDateTime;
 use tracing::trace;
 use url::form_urlencoded;
+use azure_core::auth::DEFAULT_SCOPE_SUFFIX;
 
 const AZURE_VERSION: &str = "2018-12-31";
 const VERSION_NUMBER: &str = "1.0";
@@ -190,7 +191,7 @@ async fn generate_authorization(
 fn scope_from_url(url: &Url) -> String {
     let scheme = url.scheme();
     let hostname = url.host_str().unwrap();
-    format!("{scheme}://{hostname}")
+    format!("{scheme}://{hostname}{DEFAULT_SCOPE_SUFFIX}")
 }
 
 /// This function generates a valid authorization string, according to the documentation.
