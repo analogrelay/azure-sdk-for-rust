@@ -4,12 +4,13 @@ use futures::stream::StreamExt;
 
 #[derive(Debug, Parser)]
 struct Args {
-    /// Cosmos primary key name
-    #[clap(env = "COSMOS_PRIMARY_KEY")]
-    primary_key: String,
-    /// The cosmos account your're using
-    #[clap(env = "COSMOS_ACCOUNT")]
+    /// The cosmos account you're using
+    #[clap(env = "AZURE_COSMOS_ACCOUNT")]
     account: String,
+
+    /// The key to use to authenticate with the account. If omitted, Entra ID auth will be used.
+    #[clap(short, long, env = "AZURE_COSMOS_KEY")]
+    key: Option<String>,
 }
 
 #[tokio::main]
@@ -18,8 +19,14 @@ async fn main() -> azure_core::Result<()> {
     // We expect access keys (ie, not resource constrained)
     let args = Args::parse();
 
-    // This is how you construct an authorization token.
-    let authorization_token = AuthorizationToken::primary_key(args.primary_key)?;
+    let authorization_token = if let Some(k) = args.key {
+        // Connect using a key.
+        AuthorizationToken::primary_key(k)?
+    } else {
+        // Connect using an Entra ID token.
+        let cred = azure_identity::create_credential()?;
+        AuthorizationToken::from_token_credential(cred)
+    };
 
     // Once we have an authorization token you can create a client instance. You can change the
     // authorization token at later time if you need, for example, to escalate the privileges for a

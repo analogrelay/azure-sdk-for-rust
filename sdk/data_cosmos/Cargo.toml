@@ -26,6 +26,7 @@ thiserror = "1.0"
 bytes = "1.0"
 
 [dev-dependencies]
+azure_identity = { path = "../identity" }
 tracing-subscriber = "0.3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4.0.2", features = ["derive", "env"] }
