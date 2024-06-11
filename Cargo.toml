@@ -3,6 +3,11 @@ members = [
   "sdk/*",
   "./eng/test/mock_transport"
 ]
+# REVIEW: This is temporary, to work around https://github.com/Azure/azure-sdk-for-rust/issues/1677
+# It should not be merged, so if you see this, point it out!
+exclude = [
+  "sdk/iot_hub"
+]
 resolver = "2"
 
 [workspace.lints]
