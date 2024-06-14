@@ -2,37 +2,24 @@ use azure_data_cosmos::prelude::*;
 use clap::Parser;
 use futures::stream::StreamExt;
 
+use crate::utils::CommonArgs;
+
+#[path="_cosmos_example_utils.rs"]
+mod utils;
+
 #[derive(Debug, Parser)]
 struct Args {
-    /// The cosmos account you're using
-    #[clap(env = "AZURE_COSMOS_ACCOUNT")]
-    account: String,
-
-    /// The key to use to authenticate with the account. If omitted, Entra ID auth will be used.
-    #[clap(short, long, env = "AZURE_COSMOS_KEY")]
-    key: Option<String>,
+    #[clap(flatten)]
+    common: CommonArgs,
 }
 
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
-    // First we retrieve the account name and access key from environment variables.
-    // We expect access keys (ie, not resource constrained)
     let args = Args::parse();
 
-    let authorization_token = if let Some(k) = args.key {
-        // Connect using a key.
-        AuthorizationToken::primary_key(k)?
-    } else {
-        // Connect using an Entra ID token.
-        let cred = azure_identity::create_credential()?;
-        AuthorizationToken::from_token_credential(cred)
-    };
-
-    // Once we have an authorization token you can create a client instance. You can change the
-    // authorization token at later time if you need, for example, to escalate the privileges for a
-    // single operation.
-    // Here we are using reqwest but other clients are supported (check the documentation).
-    let client = CosmosClient::new(&args.account, authorization_token);
+    // Check out the "create_client" method in "_cosmos_example_utils" for more information
+    // on creating a Cosmos DB Client for various authentication methods.
+    let client = args.common.create_client()?;
 
     // The Cosmos' client exposes a lot of methods. This one lists the databases in the specified account.
     let databases = client
@@ -44,7 +31,7 @@ async fn main() -> azure_core::Result<()> {
 
     println!(
         "Account {} has {} database(s)",
-        args.account,
+        args.common.account.clone(),
         databases.databases.len()
     );
 
