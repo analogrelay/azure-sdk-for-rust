@@ -31,3 +31,21 @@ impl CommonArgs {
         Ok(CosmosClient::new(self.account.clone(), token))
     }
 }
+
+#[derive(Debug, Parser)]
+pub struct CommonArgsRequireKey {
+    /// The cosmos account you're using
+    #[clap(env = "AZURE_COSMOS_ACCOUNT")]
+    pub account: String,
+
+    /// The key to use to authenticate with the account. Required by this example.
+    #[clap(short, long, env = "AZURE_COSMOS_KEY")]
+    pub key: String,
+}
+
+impl CommonArgsRequireKey {
+    pub fn create_client(&self) -> azure_core::Result<CosmosClient> {
+        let token = AuthorizationToken::primary_key(&self.key)?;
+        Ok(CosmosClient::new(self.account.clone(), token))
+    }
+}
