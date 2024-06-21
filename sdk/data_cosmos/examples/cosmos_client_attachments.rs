@@ -3,6 +3,24 @@ use clap::Parser;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use crate::utils::CommonArgs;
+
+#[path="_cosmos_example_utils.rs"]
+mod utils;
+
+#[derive(Debug, Parser)]
+struct Args {
+    #[clap(flatten)]
+    common: CommonArgs,
+
+    /// The database to use for this example
+    #[clap(default_value = "azure_sdk_example_db")]
+    database: String,
+
+    /// The collection to use for this example
+    #[clap(default_value = "azure_sdk_examples")]
+    collection: String,
+}
 
 // Now we create a sample struct.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -21,30 +39,18 @@ impl azure_data_cosmos::CosmosEntity for MySampleStruct {
     }
 }
 
-#[derive(Debug, Parser)]
-struct Args {
-    /// Name of the database.
-    database_name: String,
-    /// Name of the collection in the database
-    collection_name: String,
-    /// Cosmos primary key name
-    #[clap(env = "COSMOS_PRIMARY_KEY")]
-    primary_key: String,
-    /// The cosmos account your're using
-    #[clap(env = "COSMOS_ACCOUNT")]
-    account: String,
-}
+// NOTE: Attachments are a legacy feature and are not enabled for new accounts.
+// Use this functionality only if you have an existing account that has this feature enabled.
+// See https://aka.ms/cosmosdb-attachments for more information.
 
 // This example expects you to have created a collection
 // with partitionKey on "id".
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
     let args = Args::parse();
-    let authorization_token = AuthorizationToken::primary_key(args.primary_key)?;
-
-    let client = CosmosClient::new(args.account, authorization_token)
-        .database_client(args.database_name)
-        .collection_client(args.collection_name);
+    let client = args.common.create_client()?
+        .database_client(args.database)
+        .collection_client(args.collection);
 
     let doc = MySampleStruct {
         id: format!("unique_id{}", 100),
