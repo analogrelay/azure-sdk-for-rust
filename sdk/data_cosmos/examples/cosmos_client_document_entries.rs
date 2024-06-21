@@ -5,19 +5,24 @@ use clap::Parser;
 use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use azure_core::StatusCode;
+use crate::utils::CommonArgs;
+
+#[path="_cosmos_example_utils.rs"]
+mod utils;
 
 #[derive(Debug, Parser)]
 struct Args {
-    /// Cosmos primary key name
-    #[clap(env = "COSMOS_PRIMARY_KEY")]
-    primary_key: String,
-    /// The cosmos account your're using
-    #[clap(env = "COSMOS_ACCOUNT")]
-    account: String,
-    /// The name of the database
-    database_name: String,
-    /// The name of the collection
-    collection_name: String,
+    #[clap(flatten)]
+    common: CommonArgs,
+
+    /// The database to use for this example
+    #[clap(default_value = "azure_sdk_example_db")]
+    database: String,
+
+    /// The collection to use for this example
+    #[clap(default_value = "azure_sdk_examples")]
+    collection: String,
 }
 
 // Now we create a sample struct.
@@ -42,11 +47,9 @@ impl azure_data_cosmos::CosmosEntity for MySampleStruct {
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
     let args = Args::parse();
-    let authorization_token = permission::AuthorizationToken::primary_key(args.primary_key)?;
-
-    let client = CosmosClient::new(args.account, authorization_token)
-        .database_client(args.database_name)
-        .collection_client(args.collection_name);
+    let client = args.common.create_client()?
+        .database_client(args.database)
+        .collection_client(args.collection);
 
     let mut response = None;
     for i in 0u64..5 {
@@ -137,17 +140,20 @@ async fn main() -> azure_core::Result<()> {
 
     println!("replace_document_response == {replace_document_response:#?}");
 
-    // This id should not be found. We expect None as result and
-    // has_been_found == false
+    // This id should not be found.
+    // Currently, this is represented by returning an HTTP Error from get_document, with NotFound as the status code.
     println!("\n\nLooking for non-existing item");
     let id = format!("unique_id{}", 100);
-    let response: GetDocumentResponse<MySampleStruct> = client
+    let result = client
         .document_client(id.clone(), &id)?
-        .get_document()
+        .get_document::<MySampleStruct>()
         .consistency_level(&response)
-        .await?;
+        .await;
+    let error = result.expect_err("Expected the request to fail");
 
-    assert!(matches!(response, GetDocumentResponse::NotFound(_)));
+    assert!(matches!(error.kind(), azure_core::error::ErrorKind::HttpResponse {
+        status: StatusCode::NotFound, ..
+    }));
     println!("response == {response:#?}");
 
     for i in 0u64..5 {
