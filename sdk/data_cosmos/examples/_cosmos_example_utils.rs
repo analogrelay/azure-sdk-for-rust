@@ -1,4 +1,5 @@
 use clap::Parser;
+use azure_core::operation;
 use azure_data_cosmos::clients::CosmosClient;
 use azure_data_cosmos::prelude::AuthorizationToken;
 
@@ -18,6 +19,10 @@ pub struct CommonArgs {
 }
 
 impl CommonArgs {
+    pub fn require_key_for(&self, operation: &str) {
+        panic!("The 'azure_data_cosmos' crate cannot perform the operation '{operation}' using Entra ID. Please use a key to authenticate, or perform that operation before running the sample. See https://aka.ms/cosmos-native-rbac for more information.");
+    }
+
     pub fn create_client(&self) -> azure_core::Result<CosmosClient> {
         let token = if let Some(ref k) = self.key {
             // Connect using a key.

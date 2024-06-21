@@ -6,15 +6,22 @@ use azure_core::prelude::*;
 
 use azure_data_cosmos::prelude::*;
 use time::OffsetDateTime;
+use crate::utils::CommonArgs;
+
+#[path="_cosmos_example_utils.rs"]
+mod utils;
 
 #[derive(Debug, Parser)]
 struct Args {
-    /// Cosmos primary key name
-    #[clap(env = "COSMOS_PRIMARY_KEY")]
-    primary_key: String,
-    /// The cosmos account your're using
-    #[clap(env = "COSMOS_ACCOUNT")]
-    account: String,
+    #[clap(flatten)]
+    common: CommonArgs,
+
+    /// The database to use for this example
+    database: String,
+
+    /// The collection to use for this example
+    #[clap(default_value = "azure_sdk_example")]
+    collection: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -33,35 +40,19 @@ impl azure_data_cosmos::CosmosEntity for MySampleStruct {
     }
 }
 
-const DATABASE: &str = "azuresdktestdb";
-const COLLECTION: &str = "azuresdktc";
-
-// This code will perform these tasks:
-// 1. Find an Azure Cosmos DB called *DATABASE*. If it does not exist, create it.
-// 2. Find an Azure Cosmos collection called *COLLECTION* in *DATABASE*.
-//      If it does not exist, create it.
-// 3. Store an entry in collection *COLLECTION* of database *DATABASE*.
-// 4. Delete everything.
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
-    // Let's get Cosmos account and access key from env variables.
-    // This helps automated testing.
     let args = Args::parse();
 
-    // First, we create an authorization token. There are two types of tokens, master and resource
-    // constrained. Please check the Azure documentation for details. You can change tokens
-    // at will and it's a good practice to raise your privileges only when needed.
-    let authorization_token = AuthorizationToken::primary_key(args.primary_key)?;
-
-    // Next we will create a Cosmos client. You need an authorization_token but you can later
-    // change it if needed.
-    let client = CosmosClient::new(args.account, authorization_token);
+    // Check out the "create_client" method in "_cosmos_example_utils" for more information
+    // on creating a Cosmos DB Client for various authentication methods.
+    let client = args.common.create_client()?;
 
     // list_databases will give us the databases available in our account. If there is
     // an error (for example, the given key is not valid) you will receive a
     // specific azure_data_cosmos::Error. In this example we will look for a specific database
     // so we chain a filter operation.
-    let db = client
+    let database = client
         .list_databases()
         .into_stream()
         .next()
@@ -69,19 +60,16 @@ async fn main() -> azure_core::Result<()> {
         .unwrap()?
         .databases
         .into_iter()
-        .find(|db| db.id == DATABASE);
+        .find(|db| db.id == args.database)
+        .expect(&format!("Could not find database {}", args.database));
 
     // If the requested database is not found we create it.
-    let database = match db {
-        Some(db) => db,
-        None => client.create_database(DATABASE).await?.database,
-    };
     println!("database == {database:?}");
 
     // Now we look for a specific collection. If is not already present
     // we will create it. The collection creation is more complex and
     // has many options (such as indexing and so on).
-    let collection = {
+    let (we_created_collection, collection) = {
         let collections = client
             .database_client(database.id.clone())
             .list_collections()
@@ -93,16 +81,18 @@ async fn main() -> azure_core::Result<()> {
         if let Some(collection) = collections
             .collections
             .into_iter()
-            .find(|coll| coll.id == COLLECTION)
+            .find(|coll| coll.id == args.collection)
         {
-            collection
+            (false, collection)
         } else {
-            client
+            args.common.require_key_for("Create Collection");
+            let c = client
                 .clone()
                 .database_client(database.id.clone())
-                .create_collection(COLLECTION, "/id")
+                .create_collection(args.collection.clone(), "/id")
                 .await?
-                .collection
+                .collection;
+            (true, c)
         }
     };
 
@@ -174,20 +164,17 @@ async fn main() -> azure_core::Result<()> {
         println!("replace_document_response == {replace_document_response:#?}");
     }
 
-    // We will perform some cleanup. First we delete the collection...
-    client
-        .database_client(DATABASE.to_owned())
-        .collection_client(COLLECTION.to_owned())
-        .delete_collection()
-        .await?;
-    println!("collection deleted");
-
-    // And then we delete the database.
-    client
-        .database_client(database.id)
-        .delete_database()
-        .await?;
-    println!("database deleted");
+    // Clean up the collection if we created it.
+    if we_created_collection {
+        client
+            .database_client(args.database)
+            .collection_client(args.collection)
+            .delete_collection()
+            .await?;
+        println!("collection deleted");
+    } else {
+        println!("collection existed before the test, not deleting it.");
+    }
 
     Ok(())
 }
