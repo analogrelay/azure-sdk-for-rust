@@ -12,3 +12,15 @@ Cargo.lock
 *.swo
 *.swp
 *.vim
+.idea/
+.env
+
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

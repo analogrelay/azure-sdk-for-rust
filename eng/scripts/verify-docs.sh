@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/usr/bin/env bash
 #
 # simple script to check docs using `cargo-docs-rs`
 #

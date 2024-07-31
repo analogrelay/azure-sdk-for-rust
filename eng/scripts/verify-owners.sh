@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/usr/bin/env bash
 #
 # simple script to check that github team for publishing crates has been added
 # for all of the crates.
