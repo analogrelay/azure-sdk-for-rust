@@ -4,9 +4,17 @@
 { pkgs, lib, config, inputs, ... }:
 
 {
+    env = {
+        AZRUST_SHELL = 1;
+    };
+
     packages = [
         pkgs.rustup
         pkgs.pkg-config
         pkgs.openssl
     ];
+
+    enterShell = ''
+        echo "You have entered the Development Environment for the Azure SDK for Rust"
+    '';
 }
