@@ -1,4 +1,4 @@
-use azure_core::auth::Secret;
+use azure_core::{auth::Secret, Model};
 use serde::{Deserialize, Deserializer};
 use time::OffsetDateTime;
 
@@ -13,7 +13,7 @@ struct RawLoginResponse {
     access_token: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Model, Debug, Clone)]
 pub struct LoginResponse {
     pub token_type: String,
     pub expires_in: u64,
@@ -33,8 +33,6 @@ impl<'de> Deserialize<'de> for LoginResponse {
         Ok(LoginResponse::from_base_response(resp))
     }
 }
-
-azure_core::json_model!(LoginResponse);
 
 impl LoginResponse {
     pub fn access_token(&self) -> &Secret {
