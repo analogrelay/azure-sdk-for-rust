@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run spell check",
+      "detail": "Runs a spell check on the full repository, matching the configuration used in CI",
+      "type": "process",
+      "command": "npx",
+      "args": [
+        "cspell",
+        "lint",
+        ".",
+        "--config",
+        ".vscode/cspell.json"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": {
+        "owner": "cspell",
+        "fileLocation": [
+          "relative",
+          "${workspaceFolder}"
+        ],
+        "source": "cspell",
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+)\\s+-\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        }
+      }
+    }
+  ]
+}
