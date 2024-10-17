@@ -15,7 +15,7 @@ use azure_core::{
     Context, Policy, PolicyResult, Request, Url,
 };
 use std::sync::Arc;
-use tracing::trace;
+use tracing::{debug, trace};
 use url::form_urlencoded;
 
 #[cfg(feature = "key_auth")]
@@ -37,6 +37,7 @@ pub(crate) enum ResourceType {
     PartitionKeyRanges,
     UserDefinedFunctions,
     Triggers,
+    Offers,
 }
 
 #[derive(Debug, Clone)]
@@ -145,11 +146,17 @@ fn extract_resource_link(request: &Request) -> String {
         "/pkranges",
         "/udfs",
         "/triggers",
+        "/offers",
     ];
 
     // This strips the leading slash from the uri of the passed request.
     let uri_path = request.path_and_query();
     let uri = uri_path.trim_start_matches('/');
+
+    if let Some(offer_resource_id) = uri.strip_prefix("offers/") {
+        let offer_resource_id = offer_resource_id.trim_end_matches('/');
+        return offer_resource_id.to_lowercase();
+    }
 
     // We find the above resource names. If found, we strip it and eagerly return. Note that the
     // resource names have a leading slash so the suffix will match `test/users` but not
@@ -205,6 +212,7 @@ async fn generate_authorization<'a>(
         #[cfg(feature = "key_auth")]
         Credential::PrimaryKey(key) => {
             let string_to_sign = string_to_sign(signature_target);
+            debug!(signature_base = %string_to_sign, "signing request");
             ("master", hmac_sha256(&string_to_sign, key)?)
         }
     };
@@ -261,6 +269,7 @@ fn string_to_sign(signature_target: SignatureTarget) -> String {
             ResourceType::PartitionKeyRanges => "pkranges",
             ResourceType::UserDefinedFunctions => "udfs",
             ResourceType::Triggers => "triggers",
+            ResourceType::Offers => "offers",
         },
         signature_target.resource_link,
         date::to_rfc1123(&signature_target.time_nonce).to_lowercase()

@@ -4,7 +4,7 @@
 //! Model types sent to and received from the Cosmos DB API.
 
 use azure_core::{date::OffsetDateTime, Model};
-use serde::{de::DeserializeOwned, Deserialize, Deserializer};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 
 #[cfg(doc)]
 use crate::{
@@ -14,9 +14,11 @@ use crate::{
 
 mod container_properties;
 mod item;
+mod throughput_properties;
 
 pub use container_properties::*;
 pub use item::*;
+pub use throughput_properties::*;
 
 fn deserialize_cosmos_timestamp<'de, D>(deserializer: D) -> Result<Option<OffsetDateTime>, D::Error>
 where
@@ -71,22 +73,26 @@ pub struct ContainerQueryResults {
 
 /// Common system properties returned for most Cosmos DB resources.
 #[non_exhaustive]
-#[derive(Clone, Default, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SystemProperties {
     /// The entity tag associated with the resource.
     #[serde(rename = "_etag")]
+    #[serde(skip_serializing)]
     pub etag: Option<azure_core::Etag>,
 
     /// The self-link associated with the resource.
     #[serde(rename = "_self")]
+    #[serde(skip_serializing)]
     pub self_link: Option<String>,
 
     /// The system-generated unique identifier associated with the resource.
     #[serde(rename = "_rid")]
+    #[serde(skip_serializing)]
     pub resource_id: Option<String>,
 
     /// A [`OffsetDateTime`] representing the last modified time of the resource.
     #[serde(rename = "_ts")]
+    #[serde(skip_serializing)]
     #[serde(deserialize_with = "deserialize_cosmos_timestamp")]
     pub last_modified: Option<OffsetDateTime>,
 }
