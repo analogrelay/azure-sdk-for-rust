@@ -9,7 +9,7 @@ use azure_core::{
     error::{http_response_from_body, Error, ErrorKind, ResultExt},
     headers,
     json::from_json,
-    HttpClient, Method, Model, Request, Url,
+    HttpClient, Method, Request, Url,
 };
 use serde::Deserialize;
 use std::fmt;
@@ -53,7 +53,7 @@ pub async fn exchange(
     let rsp_status = rsp.status();
 
     if rsp_status.is_success() {
-        rsp.deserialize_body_into::<RefreshTokenResponse>()
+        rsp.into_json_body::<RefreshTokenResponse>()
             .await
             .map_kind(ErrorKind::Credential)
     } else {
@@ -66,7 +66,7 @@ pub async fn exchange(
 
 /// A refresh token
 #[allow(dead_code)]
-#[derive(Model, Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RefreshTokenResponse {
     token_type: String,
     #[serde(rename = "scope", deserialize_with = "deserialize::split")]

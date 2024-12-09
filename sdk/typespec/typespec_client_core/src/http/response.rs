@@ -60,7 +60,7 @@ impl Model for serde_json::Value {
 /// For example, a service client method that returns a list of secrets should return `Response<ListSecretsResponse>`.
 ///
 /// Given a `Response<T>`, a user can deserialize the body into the intended body type `T` by calling [`Response::deserialize_body`].
-/// However, because the type `T` is just a marker type, the user can also deserialize the body into a different type by calling [`Response::deserialize_body_into`].
+/// However, because the type `T` is just a marker type, the user can also deserialize the body into a different type by calling [`Response::into_json_body`] or [`Response::into_xml_body`].
 pub struct Response<T = ()> {
     status: StatusCode,
     headers: Headers,
@@ -112,7 +112,7 @@ impl<T> Response<T> {
         self.body
     }
 
-    /// Fetches the entire body and tries to convert it into type `U`.
+    /// Fetches the entire body and tries to convert it into type `U`, deserializing it as JSON.
     ///
     /// This method is intended for use in rare cases where the body of a service response should be parsed into a user-provided type.
     ///
@@ -131,8 +131,8 @@ impl<T> Response<T> {
     /// }
     ///
     /// async fn parse_response(response: Response<GetSecretResponse>) {
-    ///   // Calling `deserialize_body_into` will parse the body into `MySecretResponse` instead of `GetSecretResponse`.
-    ///   let my_struct: MySecretResponse = response.deserialize_body_into().await.unwrap();
+    ///   // Calling `into_json_body` will parse the body into `MySecretResponse` instead of `GetSecretResponse`.
+    ///   let my_struct: MySecretResponse = response.into_json_body().await.unwrap();
     ///   assert_eq!("hunter2", my_struct.value);
     /// }
     ///
@@ -146,8 +146,48 @@ impl<T> Response<T> {
     /// #    parse_response(r).await;
     /// # }
     /// ```
-    pub async fn deserialize_body_into<U: Model>(self) -> crate::Result<U> {
-        U::from_response_body(self.body).await
+    #[cfg(feature = "json")]
+    pub async fn into_json_body<U: DeserializeOwned>(self) -> crate::Result<U> {
+        self.into_body().json().await
+    }
+
+    /// Fetches the entire body and tries to convert it into type `U`, deserializing it as XML.
+    ///
+    /// This method is intended for use in rare cases where the body of a service response should be parsed into a user-provided type.
+    ///
+    /// # Example
+    /// ```rust
+    /// # pub struct GetSecretResponse { }
+    /// use typespec_client_core::http::{Model, Response};
+    /// # #[cfg(not(feature = "derive"))]
+    /// # use typespec_macros::Model;
+    /// use serde::Deserialize;
+    /// use bytes::Bytes;
+    ///
+    /// #[derive(Model, Deserialize)]
+    /// struct MySecretResponse {
+    ///    value: String,
+    /// }
+    ///
+    /// async fn parse_response(response: Response<GetSecretResponse>) {
+    ///   // Calling `into_xml_body` will parse the body into `MySecretResponse` instead of `GetSecretResponse`.
+    ///   let my_struct: MySecretResponse = response.into_xml_body().await.unwrap();
+    ///   assert_eq!("hunter2", my_struct.value);
+    /// }
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// #    let r: Response<GetSecretResponse> = typespec_client_core::http::Response::from_bytes(
+    /// #      http_types::StatusCode::Ok,
+    /// #      typespec_client_core::http::headers::Headers::new(),
+    /// #      "<Response><name>database_password</name><value>hunter2</value></Response>",
+    /// #    );
+    /// #    parse_response(r).await;
+    /// # }
+    /// ```
+    #[cfg(feature = "xml")]
+    pub async fn into_xml_body<U: DeserializeOwned>(self) -> crate::Result<U> {
+        self.into_body().xml().await
     }
 }
 
@@ -298,34 +338,6 @@ impl fmt::Debug for ResponseBody {
 
 #[cfg(test)]
 mod tests {
-    use crate::http::headers::Headers;
-    use crate::http::{response::ResponseBody, Model, Response};
-    use typespec::error::ErrorKind;
-
-    #[tokio::test]
-    pub async fn body_type_controls_consumption_of_response_body() {
-        pub struct LazyBody;
-        impl Model for LazyBody {
-            async fn from_response_body(_body: ResponseBody) -> crate::Result<Self> {
-                // Don't actually consume the body
-                Ok(LazyBody)
-            }
-        }
-
-        // Create a response that fails as you read the body.
-        let response = Response::<()>::new(
-            http_types::StatusCode::Ok,
-            Headers::new(),
-            Box::pin(futures::stream::once(async {
-                Err(ErrorKind::Other.into_error())
-            })),
-        );
-
-        // Because LazyBody chose not to consume the body, this should succeed.
-        let res: crate::Result<LazyBody> = response.deserialize_body_into().await;
-        assert!(res.is_ok());
-    }
-
     mod json {
         use crate::http::headers::Headers;
         use crate::http::Response;
@@ -378,8 +390,7 @@ mod tests {
 
         #[tokio::test]
         pub async fn deserialize_alternate_type() {
-            #[derive(Model, Deserialize)]
-            #[typespec(crate = "crate")]
+            #[derive(Deserialize)]
             struct MySecretResponse {
                 #[serde(rename = "name")]
                 yon_name: String,
@@ -388,7 +399,7 @@ mod tests {
             }
 
             let response = get_secret();
-            let secret: MySecretResponse = response.deserialize_body_into().await.unwrap();
+            let secret: MySecretResponse = response.into_json_body().await.unwrap();
             assert_eq!(secret.yon_name, "my_secret");
             assert_eq!(secret.yon_value, "my_value");
         }
@@ -452,9 +463,7 @@ mod tests {
 
         #[tokio::test]
         pub async fn deserialize_alternate_type() {
-            #[derive(Model, Deserialize)]
-            #[typespec(crate = "crate")]
-            #[typespec(format = "xml")]
+            #[derive(Deserialize)]
             struct MySecretResponse {
                 #[serde(rename = "name")]
                 yon_name: String,
@@ -463,7 +472,7 @@ mod tests {
             }
 
             let response = get_secret();
-            let secret: MySecretResponse = response.deserialize_body_into().await.unwrap();
+            let secret: MySecretResponse = response.into_xml_body().await.unwrap();
             assert_eq!(secret.yon_name, "my_secret");
             assert_eq!(secret.yon_value, "my_value");
         }
