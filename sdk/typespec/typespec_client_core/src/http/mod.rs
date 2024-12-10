@@ -22,7 +22,7 @@ pub use options::*;
 pub use pager::*;
 pub use pipeline::*;
 pub use request::{Body, Request, RequestContent};
-pub use response::{Model, Response};
+pub use response::{Response, ResponseBody};
 
 // Re-export important types.
 pub use http_types::{Method, StatusCode};

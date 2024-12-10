@@ -17,11 +17,11 @@ pub(crate) struct MockResponse {
     body: Bytes,
 }
 
-impl From<MockResponse> for Response {
+impl From<MockResponse> for Response<Bytes> {
     fn from(mock_response: MockResponse) -> Self {
         let bytes_stream: azure_core::BytesStream = mock_response.body.into();
 
-        Self::new(
+        Self::from_stream(
             mock_response.status,
             mock_response.headers,
             Box::pin(bytes_stream),
@@ -41,12 +41,12 @@ impl MockResponse {
     pub(crate) async fn duplicate(response: Response) -> error::Result<(Response, Self)> {
         use error::ResultExt;
         let (status_code, header_map, body) = response.deconstruct();
-        let response_bytes = body.collect().await.context(
+        let response_bytes = body.collect_bytes().await.context(
             error::ErrorKind::Io,
             "an error occurred fetching the next part of the byte stream",
         )?;
 
-        let response = Response::new(
+        let response = Response::from_stream(
             status_code,
             header_map.clone(),
             Box::pin(BytesStream::new(response_bytes.clone())),

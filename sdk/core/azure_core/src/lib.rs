@@ -55,7 +55,7 @@ pub use typespec_client_core::{
     http::{
         headers::Header,
         new_http_client,
-        response::{Model, PinnedStream, Response, ResponseBody},
+        response::{PinnedStream, Response, ResponseBody},
         AppendToUrlQuery, Body, Context, HttpClient, Method, Pager, Request, RequestContent,
         StatusCode, Url,
     },

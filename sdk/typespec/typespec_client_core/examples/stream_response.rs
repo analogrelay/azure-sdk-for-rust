@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // You can also deserialize into a model from a slow response.
-    let team = client::get_model()?.deserialize_body().await?;
+    let team = client::get_model()?.into_body().await?;
     println!("{team:#?}");
 
     Ok(())
@@ -39,25 +39,25 @@ mod client {
     use std::{cmp::min, task::Poll, time::Duration};
     use tracing::debug;
     use typespec_client_core::{
-        http::{headers::Headers, Model, Response, StatusCode},
+        http::{headers::Headers, Response, StatusCode},
         Bytes,
     };
 
-    #[derive(Debug, Model, Deserialize)]
+    #[derive(Debug, Deserialize)]
     pub struct Team {
         pub name: Option<String>,
         #[serde(default)]
         pub members: Vec<Person>,
     }
 
-    #[derive(Debug, Model, Deserialize)]
+    #[derive(Debug, Deserialize)]
     pub struct Person {
         pub id: u32,
         pub name: Option<String>,
     }
 
     #[tracing::instrument]
-    pub fn get_binary_data() -> typespec_client_core::Result<Response<()>> {
+    pub fn get_binary_data() -> typespec_client_core::Result<Response> {
         let bytes = Bytes::from_static(b"Hello, world!");
         let response = SlowResponse {
             bytes: bytes.repeat(5).into(),
@@ -65,7 +65,7 @@ mod client {
             bytes_read: 0,
         };
 
-        Ok(Response::new(
+        Ok(Response::from_stream(
             StatusCode::Ok,
             Headers::new(),
             Box::pin(response),
@@ -93,11 +93,10 @@ mod client {
             bytes_read: 0,
         };
 
-        Ok(Response::new(
-            StatusCode::Ok,
-            Headers::new(),
-            Box::pin(response),
-        ))
+        Ok(
+            Response::from_stream(StatusCode::Ok, Headers::new(), Box::pin(response))
+                .with_json_body(),
+        )
     }
 
     struct SlowResponse {

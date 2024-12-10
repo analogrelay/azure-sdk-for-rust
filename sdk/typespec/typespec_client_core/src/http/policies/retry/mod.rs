@@ -131,6 +131,7 @@ where
                     "failed to reset body stream before retrying request",
                 )?;
             }
+
             let result = next[0].send(ctx, request, &next[1..]).await;
             // only start keeping track of time after the first request is made
             let start = start.get_or_insert_with(OffsetDateTime::now_utc);

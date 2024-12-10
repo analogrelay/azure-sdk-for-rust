@@ -3,7 +3,7 @@
 
 use crate::{
     clients::DatabaseClient,
-    models::{DatabaseProperties, DatabaseQueryResults, Item},
+    models::{DatabaseProperties, DatabaseQueryResults},
     pipeline::{AuthorizationPolicy, CosmosPipeline},
     resource_context::{ResourceLink, ResourceType},
     CosmosClientOptions, CreateDatabaseOptions, Query, QueryDatabasesOptions,
@@ -153,7 +153,7 @@ impl CosmosClient {
         &self,
         id: &str,
         options: Option<CreateDatabaseOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<DatabaseProperties>>> {
+    ) -> azure_core::Result<Response<DatabaseProperties>> {
         let options = options.unwrap_or_default();
 
         #[derive(Serialize)]
@@ -167,7 +167,7 @@ impl CosmosClient {
         req.set_json(&RequestBody { id })?;
 
         self.pipeline
-            .send(
+            .send_json(
                 options.method_options.context,
                 &mut req,
                 self.databases_link.clone(),

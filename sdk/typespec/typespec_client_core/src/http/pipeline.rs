@@ -78,15 +78,10 @@ impl Pipeline {
         &self.pipeline
     }
 
-    pub async fn send<T>(
-        &self,
-        ctx: &Context<'_>,
-        request: &mut Request,
-    ) -> crate::Result<Response<T>> {
+    pub async fn send(&self, ctx: &Context<'_>, request: &mut Request) -> crate::Result<Response> {
         self.pipeline[0]
             .send(ctx, request, &self.pipeline[1..])
             .await
-            .map(|resp| resp.with_default_deserialize_type())
     }
 }
 
@@ -99,10 +94,9 @@ mod tests {
     };
     use bytes::Bytes;
     use serde::Deserialize;
-    use typespec_macros::Model;
 
     #[tokio::test]
-    async fn deserializes_response() {
+    async fn deserializes_response() -> Result<(), Box<dyn std::error::Error>> {
         #[derive(Debug)]
         struct Responder {}
 
@@ -117,13 +111,13 @@ mod tests {
             ) -> PolicyResult {
                 let buffer = Bytes::from_static(br#"{"foo":1,"bar":"baz"}"#);
                 let stream: BytesStream = buffer.into();
-                let response = Response::new(StatusCode::Ok, Headers::new(), Box::pin(stream));
-                Ok(std::future::ready(response).await)
+                let response =
+                    Response::from_stream(StatusCode::Ok, Headers::new(), Box::pin(stream));
+                Ok(response)
             }
         }
 
-        #[derive(Model, Debug, Deserialize)]
-        #[typespec(crate = "crate")]
+        #[derive(Debug, Deserialize)]
         struct Model {
             foo: i32,
             bar: String,
@@ -138,13 +132,13 @@ mod tests {
         let mut request = Request::new("http://localhost".parse().unwrap(), Method::Get);
         let model: Model = pipeline
             .send(&Context::default(), &mut request)
-            .await
-            .unwrap()
-            .deserialize_body()
-            .await
-            .unwrap();
+            .await?
+            .with_json_body()
+            .into_body()
+            .await?;
 
         assert_eq!(1, model.foo);
         assert_eq!("baz", &model.bar);
+        Ok(())
     }
 }

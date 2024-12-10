@@ -3,19 +3,17 @@
 
 //! Model types sent to and received from the Azure Cosmos DB API.
 
-use azure_core::{date::OffsetDateTime, Model};
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use azure_core::date::OffsetDateTime;
+use serde::{Deserialize, Deserializer, Serialize};
 
 mod container_properties;
 mod indexing_policy;
-mod item;
 mod partition_key_definition;
 mod patch_operations;
 mod throughput_properties;
 
 pub use container_properties::*;
 pub use indexing_policy::*;
-pub use item::*;
 pub use partition_key_definition::*;
 pub use patch_operations::*;
 pub use throughput_properties::*;
@@ -47,17 +45,9 @@ pub struct QueryResults<T> {
     pub items: Vec<T>,
 }
 
-impl<T: DeserializeOwned> azure_core::Model for QueryResults<T> {
-    async fn from_response_body(
-        body: azure_core::ResponseBody,
-    ) -> typespec_client_core::Result<Self> {
-        body.json().await
-    }
-}
-
 /// A page of results from [`CosmosClient::query_databases`](crate::CosmosClient::query_databases())
 #[non_exhaustive]
-#[derive(Clone, Default, Debug, Deserialize, Model)]
+#[derive(Clone, Default, Debug, Deserialize)]
 pub struct DatabaseQueryResults {
     #[serde(alias = "Databases")]
     pub databases: Vec<DatabaseProperties>,
@@ -65,7 +55,7 @@ pub struct DatabaseQueryResults {
 
 /// A page of results from [`DatabaseClient::query_containers`](crate::clients::DatabaseClient::query_containers())
 #[non_exhaustive]
-#[derive(Clone, Default, Debug, Deserialize, Model)]
+#[derive(Clone, Default, Debug, Deserialize)]
 pub struct ContainerQueryResults {
     #[serde(alias = "DocumentCollections")]
     pub containers: Vec<ContainerProperties>,
@@ -106,7 +96,7 @@ pub struct SystemProperties {
 ///
 /// Returned by [`DatabaseClient::read()`](crate::clients::DatabaseClient::read()).
 #[non_exhaustive]
-#[derive(Model, Clone, Default, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, Deserialize, PartialEq, Eq)]
 pub struct DatabaseProperties {
     /// The ID of the database.
     pub id: String,

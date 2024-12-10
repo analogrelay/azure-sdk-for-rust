@@ -44,7 +44,7 @@ mod client {
     #[tracing::instrument(skip(body))]
     pub async fn put_binary_data(
         body: RequestContent<()>,
-    ) -> typespec_client_core::Result<Response<()>> {
+    ) -> typespec_client_core::Result<Response> {
         let body: Body = body.into();
 
         let content = match body {
@@ -70,7 +70,7 @@ mod client {
         let content = String::from_utf8(content.into())?;
         println!("{content}");
 
-        Ok(Response::new(
+        Ok(Response::from_stream(
             StatusCode::NoContent,
             Headers::new(),
             Box::pin(BytesStream::new_empty()),

@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use azure_core::{credentials::Secret, Model};
+use azure_core::credentials::Secret;
 use serde::{Deserialize, Deserializer};
 use time::OffsetDateTime;
 
@@ -18,7 +18,7 @@ struct RawLoginResponse {
     access_token: String,
 }
 
-#[derive(Model, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct LoginResponse {
     pub token_type: String,
     pub expires_in: u64,

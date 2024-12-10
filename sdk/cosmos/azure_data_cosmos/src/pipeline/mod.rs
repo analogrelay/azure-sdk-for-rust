@@ -7,7 +7,7 @@ mod signature_target;
 use std::sync::Arc;
 
 pub use authorization_policy::AuthorizationPolicy;
-use azure_core::{ClientOptions, Context, Method, Model, Pager, Request, Response};
+use azure_core::{ClientOptions, Context, Method, Pager, Request, Response};
 use futures::StreamExt;
 use serde::{de::DeserializeOwned, Deserialize};
 use typespec_client_core::http::PagerResult;
@@ -54,14 +54,26 @@ impl CosmosPipeline {
         link.url(&self.endpoint)
     }
 
-    pub async fn send<T>(
+    pub async fn send(
+        &self,
+        ctx: Context<'_>,
+        request: &mut Request,
+        resource_link: ResourceLink,
+    ) -> azure_core::Result<Response> {
+        let ctx = ctx.with_value(resource_link);
+        self.pipeline.send(&ctx, request).await
+    }
+
+    pub async fn send_json<T: DeserializeOwned>(
         &self,
         ctx: Context<'_>,
         request: &mut Request,
         resource_link: ResourceLink,
     ) -> azure_core::Result<Response<T>> {
-        let ctx = ctx.with_value(resource_link);
-        self.pipeline.send(&ctx, request).await
+        Ok(self
+            .send(ctx, request, resource_link)
+            .await?
+            .with_json_body())
     }
 
     pub fn send_query_request<T: DeserializeOwned>(
@@ -91,7 +103,7 @@ impl CosmosPipeline {
                     req.insert_header(constants::CONTINUATION, continuation);
                 }
 
-                let resp = pipeline.send(&ctx, &mut req).await?;
+                let resp = pipeline.send(&ctx, &mut req).await?.with_json_body();
 
                 Ok(PagerResult::from_response_header(
                     resp,
@@ -111,7 +123,7 @@ impl CosmosPipeline {
         context: Context<'_>,
         resource_id: &str,
     ) -> azure_core::Result<Option<Response<ThroughputProperties>>> {
-        #[derive(Model, Deserialize)]
+        #[derive(Deserialize)]
         struct OfferResults {
             #[serde(rename = "Offers")]
             pub offers: Vec<ThroughputProperties>,
@@ -136,7 +148,7 @@ impl CosmosPipeline {
             .next()
             .await
             .expect("the first pager result should always be Some, even when there's an error")?
-            .deserialize_body()
+            .into_body()
             .await?
             .offers;
 
@@ -150,7 +162,9 @@ impl CosmosPipeline {
 
         // Now we can read the offer itself
         let mut req = Request::new(offer_url, Method::Get);
-        self.send(context, &mut req, offer_link).await.map(Some)
+        self.send_json(context, &mut req, offer_link)
+            .await
+            .map(Some)
     }
 
     /// Helper function to update a throughput offer given a resource ID.
@@ -169,7 +183,7 @@ impl CosmosPipeline {
             .read_throughput_offer(context.clone(), resource_id)
             .await?;
         let mut current_throughput = match response {
-            Some(r) => r.deserialize_body().await?,
+            Some(r) => r.into_body().await?,
             None => Default::default(),
         };
         current_throughput.offer = throughput.offer;
@@ -180,6 +194,6 @@ impl CosmosPipeline {
         let mut req = Request::new(self.url(&offer_link), Method::Put);
         req.set_json(&current_throughput)?;
 
-        self.send(context, &mut req, offer_link).await
+        self.send_json(context, &mut req, offer_link).await
     }
 }

@@ -3,7 +3,7 @@
 
 use crate::{
     constants,
-    models::{ContainerProperties, Item, PatchDocument, QueryResults, ThroughputProperties},
+    models::{ContainerProperties, PatchDocument, QueryResults, ThroughputProperties},
     options::{QueryOptions, ReadContainerOptions},
     pipeline::CosmosPipeline,
     resource_context::{ResourceLink, ResourceType},
@@ -55,7 +55,7 @@ impl ContainerClient {
     /// # let container_client: ContainerClient = panic!("this is a non-running example");
     /// let response = container_client.read(None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
+    ///     .into_body()
     ///     .await.unwrap();
     /// # }
     /// ```
@@ -67,7 +67,7 @@ impl ContainerClient {
         let url = self.pipeline.url(&self.link);
         let mut req = Request::new(url, Method::Get);
         self.pipeline
-            .send(options.method_options.context, &mut req, self.link.clone())
+            .send_json(options.method_options.context, &mut req, self.link.clone())
             .await
     }
 
@@ -98,7 +98,7 @@ impl ContainerClient {
     /// };
     /// let response = container_client.replace(new_properties, None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
+    ///     .into_body()
     ///     .await.unwrap();
     /// # }
     /// ```
@@ -106,13 +106,13 @@ impl ContainerClient {
         &self,
         properties: ContainerProperties,
         options: Option<ReplaceContainerOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<ContainerProperties>>> {
+    ) -> azure_core::Result<Response<ContainerProperties>> {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.link);
         let mut req = Request::new(url, Method::Put);
         req.set_json(&properties)?;
         self.pipeline
-            .send(options.method_options.context, &mut req, self.link.clone())
+            .send_json(options.method_options.context, &mut req, self.link.clone())
             .await
     }
 
@@ -129,7 +129,7 @@ impl ContainerClient {
         let options = options.unwrap_or_default();
 
         // We need to get the RID for the database.
-        let db = self.read(None).await?.deserialize_body().await?;
+        let db = self.read(None).await?.into_body().await?;
         let resource_id = db
             .system_properties
             .resource_id
@@ -153,7 +153,7 @@ impl ContainerClient {
         let options = options.unwrap_or_default();
 
         // We need to get the RID for the database.
-        let db = self.read(None).await?.deserialize_body().await?;
+        let db = self.read(None).await?.into_body().await?;
         let resource_id = db
             .system_properties
             .resource_id
@@ -192,7 +192,7 @@ impl ContainerClient {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use azure_data_cosmos::{clients::ContainerClient, models::Item};
+    /// # use azure_data_cosmos::clients::ContainerClient;
     /// # use serde::{Deserialize, Serialize};
     /// # async fn doc() {
     /// #[derive(Debug, Deserialize, Serialize)]
@@ -211,25 +211,24 @@ impl ContainerClient {
     /// let created_item = container_client
     ///     .create_item("category1", p, None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
-    ///     .await.unwrap()
-    ///     .unwrap();
+    ///     .into_body()
+    ///     .await.unwrap();
     /// println!("Created: {:#?}", created_item);
     /// # }
     /// ```
-    pub async fn create_item<T: Serialize>(
+    pub async fn create_item<T: Serialize + DeserializeOwned>(
         &self,
         partition_key: impl Into<PartitionKey>,
         item: T,
         options: Option<ItemOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<T>>> {
+    ) -> azure_core::Result<Response<T>> {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.items_link);
         let mut req = Request::new(url, Method::Post);
         req.insert_headers(&partition_key.into())?;
         req.set_json(&item)?;
         self.pipeline
-            .send(
+            .send_json(
                 options.method_options.context,
                 &mut req,
                 self.items_link.clone(),
@@ -248,7 +247,7 @@ impl ContainerClient {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use azure_data_cosmos::{clients::ContainerClient, models::Item};
+    /// # use azure_data_cosmos::clients::ContainerClient;
     /// # use serde::{Deserialize, Serialize};
     /// # async fn doc() {
     /// #[derive(Debug, Deserialize, Serialize)]
@@ -267,13 +266,12 @@ impl ContainerClient {
     /// let updated_item = container_client
     ///     .replace_item("category1", "product1", p, None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
-    ///     .await.unwrap()
-    ///     .unwrap();
+    ///     .into_body()
+    ///     .await.unwrap();
     /// println!("Updated Item: {:#?}", updated_item);
     /// # }
     /// ```
-    pub async fn replace_item<T: Serialize>(
+    pub async fn replace_item<T: Serialize + DeserializeOwned>(
         &self,
         partition_key: impl Into<PartitionKey>,
         item_id: &str,
@@ -282,7 +280,7 @@ impl ContainerClient {
         #[allow(unused_variables)]
         // REASON: This is a documented public API so prefixing with '_' is undesirable.
         options: Option<ItemOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<T>>> {
+    ) -> azure_core::Result<Response<T>> {
         let options = options.unwrap_or_default();
         let link = self.items_link.item(item_id);
         let url = self.pipeline.url(&link);
@@ -290,7 +288,7 @@ impl ContainerClient {
         req.insert_headers(&partition_key.into())?;
         req.set_json(&item)?;
         self.pipeline
-            .send(options.method_options.context, &mut req, link)
+            .send_json(options.method_options.context, &mut req, link)
             .await
     }
 
@@ -307,7 +305,7 @@ impl ContainerClient {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use azure_data_cosmos::{clients::ContainerClient, models::Item};
+    /// # use azure_data_cosmos::clients::ContainerClient;
     /// # use serde::{Deserialize, Serialize};
     /// # async fn doc() {
     /// #[derive(Debug, Deserialize, Serialize)]
@@ -326,18 +324,17 @@ impl ContainerClient {
     /// let updated_item = container_client
     ///     .upsert_item("category1", p, None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
-    ///     .await.unwrap()
-    ///     .unwrap();
+    ///     .into_body()
+    ///     .await.unwrap();
     /// println!("Updated Item: {:#?}", updated_item);
     /// # }
     /// ```
-    pub async fn upsert_item<T: Serialize>(
+    pub async fn upsert_item<T: Serialize + DeserializeOwned>(
         &self,
         partition_key: impl Into<PartitionKey>,
         item: T,
         options: Option<ItemOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<T>>> {
+    ) -> azure_core::Result<Response<T>> {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.items_link);
         let mut req = Request::new(url, Method::Post);
@@ -345,7 +342,7 @@ impl ContainerClient {
         req.insert_headers(&partition_key.into())?;
         req.set_json(&item)?;
         self.pipeline
-            .send(
+            .send_json(
                 options.method_options.context,
                 &mut req,
                 self.items_link.clone(),
@@ -363,7 +360,7 @@ impl ContainerClient {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use azure_data_cosmos::{clients::ContainerClient, models::Item};
+    /// # use azure_data_cosmos::clients::ContainerClient;
     /// # use serde::{Deserialize, Serialize};
     /// # async fn doc() {
     /// #[derive(Debug, Deserialize, Serialize)]
@@ -377,9 +374,8 @@ impl ContainerClient {
     /// let item: Product = container_client
     ///     .read_item("partition1", "item1", None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
-    ///     .await.unwrap()
-    ///     .unwrap();
+    ///     .into_body()
+    ///     .await.unwrap();
     /// println!("Read Item: {:#?}", item);
     /// # }
     /// ```
@@ -388,14 +384,14 @@ impl ContainerClient {
         partition_key: impl Into<PartitionKey>,
         item_id: &str,
         options: Option<ItemOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<T>>> {
+    ) -> azure_core::Result<Response<T>> {
         let options = options.unwrap_or_default();
         let link = self.items_link.item(item_id);
         let url = self.pipeline.url(&link);
         let mut req = Request::new(url, Method::Get);
         req.insert_headers(&partition_key.into())?;
         self.pipeline
-            .send(options.method_options.context, &mut req, link)
+            .send_json(options.method_options.context, &mut req, link)
             .await
     }
 
@@ -409,7 +405,7 @@ impl ContainerClient {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use azure_data_cosmos::{clients::ContainerClient, models::Item};
+    /// # use azure_data_cosmos::clients::ContainerClient;
     /// # use serde::{Deserialize, Serialize};
     /// # async fn doc() {
     /// # let container_client: ContainerClient = panic!("this is a non-running example");
@@ -460,7 +456,7 @@ impl ContainerClient {
     ///
     /// The Cosmos service does return the patched item in the response.
     /// However, this method does not return `Response<T>` since that would **force** users to provide a generic type parameter, even when they do not wish to deserialize the body.
-    /// If you want to deserialize the response, you can use [`Response::deserialize_body_into`] to manually deserialize the body.
+    /// If you want to deserialize the response, you can use [`ResponseBody::to_json`](azure_core::ResponseBody::to_json) to manually deserialize the body.
     ///
     /// For example:
     ///
@@ -470,7 +466,7 @@ impl ContainerClient {
     /// # let client: ContainerClient = panic!("this is a non-running example");
     /// let patch = PatchDocument::default().with_add("/some/path", "some value").unwrap();
     /// let response = client.patch_item("partition1", "item1", patch, None).await.unwrap();
-    /// let patched_item: serde_json::Value = response.deserialize_body_into().await.unwrap();
+    /// let patched_item: serde_json::Value = response.into_body().to_json().await.unwrap();
     /// # }
     /// ```
     pub async fn patch_item(

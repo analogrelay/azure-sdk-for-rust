@@ -5,52 +5,34 @@ use crate::http::{headers::Headers, StatusCode};
 use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use serde::de::DeserializeOwned;
-use std::future::Future;
-use std::{fmt, marker::PhantomData, pin::Pin};
+use std::future::{Future, IntoFuture};
+use std::{fmt, pin::Pin};
 use typespec::error::{ErrorKind, ResultExt};
-
-#[cfg(feature = "derive")]
-pub use typespec_macros::Model;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub type PinnedStream = Pin<Box<dyn Stream<Item = crate::Result<Bytes>> + Send + Sync>>;
 #[cfg(target_arch = "wasm32")]
 pub type PinnedStream = Pin<Box<dyn Stream<Item = crate::Result<Bytes>>>>;
 
-/// Trait that represents types that can be deserialized from an HTTP response body.
-///
-/// [`Response<T>`] is designed to work with values that may be serialized in various formats (JSON, XML, etc.).
-/// In order to support that, the `T` provided must implement [`Model`], which provides the [`Model::from_response_body`]
-/// method to deserialize the type from a response body.
-pub trait Model: Sized {
-    /// Deserialize the response body into type `Self`.
-    ///
-    /// A [`ResponseBody`] represents a stream of bytes coming from the server.
-    /// The server may still be sending data, so it's up to implementors whether they want to wait for the entire body to be received or not.
-    /// For example, a type representing a simple REST API response will want to wait for the entire body to be received and then parse the body.
-    /// However, a type representing the download of a large file, may not want to do that and instead prepare to stream the body to a file or other destination.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn from_response_body(
-        body: ResponseBody,
-    ) -> impl Future<Output = crate::Result<Self>> + Send + Sync;
+#[cfg(not(target_arch = "wasm32"))]
+pub type BoxedDeserializer<'a, T> = Box<
+    dyn FnOnce(PinnedStream) -> Pin<Box<dyn Future<Output = crate::Result<T>> + Send + Sync + 'a>>
+        + Send
+        + Sync
+        + 'a,
+>;
+#[cfg(target_arch = "wasm32")]
+pub type BoxedDeserializer<'a, T> =
+    Box<dyn FnOnce(PinnedStream) -> Pin<Box<dyn Future<Output = crate::Result<T>> + 'a>> + 'a>;
 
-    #[cfg(target_arch = "wasm32")]
-    fn from_response_body(body: ResponseBody) -> impl Future<Output = crate::Result<Self>>;
-}
+async fn collect_stream(mut stream: PinnedStream) -> crate::Result<Bytes> {
+    let mut final_result = Vec::new();
 
-// Allow for deserializing into "raw" JSON.
-impl Model for serde_json::Value {
-    #[cfg(not(target_arch = "wasm32"))]
-    fn from_response_body(
-        body: ResponseBody,
-    ) -> impl Future<Output = crate::Result<Self>> + Send + Sync {
-        body.json()
+    while let Some(res) = stream.next().await {
+        final_result.extend(&res?);
     }
 
-    #[cfg(target_arch = "wasm32")]
-    fn from_response_body(body: ResponseBody) -> impl Future<Output = crate::Result<Self>> {
-        body.json()
-    }
+    Ok(final_result.into())
 }
 
 /// An HTTP response.
@@ -61,21 +43,19 @@ impl Model for serde_json::Value {
 ///
 /// Given a `Response<T>`, a user can deserialize the body into the intended body type `T` by calling [`Response::deserialize_body`].
 /// However, because the type `T` is just a marker type, the user can also deserialize the body into a different type by calling [`Response::deserialize_body_into`].
-pub struct Response<T = ()> {
+pub struct Response<T = Bytes> {
     status: StatusCode,
     headers: Headers,
-    body: ResponseBody,
-    phantom: PhantomData<T>,
+    body: ResponseBody<T>,
 }
 
-impl<T> Response<T> {
+impl Response<Bytes> {
     /// Create an HTTP response from an asynchronous stream of bytes.
-    pub fn new(status: StatusCode, headers: Headers, stream: PinnedStream) -> Self {
+    pub fn from_stream(status: StatusCode, headers: Headers, stream: PinnedStream) -> Self {
         Self {
             status,
             headers,
             body: ResponseBody::new(stream),
-            phantom: PhantomData,
         }
     }
 
@@ -85,7 +65,16 @@ impl<T> Response<T> {
             status,
             headers,
             body: ResponseBody::from_bytes(bytes),
-            phantom: PhantomData,
+        }
+    }
+}
+
+impl<T> Response<T> {
+    pub fn new(status: StatusCode, headers: Headers, body: ResponseBody<T>) -> Self {
+        Self {
+            status,
+            headers,
+            body,
         }
     }
 
@@ -100,7 +89,7 @@ impl<T> Response<T> {
     }
 
     /// Deconstruct the HTTP response into its components.
-    pub fn deconstruct(self) -> (StatusCode, Headers, ResponseBody) {
+    pub fn deconstruct(self) -> (StatusCode, Headers, ResponseBody<T>) {
         (self.status, self.headers, self.body)
     }
 
@@ -108,109 +97,30 @@ impl<T> Response<T> {
     ///
     /// This method will force the entire body to be downloaded from the server and consume the response.
     /// If you want to parse the body into a type, use [`read_body`](Response::deserialize_body) instead.
-    pub fn into_body(self) -> ResponseBody {
+    pub fn into_body(self) -> ResponseBody<T> {
         self.body
     }
 
-    /// Fetches the entire body and tries to convert it into type `U`.
-    ///
-    /// This method is intended for use in rare cases where the body of a service response should be parsed into a user-provided type.
-    ///
-    /// # Example
-    /// ```rust
-    /// # pub struct GetSecretResponse { }
-    /// use typespec_client_core::http::{Model, Response};
-    /// # #[cfg(not(feature = "derive"))]
-    /// # use typespec_macros::Model;
-    /// use serde::Deserialize;
-    /// use bytes::Bytes;
-    ///
-    /// #[derive(Model, Deserialize)]
-    /// struct MySecretResponse {
-    ///    value: String,
-    /// }
-    ///
-    /// async fn parse_response(response: Response<GetSecretResponse>) {
-    ///   // Calling `deserialize_body_into` will parse the body into `MySecretResponse` instead of `GetSecretResponse`.
-    ///   let my_struct: MySecretResponse = response.deserialize_body_into().await.unwrap();
-    ///   assert_eq!("hunter2", my_struct.value);
-    /// }
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() {
-    /// #    let r: Response<GetSecretResponse> = typespec_client_core::http::Response::from_bytes(
-    /// #      http_types::StatusCode::Ok,
-    /// #      typespec_client_core::http::headers::Headers::new(),
-    /// #      "{\"name\":\"database_password\",\"value\":\"hunter2\"}",
-    /// #    );
-    /// #    parse_response(r).await;
-    /// # }
-    /// ```
-    pub async fn deserialize_body_into<U: Model>(self) -> crate::Result<U> {
-        U::from_response_body(self.body).await
+    #[cfg(feature = "json")]
+    pub fn with_json_body<U>(self) -> Response<U>
+    where
+        U: DeserializeOwned,
+    {
+        let (status, headers, body) = self.deconstruct();
+        Response::new(status, headers, body.to_json())
+    }
+
+    #[cfg(feature = "xml")]
+    pub fn with_xml_body<U>(self) -> Response<U>
+    where
+        U: DeserializeOwned,
+    {
+        let (status, headers, body) = self.deconstruct();
+        Response::new(status, headers, body.to_xml())
     }
 }
 
-impl Response<()> {
-    /// Changes the type of the response body.
-    ///
-    /// Used to set the "type" of an untyped `Response<()>`, transforming it into a `Response<T>`.
-    pub(crate) fn with_default_deserialize_type<T>(self) -> Response<T> {
-        Response {
-            status: self.status,
-            headers: self.headers,
-            body: self.body,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: Model> Response<T> {
-    /// Fetches the entire body and tries to convert it into type `T`.
-    ///
-    /// This is the preferred method for parsing the body of a service response into it's default model type.
-    ///
-    /// # Example
-    /// ```rust
-    /// # use serde::Deserialize;
-    /// # use typespec_client_core::http::Model;
-    /// # #[cfg(not(feature = "derive"))]
-    /// # use typespec_macros::Model;
-    /// # #[derive(Model, Deserialize)]
-    /// # pub struct GetSecretResponse {
-    /// #   name: String,
-    /// #   value: String,
-    /// # }
-    /// # pub struct SecretClient { }
-    /// # impl SecretClient {
-    /// #   pub async fn get_secret(&self) -> typespec_client_core::http::Response<GetSecretResponse> {
-    /// #    typespec_client_core::http::Response::from_bytes(
-    /// #      http_types::StatusCode::Ok,
-    /// #      typespec_client_core::http::headers::Headers::new(),
-    /// #      "{\"name\":\"database_password\",\"value\":\"hunter2\"}",
-    /// #    )
-    /// #  }
-    /// # }
-    /// # pub fn create_secret_client() -> SecretClient {
-    /// #   SecretClient { }
-    /// # }
-    ///
-    /// # #[tokio::main]
-    /// # async fn main() {
-    /// let secret_client = create_secret_client();
-    /// let response = secret_client.get_secret().await;
-    /// assert_eq!(response.status(), http_types::StatusCode::Ok);
-    /// let model = response.deserialize_body().await.unwrap();
-    /// assert_eq!(model.name, "database_password");
-    /// assert_eq!(model.value, "hunter2");
-    /// # }
-    /// ```
-    pub async fn deserialize_body(self) -> crate::Result<T> {
-        T::from_response_body(self.body).await
-    }
-}
-
-impl<T> fmt::Debug for Response<T> {
+impl<'a, T> fmt::Debug for Response<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Response")
             .field("status", &self.status)
@@ -223,12 +133,19 @@ impl<T> fmt::Debug for Response<T> {
 ///
 /// This body can either be streamed or collected into [`Bytes`].
 #[pin_project::pin_project]
-pub struct ResponseBody(#[pin] PinnedStream);
+pub struct ResponseBody<T = Bytes> {
+    #[pin]
+    stream: PinnedStream,
+    deserializer: BoxedDeserializer<'static, T>,
+}
 
-impl ResponseBody {
+impl ResponseBody<Bytes> {
     /// Create a new [`ResponseBody`] from an async stream of bytes.
     fn new(stream: PinnedStream) -> Self {
-        Self(stream)
+        Self {
+            stream,
+            deserializer: Box::new(|stream| Box::pin(collect_stream(stream))),
+        }
     }
 
     /// Create a new [`ResponseBody`] from a byte slice.
@@ -236,21 +153,31 @@ impl ResponseBody {
         let bytes = bytes.into();
         Self::new(Box::pin(futures::stream::once(async move { Ok(bytes) })))
     }
+}
 
+impl<T: 'static> IntoFuture for ResponseBody<T> {
+    type Output = crate::Result<T>;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    type IntoFuture = Pin<Box<dyn Future<Output = crate::Result<T>> + Send + Sync + 'static>>;
+
+    #[cfg(target_arch = "wasm32")]
+    type IntoFuture = Pin<Box<dyn Future<Output = crate::Result<T>> + 'static>>;
+
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(async { (self.deserializer)(self.stream).await })
+    }
+}
+
+impl<T> ResponseBody<T> {
     /// Collect the stream into a [`Bytes`] collection.
-    pub async fn collect(mut self) -> crate::Result<Bytes> {
-        let mut final_result = Vec::new();
-
-        while let Some(res) = self.0.next().await {
-            final_result.extend(&res?);
-        }
-
-        Ok(final_result.into())
+    pub async fn collect_bytes(self) -> crate::Result<Bytes> {
+        collect_stream(self.stream).await
     }
 
     /// Collect the stream into a [`String`].
     pub async fn collect_string(self) -> crate::Result<String> {
-        std::str::from_utf8(&self.collect().await?)
+        std::str::from_utf8(&self.collect_bytes().await?)
             .context(
                 ErrorKind::DataConversion,
                 "response body was not utf-8 like expected",
@@ -260,37 +187,51 @@ impl ResponseBody {
 
     /// Deserialize the JSON stream into type `T`.
     #[cfg(feature = "json")]
-    pub async fn json<T>(self) -> crate::Result<T>
+    pub fn to_json<U>(self) -> ResponseBody<U>
     where
-        T: DeserializeOwned,
+        U: DeserializeOwned,
     {
-        let body = self.collect().await?;
-        crate::json::from_json(body)
+        ResponseBody {
+            stream: self.stream,
+            deserializer: Box::new(|stream| {
+                Box::pin(async {
+                    let bytes = collect_stream(stream).await?;
+                    crate::json::from_json(bytes)
+                })
+            }),
+        }
     }
 
     /// Deserialize the XML stream into type `T`.
     #[cfg(feature = "xml")]
-    pub async fn xml<T>(self) -> crate::Result<T>
+    pub fn to_xml<U>(self) -> ResponseBody<U>
     where
-        T: DeserializeOwned,
+        U: DeserializeOwned,
     {
-        let body = self.collect().await?;
-        crate::xml::read_xml(&body)
+        ResponseBody {
+            stream: self.stream,
+            deserializer: Box::new(|stream| {
+                Box::pin(async {
+                    let bytes = collect_stream(stream).await?;
+                    crate::xml::read_xml(&bytes)
+                })
+            }),
+        }
     }
 }
 
-impl Stream for ResponseBody {
+impl<'a, T> Stream for ResponseBody<T> {
     type Item = crate::Result<Bytes>;
     fn poll_next(
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.project();
-        this.0.poll_next(cx)
+        this.stream.poll_next(cx)
     }
 }
 
-impl fmt::Debug for ResponseBody {
+impl<'a, T> fmt::Debug for ResponseBody<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ResponseBody")
     }
@@ -298,52 +239,21 @@ impl fmt::Debug for ResponseBody {
 
 #[cfg(test)]
 mod tests {
-    use crate::http::headers::Headers;
-    use crate::http::{response::ResponseBody, Model, Response};
-    use typespec::error::ErrorKind;
-
-    #[tokio::test]
-    pub async fn body_type_controls_consumption_of_response_body() {
-        pub struct LazyBody;
-        impl Model for LazyBody {
-            async fn from_response_body(_body: ResponseBody) -> crate::Result<Self> {
-                // Don't actually consume the body
-                Ok(LazyBody)
-            }
-        }
-
-        // Create a response that fails as you read the body.
-        let response = Response::<()>::new(
-            http_types::StatusCode::Ok,
-            Headers::new(),
-            Box::pin(futures::stream::once(async {
-                Err(ErrorKind::Other.into_error())
-            })),
-        );
-
-        // Because LazyBody chose not to consume the body, this should succeed.
-        let res: crate::Result<LazyBody> = response.deserialize_body_into().await;
-        assert!(res.is_ok());
-    }
-
     mod json {
         use crate::http::headers::Headers;
         use crate::http::Response;
         use http_types::StatusCode;
         use serde::Deserialize;
-        use typespec_macros::Model;
 
         /// An example JSON-serialized response type.
-        #[derive(Model, Deserialize)]
-        #[typespec(crate = "crate")]
+        #[derive(Deserialize)]
         struct GetSecretResponse {
             name: String,
             value: String,
         }
 
         /// An example JSON-serialized list response type.
-        #[derive(Model, Deserialize)]
-        #[typespec(crate = "crate")]
+        #[derive(Deserialize)]
         struct GetSecretListResponse {
             value: Vec<GetSecretResponse>,
             #[serde(rename = "nextLink")]
@@ -357,6 +267,7 @@ mod tests {
                 Headers::new(),
                 r#"{"name":"my_secret","value":"my_value"}"#,
             )
+            .with_json_body()
         }
 
         /// A sample service client function to return a list of secrets.
@@ -366,20 +277,21 @@ mod tests {
                 Headers::new(),
                 r#"{"value":[{"name":"my_secret","value":"my_value"}],"nextLink":"?page=2"}"#,
             )
+            .with_json_body()
         }
 
         #[tokio::test]
-        pub async fn deserialize_default_type() {
+        pub async fn deserialize_default_type() -> Result<(), Box<dyn std::error::Error>> {
             let response = get_secret();
-            let secret = response.deserialize_body().await.unwrap();
+            let secret = response.into_body().await?;
             assert_eq!(secret.name, "my_secret");
             assert_eq!(secret.value, "my_value");
+            Ok(())
         }
 
         #[tokio::test]
-        pub async fn deserialize_alternate_type() {
-            #[derive(Model, Deserialize)]
-            #[typespec(crate = "crate")]
+        pub async fn deserialize_alternate_type() -> Result<(), Box<dyn std::error::Error>> {
+            #[derive(Deserialize)]
             struct MySecretResponse {
                 #[serde(rename = "name")]
                 yon_name: String,
@@ -388,9 +300,10 @@ mod tests {
             }
 
             let response = get_secret();
-            let secret: MySecretResponse = response.deserialize_body_into().await.unwrap();
+            let secret: MySecretResponse = response.with_json_body().into_body().await?;
             assert_eq!(secret.yon_name, "my_secret");
             assert_eq!(secret.yon_value, "my_value");
+            Ok(())
         }
 
         #[tokio::test]
@@ -398,7 +311,7 @@ mod tests {
             // We need to efficiently deserialize the body twice to get the "nextLink" but return it to the caller.
             let response = list_secrets();
             let (status, headers, body) = response.deconstruct();
-            let bytes = body.collect().await.expect("collect response");
+            let bytes = body.collect_bytes().await.expect("collect response");
             let model: GetSecretListResponse =
                 crate::json::from_json(bytes.clone()).expect("deserialize GetSecretListResponse");
             assert_eq!(status, StatusCode::Ok);
@@ -406,10 +319,10 @@ mod tests {
             assert_eq!(model.next_link, Some("?page=2".to_string()));
 
             let response: Response<GetSecretListResponse> =
-                Response::from_bytes(status, headers, bytes);
+                Response::from_bytes(status, headers, bytes).with_json_body();
             assert_eq!(response.status(), StatusCode::Ok);
             let model = response
-                .deserialize_body()
+                .into_body()
                 .await
                 .expect("deserialize GetSecretListResponse again");
             assert_eq!(model.next_link, Some("?page=2".to_string()));
@@ -422,12 +335,9 @@ mod tests {
         use crate::http::Response;
         use http_types::StatusCode;
         use serde::Deserialize;
-        use typespec_macros::Model;
 
         /// An example XML-serialized response type.
-        #[derive(Model, Deserialize)]
-        #[typespec(crate = "crate")]
-        #[typespec(format = "xml")]
+        #[derive(Deserialize)]
         struct GetSecretResponse {
             name: String,
             value: String,
@@ -439,22 +349,21 @@ mod tests {
                 StatusCode::Ok,
                 Headers::new(),
                 "<GetSecretResponse><name>my_secret</name><value>my_value</value></GetSecretResponse>",
-            )
+            ).with_xml_body()
         }
 
         #[tokio::test]
-        pub async fn deserialize_default_type() {
+        pub async fn deserialize_default_type() -> Result<(), Box<dyn std::error::Error>> {
             let response = get_secret();
-            let secret = response.deserialize_body().await.unwrap();
+            let secret = response.into_body().await?;
             assert_eq!(secret.name, "my_secret");
             assert_eq!(secret.value, "my_value");
+            Ok(())
         }
 
         #[tokio::test]
-        pub async fn deserialize_alternate_type() {
-            #[derive(Model, Deserialize)]
-            #[typespec(crate = "crate")]
-            #[typespec(format = "xml")]
+        pub async fn deserialize_alternate_type() -> Result<(), Box<dyn std::error::Error>> {
+            #[derive(Deserialize)]
             struct MySecretResponse {
                 #[serde(rename = "name")]
                 yon_name: String,
@@ -463,9 +372,10 @@ mod tests {
             }
 
             let response = get_secret();
-            let secret: MySecretResponse = response.deserialize_body_into().await.unwrap();
+            let secret: MySecretResponse = response.with_xml_body().into_body().await?;
             assert_eq!(secret.yon_name, "my_secret");
             assert_eq!(secret.yon_value, "my_value");
+            Ok(())
         }
     }
 }

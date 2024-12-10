@@ -99,7 +99,7 @@ impl ImdsManagedIdentityCredential {
         let rsp = self.http_client.execute_request(&req).await?;
 
         let (rsp_status, _, rsp_body) = rsp.deconstruct();
-        let rsp_body = rsp_body.collect().await?;
+        let rsp_body = rsp_body.collect_bytes().await?;
 
         if !rsp_status.is_success() {
             match rsp_status {

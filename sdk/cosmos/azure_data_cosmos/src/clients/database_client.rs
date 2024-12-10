@@ -4,7 +4,7 @@
 use crate::{
     clients::ContainerClient,
     models::{
-        ContainerProperties, ContainerQueryResults, DatabaseProperties, Item, ThroughputProperties,
+        ContainerProperties, ContainerQueryResults, DatabaseProperties, ThroughputProperties,
     },
     options::ReadDatabaseOptions,
     pipeline::CosmosPipeline,
@@ -66,7 +66,7 @@ impl DatabaseClient {
     /// # let database_client: DatabaseClient = panic!("this is a non-running example");
     /// let response = database_client.read(None)
     ///     .await.unwrap()
-    ///     .deserialize_body()
+    ///     .into_body()
     ///     .await.unwrap();
     /// # }
     /// ```
@@ -78,7 +78,7 @@ impl DatabaseClient {
         let url = self.pipeline.url(&self.link);
         let mut req = Request::new(url, Method::Get);
         self.pipeline
-            .send(options.method_options.context, &mut req, self.link.clone())
+            .send_json(options.method_options.context, &mut req, self.link.clone())
             .await
     }
 
@@ -133,7 +133,7 @@ impl DatabaseClient {
         &self,
         properties: ContainerProperties,
         options: Option<CreateContainerOptions<'_>>,
-    ) -> azure_core::Result<Response<Item<ContainerProperties>>> {
+    ) -> azure_core::Result<Response<ContainerProperties>> {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.containers_link);
         let mut req = Request::new(url, Method::Post);
@@ -141,7 +141,7 @@ impl DatabaseClient {
         req.set_json(&properties)?;
 
         self.pipeline
-            .send(
+            .send_json(
                 options.method_options.context,
                 &mut req,
                 self.containers_link.clone(),
@@ -180,7 +180,7 @@ impl DatabaseClient {
         let options = options.unwrap_or_default();
 
         // We need to get the RID for the database.
-        let db = self.read(None).await?.deserialize_body().await?;
+        let db = self.read(None).await?.into_body().await?;
         let resource_id = db
             .system_properties
             .resource_id
@@ -204,7 +204,7 @@ impl DatabaseClient {
         let options = options.unwrap_or_default();
 
         // We need to get the RID for the database.
-        let db = self.read(None).await?.deserialize_body().await?;
+        let db = self.read(None).await?.into_body().await?;
         let resource_id = db
             .system_properties
             .resource_id

@@ -40,11 +40,11 @@ impl<T> PagerResult<T, String> {
 pub struct Pager<T> {
     #[pin]
     #[cfg(not(target_arch = "wasm32"))]
-    stream: Pin<Box<dyn Stream<Item = Result<Response<T>, Error>> + Send>>,
+    stream: Pin<Box<dyn Stream<Item = Result<Response<T>, Error>> + Send + 'static>>,
 
     #[pin]
     #[cfg(target_arch = "wasm32")]
-    stream: Pin<Box<dyn Stream<Item = Result<Response<T>, Error>>>>,
+    stream: Pin<Box<dyn Stream<Item = Result<Response<T>, Error>> + 'static>>,
 }
 
 impl<T> Pager<T> {
@@ -64,7 +64,9 @@ impl<T> Pager<T> {
     ///
     /// ```rust,no_run
     /// # use typespec_client_core::http::{Context, Pager, PagerResult, Pipeline, Request, Response, Method, headers::HeaderName};
+    /// # use serde::Deserialize;
     /// # let pipeline: Pipeline = panic!("Not a runnable example");
+    /// # #[derive(Deserialize)]
     /// # struct MyModel;
     /// let url = "https://example.com/my_paginated_api".parse().unwrap();
     /// let mut base_req = Request::new(url, Method::Get);
@@ -78,7 +80,8 @@ impl<T> Pager<T> {
     ///         }
     ///         let resp: Response<MyModel> = pipeline
     ///           .send(&Context::new(), &mut req)
-    ///           .await?;
+    ///           .await?
+    ///           .with_json_body();
     ///         Ok(PagerResult::from_response_header(resp, &HeaderName::from_static("x-next-continuation")))
     ///     }
     /// });
@@ -90,7 +93,7 @@ impl<T> Pager<T> {
         #[cfg(not(target_arch = "wasm32"))] Fut: Future<Output = Result<PagerResult<T, C>, typespec::Error>> + Send + 'static,
         #[cfg(target_arch = "wasm32")] C: 'static,
         #[cfg(target_arch = "wasm32")] F: Fn(Option<C>) -> Fut + 'static,
-        #[cfg(target_arch = "wasm32")] Fut: Future<Output = Result<PagerResult<T, C>, typespec::Error>> + 'static,
+        #[cfg(target_arch = "wasm32")] Fut: Future<Output = Result<PagerResult<'a, T, C>, typespec::Error>> + 'static,
     >(
         make_request: F,
     ) -> Self {
@@ -122,7 +125,7 @@ impl<T> Pager<T> {
     }
 }
 
-impl<T> futures::Stream for Pager<T> {
+impl<'a, T> futures::Stream for Pager<T> {
     type Item = Result<Response<T>, Error>;
 
     fn poll_next(
@@ -133,7 +136,7 @@ impl<T> futures::Stream for Pager<T> {
     }
 }
 
-impl<T> std::fmt::Debug for Pager<T> {
+impl<'a, T> std::fmt::Debug for Pager<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Pager").finish_non_exhaustive()
     }
@@ -152,7 +155,6 @@ mod tests {
 
     use futures::StreamExt;
     use serde::Deserialize;
-    use typespec_macros::Model;
 
     use crate::http::{
         headers::{HeaderName, HeaderValue},
@@ -161,8 +163,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn standard_pagination() {
-        #[derive(Model, Deserialize, Debug, PartialEq, Eq)]
-        #[typespec(crate = "crate")]
+        #[derive(Deserialize, Debug, PartialEq, Eq)]
         struct Page {
             pub page: usize,
         }
@@ -178,7 +179,8 @@ mod tests {
                         )])
                         .into(),
                         r#"{"page":1}"#,
-                    ),
+                    )
+                    .with_json_body(),
                     continuation: "1",
                 }),
                 Some("1") => Ok(PagerResult::Continue {
@@ -190,7 +192,8 @@ mod tests {
                         )])
                         .into(),
                         r#"{"page":2}"#,
-                    ),
+                    )
+                    .with_json_body(),
                     continuation: "2",
                 }),
                 Some("2") => Ok(PagerResult::Complete {
@@ -202,7 +205,8 @@ mod tests {
                         )])
                         .into(),
                         r#"{"page":3}"#,
-                    ),
+                    )
+                    .with_json_body(),
                 }),
                 _ => {
                     panic!("Unexpected continuation value")
@@ -216,7 +220,7 @@ mod tests {
                     .headers()
                     .get_optional_string(&HeaderName::from_static("x-test-header"))
                     .unwrap();
-                let body = r.deserialize_body().await.unwrap();
+                let body = r.into_body().await.unwrap();
                 (header, body)
             })
             .collect()
@@ -233,8 +237,7 @@ mod tests {
 
     #[tokio::test]
     pub async fn error_stops_pagination() {
-        #[derive(Model, Deserialize, Debug, PartialEq, Eq)]
-        #[typespec(crate = "crate")]
+        #[derive(Deserialize, Debug, PartialEq, Eq)]
         struct Page {
             pub page: usize,
         }
@@ -250,7 +253,8 @@ mod tests {
                         )])
                         .into(),
                         r#"{"page":1}"#,
-                    ),
+                    )
+                    .with_json_body(),
                     continuation: "1",
                 }),
                 Some("1") => Err(typespec::Error::message(
@@ -269,7 +273,7 @@ mod tests {
                     .headers()
                     .get_optional_string(&HeaderName::from_static("x-test-header"))
                     .unwrap();
-                let body = r.deserialize_body().await?;
+                let body = r.into_body().await?;
                 Ok((header, body))
             })
             .collect()

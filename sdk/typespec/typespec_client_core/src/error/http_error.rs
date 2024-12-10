@@ -24,7 +24,7 @@ impl HttpError {
     /// Create an error from an HTTP response.
     ///
     /// This does not check whether the response was successful and should only be used with unsuccessful responses.
-    pub async fn new(response: Response<()>) -> Self {
+    pub async fn new<T>(response: Response<T>) -> Self {
         let status = response.status();
         let headers: HashMap<String, String> = response
             .headers()
@@ -33,7 +33,7 @@ impl HttpError {
             .collect();
         let body = response
             .into_body()
-            .collect()
+            .collect_bytes()
             .await
             .unwrap_or_else(|_| Bytes::from_static(b"(error reading body)"));
         let details = ErrorDetails::new(&headers, &body);
@@ -278,7 +278,7 @@ mod tests {
             code: Option<String>,
         }
 
-        let response: Response<()> = Response::from_bytes(
+        let response = Response::from_bytes(
             StatusCode::BadRequest,
             Headers::new(),
             Bytes::from_static(br#"{"error":{"code":"InvalidRequest","message":"The request object is not recognized.","innererror":{"code":"InvalidKey","key":"foo"}}}"#),
