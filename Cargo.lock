@@ -393,6 +393,7 @@ dependencies = [
  "async-trait",
  "azure_core",
  "azure_core_test",
+ "azure_data_cosmos_driver",
  "azure_identity",
  "clap",
  "futures",
@@ -405,6 +406,14 @@ dependencies = [
  "tracing-subscriber",
  "typespec_client_core",
  "url",
+]
+
+[[package]]
+name = "azure_data_cosmos_driver"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

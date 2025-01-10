@@ -107,6 +107,11 @@ impl ReadCommand {
                         crate::utils::print_throughput(throughput);
                     }
                 }
+
+                let resp = container_client.partition_key_ranges(None).await?;
+                let ranges = resp.into_body().await?;
+                println!("Partition Key Ranges");
+                println!("  {:#?}", ranges);
                 Ok(())
             }
         }

@@ -14,6 +14,7 @@ keywords = ["sdk", "azure", "rest", "cloud", "cosmos", "database"]
 categories = ["api-bindings"]
 
 [dependencies]
+azure_data_cosmos_driver = { path = "../azure_data_cosmos_driver", optional = true }
 async-trait.workspace = true
 azure_core.workspace = true
 futures.workspace = true
@@ -44,6 +45,8 @@ default = ["hmac_rust"]
 hmac_rust = ["azure_core/hmac_rust"]
 hmac_openssl = ["azure_core/hmac_openssl"]
 key_auth = [] # Enables support for key-based authentication (Primary Keys and Resource Tokens)
+
+unstable_driver = ["dep:azure_data_cosmos_driver"] # Enables the UNSTABLE driver component, which provides query aggregation and other services to enhance the capabilities of the Rust SDK.
 
 [package.metadata.docs.rs]
 features = ["key_auth"]

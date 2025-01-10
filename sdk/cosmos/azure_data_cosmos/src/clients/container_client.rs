@@ -3,7 +3,10 @@
 
 use crate::{
     constants,
-    models::{ContainerProperties, Item, PatchDocument, QueryResults, ThroughputProperties},
+    models::{
+        ContainerProperties, Item, PartitionKeyRanges, PatchDocument, QueryResults,
+        ThroughputProperties,
+    },
     options::{QueryOptions, ReadContainerOptions},
     pipeline::CosmosPipeline,
     resource_context::{ResourceLink, ResourceType},
@@ -564,5 +567,45 @@ impl ContainerClient {
             base_request,
             self.items_link.clone(),
         )
+    }
+
+    // REVIEW: This is only public for testing purposes. It should be private.
+    #[cfg(feature = "unstable_driver")]
+    pub async fn query_plan(
+        &self,
+        query: Query,
+        options: Option<QueryOptions<'_>>,
+    ) -> azure_core::Result<Response<azure_data_cosmos_driver::QueryPlan>> {
+        let options = options.unwrap_or_default();
+        let url = self.pipeline.url(&self.items_link);
+        let mut req = Request::new(url, Method::Post);
+        req.insert_header(constants::IS_QUERY_PLAN, "True");
+
+        let supported_features = azure_data_cosmos_driver::supported_query_features_string();
+
+        req.insert_header(constants::SUPPORTED_QUERY_FEATURES, supported_features);
+        req.insert_header(constants::QUERY, "True");
+        req.set_json(&query)?;
+
+        self.pipeline
+            .send(
+                options.method_options.context,
+                &mut req,
+                self.items_link.clone(),
+            )
+            .await
+    }
+
+    pub async fn partition_key_ranges(
+        &self,
+        options: Option<QueryOptions<'_>>,
+    ) -> azure_core::Result<Response<PartitionKeyRanges>> {
+        let options = options.unwrap_or_default();
+        let link = self.link.feed(ResourceType::PartitionKeyRanges);
+        let url = self.pipeline.url(&link);
+        let mut req = Request::new(url, Method::Get);
+        self.pipeline
+            .send(options.method_options.context, &mut req, link)
+            .await
     }
 }

@@ -9,6 +9,9 @@
 use azure_core::{headers::HeaderName, request_options::ContentType};
 
 pub const QUERY: HeaderName = HeaderName::from_static("x-ms-documentdb-query");
+pub const IS_QUERY_PLAN: HeaderName = HeaderName::from_static("x-ms-cosmos-is-query-plan-request");
+pub const SUPPORTED_QUERY_FEATURES: HeaderName =
+    HeaderName::from_static("x-ms-cosmos-supported-query-features");
 pub const PARTITION_KEY: HeaderName = HeaderName::from_static("x-ms-documentdb-partitionkey");
 pub const CONTINUATION: HeaderName = HeaderName::from_static("x-ms-continuation");
 pub const INDEX_METRICS: HeaderName = HeaderName::from_static("x-ms-cosmos-index-utilization");

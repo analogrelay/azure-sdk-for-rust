@@ -13,6 +13,17 @@ pub struct QueryCommand {
 
 #[derive(Clone, Subcommand)]
 enum Subcommands {
+    #[cfg(feature = "unstable_driver")]
+    Plan {
+        /// The database to query.
+        database: String,
+
+        /// The container to query.
+        container: String,
+
+        /// The query to plan.
+        query: String,
+    },
     Items {
         /// The database to query.
         database: String,
@@ -43,6 +54,28 @@ enum Subcommands {
 impl QueryCommand {
     pub async fn run(self, client: CosmosClient) -> Result<(), Box<dyn Error>> {
         match self.subcommand {
+            #[cfg(feature = "unstable_driver")]
+            Subcommands::Plan {
+                database,
+                container,
+                query,
+            } => {
+                let db_client = client.database_client(&database);
+                let container_client = db_client.container_client(&container);
+
+                let plan = container_client.query_plan(query.into(), None).await?;
+
+                // Dump the body as string for now
+                let plan: serde_json::Value = plan.into_json_body().await?;
+                println!("Query Plan");
+                println!("  Plan: {:#?}", plan);
+                println!("Parsed");
+                println!(
+                    "  Plan: {:#?}",
+                    serde_json::from_value::<azure_data_cosmos_driver::QueryPlan>(plan)?
+                );
+                Ok(())
+            }
             Subcommands::Items {
                 database,
                 container,

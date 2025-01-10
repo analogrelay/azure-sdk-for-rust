@@ -1,0 +1,16 @@
+[package]
+name = "azure_data_cosmos_driver"
+description = "An INTERNAL driver component that provides several services to Cosmos SDKs in various languages. Direct use of this package is not supported."
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+serde.workspace = true
+
+[lints]
+workspace = true
