@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use azure_data_cosmos::{CosmosClient, PartitionKey};
+use azure_data_cosmos::{CosmosClient, PartitionKey, QueryPartitionStrategy};
 use clap::{Args, Subcommand};
 use futures::TryStreamExt;
 
@@ -23,9 +23,9 @@ enum Subcommands {
         /// The query to execute.
         query: String,
 
-        /// The partition key to use when querying the container. Currently this only supports a single string partition key.
+        /// The partition key to use when querying the container. This can be ommitted to attempt a cross-partition query using the Gateway.
         #[arg(long, short)]
-        partition_key: String,
+        partition_key: Option<String>,
     },
     Databases {
         /// The query to execute.
@@ -52,10 +52,12 @@ impl QueryCommand {
                 let db_client = client.database_client(&database);
                 let container_client = db_client.container_client(&container);
 
-                let pk = PartitionKey::from(&partition_key);
+                let strategy = match partition_key {
+                    Some(pk) => QueryPartitionStrategy::SinglePartition(PartitionKey::from(pk)),
+                    None => QueryPartitionStrategy::CrossPartition,
+                };
                 let mut items =
-                    container_client.query_items::<serde_json::Value>(&query, pk, None)?;
-
+                    container_client.query_items::<serde_json::Value>(&query, strategy, None)?;
                 while let Some(page) = items.try_next().await? {
                     println!("Results Page");
                     println!("  Items:");

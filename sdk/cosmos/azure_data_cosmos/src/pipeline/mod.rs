@@ -7,7 +7,11 @@ mod signature_target;
 use std::sync::Arc;
 
 pub use authorization_policy::AuthorizationPolicy;
-use azure_core::http::{request::Request, response::Response, ClientOptions, Context, Method};
+use azure_core::http::{
+    request::{options::ContentType, Request},
+    response::Response,
+    ClientOptions, Context, Method,
+};
 use futures::TryStreamExt;
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -168,6 +172,7 @@ impl CosmosPipeline {
         let offer_link =
             ResourceLink::root(ResourceType::Offers).item(&current_throughput.offer_id);
         let mut req = Request::new(self.url(&offer_link), Method::Put);
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&current_throughput)?;
 
         self.send(context, &mut req, offer_link).await

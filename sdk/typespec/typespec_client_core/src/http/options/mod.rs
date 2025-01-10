@@ -35,3 +35,12 @@ pub struct ClientMethodOptions<'a> {
     /// The [`Context`] for this method call.
     pub context: Context<'a>,
 }
+
+impl ClientMethodOptions<'_> {
+    /// Converts this [`ClientMethodOptions`] into an owned version, by cloning any borrowed data as-needed.
+    pub fn into_owned(self) -> ClientMethodOptions<'static> {
+        ClientMethodOptions {
+            context: self.context.into_owned(),
+        }
+    }
+}

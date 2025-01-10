@@ -29,6 +29,7 @@ azure_core_test.workspace = true
 clap.workspace = true
 reqwest.workspace = true
 time.workspace = true
+typespec.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 
@@ -38,6 +39,7 @@ workspace = true
 [features]
 default = ["hmac_rust"]
 key_auth = [] # Enables support for key-based authentication (Primary Keys and Resource Tokens)
+unstable_query_engine = ["serde_json/raw_value"] # Enables support for the UNSTABLE external query engine, to support cross-partition queries.
 hmac_rust = ["azure_core/hmac_rust"]
 hmac_openssl = ["azure_core/hmac_openssl"]
 

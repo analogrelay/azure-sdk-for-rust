@@ -11,7 +11,14 @@ use azure_core::http::{
     request::options::ContentType,
 };
 
-pub const QUERY: HeaderName = HeaderName::from_static("x-ms-documentdb-query");
+pub const QUERY: HeaderName = HeaderName::from_static("x-ms-documentdb-isquery");
+pub const QUERY_ENABLE_CROSS_PARTITION: HeaderName =
+    HeaderName::from_static("x-ms-documentdb-query-enablecrosspartition");
+pub const PARTITION_KEY_RANGE_ID: HeaderName =
+    HeaderName::from_static("x-ms-documentdb-partitionkeyrangeid");
+pub const IS_QUERY_PLAN: HeaderName = HeaderName::from_static("x-ms-cosmos-is-query-plan-request");
+pub const SUPPORTED_QUERY_FEATURES: HeaderName =
+    HeaderName::from_static("x-ms-cosmos-supported-query-features");
 pub const PARTITION_KEY: HeaderName = HeaderName::from_static("x-ms-documentdb-partitionkey");
 pub const CONTINUATION: HeaderName = HeaderName::from_static("x-ms-continuation");
 pub const INDEX_METRICS: HeaderName = HeaderName::from_static("x-ms-cosmos-index-utilization");
@@ -22,5 +29,6 @@ pub const OFFER_AUTOPILOT_SETTINGS: HeaderName =
     HeaderName::from_static("x-ms-cosmos-offer-autopilot-settings");
 
 pub const QUERY_CONTENT_TYPE: ContentType = ContentType::from_static("application/query+json");
+pub const PATCH_CONTENT_TYPE: ContentType = ContentType::from_static("application/json_patch+json");
 
 pub(crate) const PREFER_MINIMAL: HeaderValue = HeaderValue::from_static("return=minimal");

@@ -351,6 +351,12 @@ impl From<&String> for HeaderValue {
     }
 }
 
+impl From<Cow<'static, str>> for HeaderValue {
+    fn from(s: Cow<'static, str>) -> Self {
+        HeaderValue(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::http::Url;

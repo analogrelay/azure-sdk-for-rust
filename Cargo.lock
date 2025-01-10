@@ -263,6 +263,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "typespec",
  "typespec_client_core",
  "url",
 ]

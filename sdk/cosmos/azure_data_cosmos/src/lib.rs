@@ -15,10 +15,13 @@ pub mod constants;
 mod feed;
 mod options;
 mod partition_key;
-pub(crate) mod pipeline;
+mod pipeline;
 mod query;
 pub(crate) mod resource_context;
 pub(crate) mod utils;
+
+#[cfg(feature = "unstable_query_engine")]
+pub mod query_engine;
 
 pub mod models;
 
@@ -27,6 +30,6 @@ pub use clients::CosmosClient;
 
 pub use options::*;
 pub use partition_key::*;
-pub use query::*;
+pub use query::Query;
 
 pub use feed::{FeedPage, FeedPager};

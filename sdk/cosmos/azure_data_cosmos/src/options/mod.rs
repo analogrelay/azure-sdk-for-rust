@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+#[cfg(feature = "unstable_query_engine")]
+use std::sync::Arc;
+
 use azure_core::http::{ClientMethodOptions, ClientOptions};
 
 use crate::models::ThroughputProperties;
@@ -70,6 +73,22 @@ pub struct QueryDatabasesOptions<'a> {
 #[derive(Clone, Default)]
 pub struct QueryOptions<'a> {
     pub method_options: ClientMethodOptions<'a>,
+
+    /// Specifies an optional query engine to use for cross-partition queries.
+    /// This is an UNSTABLE feature and subject to change.
+    #[cfg(feature = "unstable_query_engine")]
+    pub query_engine: Option<Arc<dyn crate::query_engine::QueryEngine>>,
+}
+
+impl<'a> QueryOptions<'a> {
+    /// Converts this [`QueryOptions`] into an owned version, by cloning any borrowed data as-needed.
+    pub fn into_owned(self) -> QueryOptions<'static> {
+        QueryOptions {
+            method_options: self.method_options.into_owned(),
+            #[cfg(feature = "unstable_query_engine")]
+            query_engine: self.query_engine,
+        }
+    }
 }
 
 /// Options to be passed to [`ContainerClient::read()`](crate::clients::ContainerClient::read()).

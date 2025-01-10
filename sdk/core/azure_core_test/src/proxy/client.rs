@@ -184,6 +184,7 @@ impl Client {
         request.insert_header(CONTENT_TYPE, "application/json");
         request.insert_headers(&sanitizer)?;
         request.add_optional_header(&options.recording_id);
+        request.set_json(&sanitizer)?;
         self.pipeline.send::<()>(&ctx, &mut request).await?;
         Ok(())
     }

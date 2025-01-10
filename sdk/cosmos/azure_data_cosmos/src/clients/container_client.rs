@@ -11,7 +11,7 @@ use crate::{
     ReplaceContainerOptions, ThroughputOptions,
 };
 
-use azure_core::http::{headers, request::Request, response::Response, Method};
+use azure_core::http::{headers, request::options::ContentType, Method, Request, Response};
 use serde::{de::DeserializeOwned, Serialize};
 
 /// A client for working with a specific container in a Cosmos DB account.
@@ -109,6 +109,7 @@ impl ContainerClient {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.link);
         let mut req = Request::new(url, Method::Put);
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&properties)?;
         self.pipeline
             .send(options.method_options.context, &mut req, self.link.clone())
@@ -260,6 +261,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&item)?;
         self.pipeline
             .send(
@@ -351,6 +353,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&item)?;
         self.pipeline
             .send(options.method_options.context, &mut req, link)
@@ -440,6 +443,7 @@ impl ContainerClient {
         }
         req.insert_header(constants::IS_UPSERT, "true");
         req.insert_headers(&partition_key.into())?;
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&item)?;
         self.pipeline
             .send(
@@ -606,6 +610,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.add_mandatory_header(&ContentType::APPLICATION_JSON);
         req.set_json(&patch)?;
 
         self.pipeline
@@ -672,11 +677,34 @@ impl ContainerClient {
         partition_key: impl Into<QueryPartitionStrategy>,
         options: Option<QueryOptions<'_>>,
     ) -> azure_core::Result<FeedPager<T>> {
-        let options = options.unwrap_or_default();
+        let options = options.unwrap_or_default().into_owned();
         let url = self.pipeline.url(&self.items_link);
         let mut base_request = Request::new(url, Method::Post);
-        let QueryPartitionStrategy::SinglePartition(partition_key) = partition_key.into();
-        base_request.insert_headers(&partition_key)?;
+
+        match partition_key.into() {
+            QueryPartitionStrategy::SinglePartition(partition_key) => {
+                base_request.insert_headers(&partition_key)?;
+            }
+            QueryPartitionStrategy::CrossPartition => {
+                #[cfg(feature = "unstable_query_engine")]
+                if let Some(query_engine) = options.query_engine {
+                    // If we have a query engine, don't use the normal 'send_query_request' method.
+                    // Instead, create a cross partition query executor and use that.
+                    let executor = crate::query::CrossPartitionQueryExecutor::new(
+                        self.pipeline.clone(),
+                        self.link.clone(),
+                        query.into(),
+                        options.method_options,
+                        query_engine,
+                    );
+                    return Ok(executor.execute_query());
+                }
+
+                // Without a query engine, we can only use the Gateway to execute cross-partition queries.
+                // That's pretty limited, but it's better than nothing.
+                base_request.insert_header(constants::QUERY_ENABLE_CROSS_PARTITION, "true");
+            }
+        };
 
         self.pipeline.send_query_request(
             options.method_options.context,

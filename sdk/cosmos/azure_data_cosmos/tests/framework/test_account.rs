@@ -4,8 +4,8 @@
 
 use std::{borrow::Cow, sync::Arc};
 
-use azure_core::{credentials::Secret, http::TransportOptions, test::TestMode};
-use azure_core_test::TestContext;
+use azure_core::{credentials::Secret, http::TransportOptions, test::TestMode, Uuid};
+use azure_core_test::{GeneralRegexSanitizer, TestContext};
 use azure_data_cosmos::{CosmosClientOptions, Query};
 use reqwest::ClientBuilder;
 
@@ -30,6 +30,7 @@ pub struct TestAccountOptions {
 const CONNECTION_STRING_ENV_VAR: &str = "AZURE_COSMOS_CONNECTION_STRING";
 const ALLOW_INVALID_CERTS_ENV_VAR: &str = "AZURE_COSMOS_ALLOW_INVALID_CERT";
 const EMULATOR_CONNECTION_STRING: &str = "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;";
+const STABLE_ID: &str = "STABLEID";
 
 impl TestAccount {
     /// Creates a new [`TestAccount`] from local environment variables.
@@ -99,12 +100,29 @@ impl TestAccount {
             return Err("invalid connection string, missing 'AccountKey'".into());
         };
 
-        // We need the context_id to be constant, so that record/replay work.
-        let context_id = context.name().to_string();
-
         // Disable some sanitizers that affect our tests
-        context
-            .recording()
+        let recording = context.recording();
+
+        // We append a unique ID to the context name to ensure that we don't have collisions between tests.
+        // We'll need to make sure the recordings ignore this unique ID suffix.
+        // Our UIDs have a very specific prefix/suffix ('xuid_' and '_diux' which is just the inverse of the prefix) so we can use regex to remove them.
+        let unique_id = match context.recording().test_mode() {
+            TestMode::Playback => Cow::Borrowed(STABLE_ID), // In playback mode, we use a stable ID.
+            _ => {
+                // In record or live mode, we use a unique ID, but the sanitizer will replace it with a stable ID when saving the recording.
+                recording
+                    .add_sanitizer(GeneralRegexSanitizer {
+                        regex: Some(r"xuid_([^_]+)_diux".to_string()), // Replace any instance of a unique ID with "STABLEID"
+                        value: Some(STABLE_ID.to_string()),
+                        ..Default::default()
+                    })
+                    .await?;
+                Cow::Owned(format!("xuid_{}_diux", Uuid::new_v4().simple()))
+            }
+        };
+        let context_id = format!("{}_{}", context.name(), unique_id);
+
+        recording
             .remove_sanitizers(&[
                 "AZSDK3430", // Sanitizes "id" properties. The tests need the id to be preserved.
             ])

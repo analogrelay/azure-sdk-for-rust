@@ -3,6 +3,12 @@
 
 use serde::Serialize;
 
+#[cfg(feature = "unstable_query_engine")]
+mod executor;
+
+#[cfg(feature = "unstable_query_engine")]
+pub use executor::CrossPartitionQueryExecutor;
+
 /// Represents a Cosmos DB Query, with optional parameters.
 ///
 /// # Examples
@@ -77,6 +83,11 @@ impl Query {
         self.parameters.push(parameter);
 
         Ok(self)
+    }
+
+    /// Replaces the query text with new content without changing the parameters.
+    pub(crate) fn replace_text(&mut self, query: String) {
+        self.query = query;
     }
 }
 

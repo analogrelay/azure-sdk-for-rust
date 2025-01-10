@@ -15,7 +15,12 @@ use crate::constants;
 /// This allows you to use any of the syntaxes specified in the [`PartitionKey`] docs any place an [`Into<QueryPartitionStrategy>`] is expected.
 #[derive(Debug, Clone)]
 pub enum QueryPartitionStrategy {
+    /// Performs a single-partition query.
     SinglePartition(PartitionKey),
+
+    /// Performs a cross-partition query. Only a very limited set of queries are supported in this mode.
+    /// See <https://learn.microsoft.com/rest/api/cosmos-db/querying-cosmosdb-resources-using-the-rest-api#queries-that-cannot-be-served-by-gateway> for more information.
+    CrossPartition,
 }
 
 impl<T: Into<PartitionKey>> From<T> for QueryPartitionStrategy {
@@ -304,7 +309,12 @@ mod tests {
     /// Validates that a given value is `impl Into<QueryPartitionStrategy>` and works as-expected.
     fn key_to_single_partition_strategy_string(v: impl Into<QueryPartitionStrategy>) -> String {
         let strategy = v.into();
-        let QueryPartitionStrategy::SinglePartition(key) = strategy;
+        let QueryPartitionStrategy::SinglePartition(key) = strategy else {
+            panic!(
+                "Expected QueryPartitionStrategy::SinglePartition, got {:?}",
+                strategy
+            );
+        };
         key_to_string(key)
     }
 
