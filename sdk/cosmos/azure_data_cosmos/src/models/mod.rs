@@ -10,7 +10,6 @@ mod container_properties;
 mod indexing_policy;
 mod item;
 mod partition_key_definition;
-mod partition_key_ranges;
 mod patch_operations;
 mod throughput_properties;
 
@@ -18,7 +17,6 @@ pub use container_properties::*;
 pub use indexing_policy::*;
 pub use item::*;
 pub use partition_key_definition::*;
-pub use partition_key_ranges::*;
 pub use patch_operations::*;
 pub use throughput_properties::*;
 
@@ -116,6 +114,12 @@ pub struct DatabaseProperties {
     /// A [`SystemProperties`] object containing common system properties for the database.
     #[serde(flatten)]
     pub system_properties: SystemProperties,
+}
+
+#[derive(Model, Deserialize, Debug)]
+pub struct PartitionKeyRanges {
+    #[serde(rename = "PartitionKeyRanges")]
+    pub ranges: Vec<PartitionKeyRange>,
 }
 
 #[cfg(test)]

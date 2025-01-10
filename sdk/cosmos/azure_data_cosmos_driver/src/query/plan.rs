@@ -19,7 +19,7 @@ pub struct QueryInfo {
     pub rewritten_query: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone, Copy)]
 pub enum SortOrder {
     Ascending,
     Descending,
