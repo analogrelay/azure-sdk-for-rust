@@ -3,10 +3,7 @@
 
 use crate::{
     constants,
-    models::{
-        ContainerProperties, Item, PartitionKeyRanges, PatchDocument, QueryResults,
-        ThroughputProperties,
-    },
+    models::{ContainerProperties, Item, PatchDocument, QueryPage, ThroughputProperties},
     options::{QueryOptions, ReadContainerOptions},
     pipeline::CosmosPipeline,
     resource_context::{ResourceLink, ResourceType},
@@ -554,12 +551,13 @@ impl ContainerClient {
         query: impl Into<Query>,
         partition_key: impl Into<QueryPartitionStrategy>,
         options: Option<QueryOptions<'_>>,
-    ) -> azure_core::Result<Pager<QueryResults<T>>> {
+    ) -> azure_core::Result<Pager<QueryPage<T>>> {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.items_link);
         let mut base_request = Request::new(url, Method::Post);
-        let QueryPartitionStrategy::SinglePartition(partition_key) = partition_key.into();
-        base_request.insert_headers(&partition_key)?;
+        base_request.insert_headers(&partition_key.into())?;
+
+        // TODO: Accept cross partition queries in this function instead of query_cross_partition.
 
         self.pipeline.send_query_request(
             options.method_options.context,
@@ -569,43 +567,56 @@ impl ContainerClient {
         )
     }
 
+    // REVIEW: TEMPORARY testing API. This should be integrated into query_items, but that requires a little more work to handle creating a Pager with synthetic Response<T> values.
+    // Or, we change Pager<T> to emit Ts instead of Response<T>s.
+    #[cfg(feature = "unstable_driver")]
+    pub fn query_cross_partition<'a, T: DeserializeOwned + Send + 'a>(
+        &self,
+        query: impl Into<Query>,
+        options: Option<QueryOptions<'a>>,
+    ) -> azure_core::Result<impl futures::Stream<Item = azure_core::Result<QueryPage<T>>> + 'a>
+    {
+        Ok(crate::query_engine::QueryEngine::new(
+            query.into(),
+            self.pipeline.clone(),
+            self.link.clone(),
+            self.items_link.clone(),
+            options,
+        )
+        .into_stream())
+    }
+
     // REVIEW: This is only public for testing purposes. It should be private.
     #[cfg(feature = "unstable_driver")]
     pub async fn query_plan(
         &self,
         query: Query,
         options: Option<QueryOptions<'_>>,
-    ) -> azure_core::Result<Response<azure_data_cosmos_driver::QueryPlan>> {
-        let options = options.unwrap_or_default();
-        let url = self.pipeline.url(&self.items_link);
-        let mut req = Request::new(url, Method::Post);
-        req.insert_header(constants::IS_QUERY_PLAN, "True");
-
-        let supported_features = azure_data_cosmos_driver::supported_query_features_string();
-
-        req.insert_header(constants::SUPPORTED_QUERY_FEATURES, supported_features);
-        req.insert_header(constants::QUERY, "True");
-        req.set_json(&query)?;
-
-        self.pipeline
-            .send(
-                options.method_options.context,
-                &mut req,
-                self.items_link.clone(),
-            )
-            .await
+    ) -> azure_core::Result<Response<azure_data_cosmos_driver::query::QueryPlan>> {
+        crate::query_engine::QueryEngine::<()>::new(
+            query,
+            self.pipeline.clone(),
+            self.link.clone(),
+            self.items_link.clone(),
+            options,
+        )
+        .query_plan()
+        .await
     }
 
+    // REVIEW: This is only public for testing purposes. It should be private.
+    #[cfg(feature = "unstable_driver")]
     pub async fn partition_key_ranges(
         &self,
-        options: Option<QueryOptions<'_>>,
-    ) -> azure_core::Result<Response<PartitionKeyRanges>> {
-        let options = options.unwrap_or_default();
-        let link = self.link.feed(ResourceType::PartitionKeyRanges);
-        let url = self.pipeline.url(&link);
-        let mut req = Request::new(url, Method::Get);
-        self.pipeline
-            .send(options.method_options.context, &mut req, link)
-            .await
+    ) -> azure_core::Result<Response<crate::models::PartitionKeyRanges>> {
+        crate::query_engine::QueryEngine::<()>::new(
+            Query::from("SELECT * FROM c"), // Doesn't matter, we just need a query.
+            self.pipeline.clone(),
+            self.link.clone(),
+            self.items_link.clone(),
+            None,
+        )
+        .partition_key_ranges()
+        .await
     }
 }

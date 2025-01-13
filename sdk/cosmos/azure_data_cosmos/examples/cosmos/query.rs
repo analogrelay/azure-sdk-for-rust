@@ -72,7 +72,7 @@ impl QueryCommand {
                 println!("Parsed");
                 println!(
                     "  Plan: {:#?}",
-                    serde_json::from_value::<azure_data_cosmos_driver::QueryPlan>(plan)?
+                    serde_json::from_value::<azure_data_cosmos_driver::query::QueryPlan>(plan)?
                 );
                 Ok(())
             }

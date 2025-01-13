@@ -42,12 +42,12 @@ where
 /// A page of query results from [`ContainerClient::query_items`](crate::clients::ContainerClient::query_items()) where each item is of type `T`.
 #[non_exhaustive]
 #[derive(Clone, Default, Debug, Deserialize)]
-pub struct QueryResults<T> {
+pub struct QueryPage<T> {
     #[serde(alias = "Documents")]
     pub items: Vec<T>,
 }
 
-impl<T: DeserializeOwned> azure_core::Model for QueryResults<T> {
+impl<T: DeserializeOwned> azure_core::Model for QueryPage<T> {
     async fn from_response_body(
         body: azure_core::ResponseBody,
     ) -> typespec_client_core::Result<Self> {
@@ -116,10 +116,11 @@ pub struct DatabaseProperties {
     pub system_properties: SystemProperties,
 }
 
+#[cfg(feature = "unstable_driver")]
 #[derive(Model, Deserialize, Debug)]
 pub struct PartitionKeyRanges {
     #[serde(rename = "PartitionKeyRanges")]
-    pub ranges: Vec<PartitionKeyRange>,
+    pub ranges: Vec<azure_data_cosmos_driver::PartitionKeyRange>,
 }
 
 #[cfg(test)]

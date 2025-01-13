@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-use azure_data_cosmos::CosmosClient;
+use azure_data_cosmos::{CosmosClient, CosmosClientOptions};
 use azure_identity::DefaultAzureCredential;
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use std::error::Error;
+use std::{error::Error, sync::Arc};
 
 mod create;
 mod delete;
@@ -37,6 +37,11 @@ struct SharedArgs {
     /// An authentication key to use when connecting to the Cosmos DB account. If omitted, the connection will use Entra ID.
     #[clap(long)]
     key: Option<String>,
+
+    /// Whether to allow insecure connections to the Cosmos DB account (i.e. untrusted SSL certificates). This is useful for testing against local Cosmos DB instances.
+    /// This is not recommended for production use.
+    #[clap(long)]
+    insecure: bool,
 }
 
 #[derive(Clone, Subcommand)]
@@ -79,13 +84,25 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn create_client(args: &SharedArgs) -> Result<CosmosClient, Box<dyn Error>> {
+    let options = if args.insecure {
+        let client = reqwest::ClientBuilder::new()
+            .danger_accept_invalid_certs(true)
+            .pool_max_idle_per_host(0)
+            .build()?;
+        let mut o = CosmosClientOptions::default();
+        o.client_options.transport = Some(azure_core::TransportOptions::new(Arc::new(client)));
+        Some(o)
+    } else {
+        None
+    };
+
     if let Some(key) = args.key.as_ref() {
         #[cfg(feature = "key_auth")]
         {
             Ok(CosmosClient::with_key(
                 &args.endpoint,
                 key.clone().into(),
-                None,
+                options,
             )?)
         }
         #[cfg(not(feature = "key_auth"))]
@@ -95,6 +112,6 @@ fn create_client(args: &SharedArgs) -> Result<CosmosClient, Box<dyn Error>> {
         }
     } else {
         let cred = DefaultAzureCredential::new().unwrap();
-        Ok(CosmosClient::new(&args.endpoint, cred, None)?)
+        Ok(CosmosClient::new(&args.endpoint, cred, options)?)
     }
 }

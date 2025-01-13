@@ -1,6 +1,9 @@
+mod error;
 mod pipeline;
 mod plan;
 
+pub use error::Error;
+pub use pipeline::*;
 pub use plan::*;
 
 /// Represents a request for additional data for the pipeline
@@ -10,20 +13,22 @@ pub use plan::*;
 ///
 /// The Rust driver intentionally avoids performing I/O or network operations in the query pipeline.
 /// Instead, it is the responsibility of the caller to perform these operations and pass the results back into the pipeline before reading the next items.
-pub struct PartitionContinuation<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionContinuation {
     /// The partition key range ID for the partition that this request is for.
-    pub partition_key_range_id: &'a str,
+    pub partition_key_range_id: String,
 
     /// The continuation token to be used for the next request, if any.
-    pub continuation: Option<&'a str>,
+    pub continuation: Option<String>,
 }
 
-pub struct PipelineDataRequest<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PipelineDataRequest {
     /// The query to be executed
-    pub query: &'a str,
+    pub query: String,
 
     /// The individual partitions to query, and the continuation tokens for each partition.
-    pub partitions: Vec<PartitionContinuation<'a>>,
+    pub partitions: Vec<PartitionContinuation>,
 }
 
 pub enum QueryFeature {

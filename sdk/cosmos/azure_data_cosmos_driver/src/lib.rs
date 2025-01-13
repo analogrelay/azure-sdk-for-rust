@@ -10,3 +10,18 @@ pub struct PartitionKeyRange {
     pub min_inclusive: String,
     pub parents: Vec<String>,
 }
+
+impl PartitionKeyRange {
+    pub fn new(
+        id: impl Into<String>,
+        min_inclusive: impl Into<String>,
+        max_exclusive: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            min_inclusive: min_inclusive.into(),
+            max_exclusive: max_exclusive.into(),
+            parents: Vec::new(),
+        }
+    }
+}

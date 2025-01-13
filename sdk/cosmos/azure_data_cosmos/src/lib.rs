@@ -14,10 +14,13 @@ pub mod clients;
 pub mod constants;
 mod options;
 mod partition_key;
-pub(crate) mod pipeline;
+mod pipeline;
 mod query;
 pub(crate) mod resource_context;
 pub(crate) mod utils;
+
+#[cfg(feature = "unstable_driver")]
+pub(crate) mod query_engine;
 
 pub mod models;
 
