@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use azure_data_cosmos::{CosmosClient, PartitionKey};
+use azure_data_cosmos::{CosmosClient, PartitionKey, QueryPartitionStrategy};
 use clap::{Args, Subcommand};
 use futures::StreamExt;
 
@@ -85,48 +85,25 @@ impl QueryCommand {
                 let db_client = client.database_client(&database);
                 let container_client = db_client.container_client(&container);
 
-                match partition_key {
-                    #[cfg(feature = "unstable_driver")]
-                    None => {
-                        let mut items = Box::pin(
-                            container_client
-                                .query_cross_partition::<serde_json::Value>(query, None)?,
-                        );
-                        while let Some(page) = items.next().await {
-                            let page = page?;
-                            println!("Results Page");
-                            println!("  Items:");
-                            for item in page.items {
-                                println!("    * {:#?}", item);
-                            }
-                        }
-                    }
-                    #[cfg(not(feature = "unstable_driver"))]
-                    None => {
-                        return Err("Partition key is required for this query.".into());
-                    }
-                    Some(ref partition_key) if partition_key.is_empty() => {
-                        let pk = PartitionKey::from(partition_key);
-                        let mut items =
-                            container_client.query_items::<serde_json::Value>(&query, pk, None)?;
-                        while let Some(page) = items.next().await {
-                            let page = page?.into_body().await?;
-                            println!("Results Page");
-                            println!("  Items:");
-                            for item in page.items {
-                                println!("    * {:#?}", item);
-                            }
-                        }
-                    }
-                    _ => {}
+                let strategy = match partition_key {
+                    Some(pk) => QueryPartitionStrategy::SinglePartition(PartitionKey::from(pk)),
+                    None => QueryPartitionStrategy::CrossPartition,
                 };
+                let mut items =
+                    container_client.query_items::<serde_json::Value>(&query, strategy, None)?;
+                while let Some(page) = items.next().await.transpose()? {
+                    println!("Results Page");
+                    println!("  Items:");
+                    for item in page.items {
+                        println!("    * {:#?}", item);
+                    }
+                }
                 Ok(())
             }
             Subcommands::Databases { query } => {
                 let mut dbs = client.query_databases(query, None)?;
 
-                while let Some(page) = dbs.next().await {
-                    let page = page?.into_body().await?;
+                while let Some(page) = dbs.next().await.transpose()? {
                     println!("Results Page");
                     println!("  Databases:");
                     for item in page.databases {
@@ -139,8 +116,7 @@ impl QueryCommand {
                 let db_client = client.database_client(&database);
                 let mut dbs = db_client.query_containers(query, None)?;
 
-                while let Some(page) = dbs.next().await {
-                    let page = page?.into_body().await?;
+                while let Some(page) = dbs.next().await.transpose()? {
                     println!("Results Page");
                     println!("  Containers:");
                     for item in page.containers {

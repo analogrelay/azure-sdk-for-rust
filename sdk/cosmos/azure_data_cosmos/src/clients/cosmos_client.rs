@@ -129,7 +129,8 @@ impl CosmosClient {
         &self,
         query: impl Into<Query>,
         options: Option<QueryDatabasesOptions<'_>>,
-    ) -> azure_core::Result<azure_core::Pager<DatabaseQueryResults>> {
+    ) -> azure_core::Result<impl futures::Stream<Item = azure_core::Result<DatabaseQueryResults>>>
+    {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.databases_link);
         let base_request = Request::new(url, azure_core::Method::Post);

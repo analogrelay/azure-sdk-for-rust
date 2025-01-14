@@ -88,8 +88,7 @@ pub async fn container_crud(context: TestContext) -> Result<(), Box<dyn Error>> 
     )?;
     let mut ids = vec![];
     while let Some(response) = query_pager.next().await.transpose()? {
-        let results = response.into_body().await?;
-        for db in results.containers {
+        for db in response.containers {
             ids.push(db.id);
         }
     }
@@ -149,8 +148,7 @@ pub async fn container_crud(context: TestContext) -> Result<(), Box<dyn Error>> 
     )?;
     let mut ids = vec![];
     while let Some(response) = query_pager.next().await.transpose()? {
-        let results = response.into_body().await?;
-        for db in results.containers {
+        for db in response.containers {
             ids.push(db.id);
         }
     }

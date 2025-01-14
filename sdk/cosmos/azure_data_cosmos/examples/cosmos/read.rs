@@ -108,7 +108,8 @@ impl ReadCommand {
                     }
                 }
 
-                if cfg!(feature = "unstable_driver") {
+                #[cfg(feature = "unstable_driver")]
+                {
                     let resp = container_client.partition_key_ranges(None).await?;
                     let ranges = resp.into_body().await?;
                     println!("Partition Key Ranges");

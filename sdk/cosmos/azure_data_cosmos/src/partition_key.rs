@@ -14,6 +14,7 @@ use crate::constants;
 #[derive(Debug, Clone)]
 pub enum QueryPartitionStrategy {
     SinglePartition(PartitionKey),
+    CrossPartition,
 }
 
 impl<T: Into<PartitionKey>> From<T> for QueryPartitionStrategy {
@@ -296,7 +297,12 @@ mod tests {
     /// Validates that a given value is `impl Into<QueryPartitionStrategy>` and works as-expected.
     fn key_to_single_partition_strategy_string(v: impl Into<QueryPartitionStrategy>) -> String {
         let strategy = v.into();
-        let QueryPartitionStrategy::SinglePartition(key) = strategy;
+        let QueryPartitionStrategy::SinglePartition(key) = strategy else {
+            panic!(
+                "Expected QueryPartitionStrategy::SinglePartition, got {:?}",
+                strategy
+            );
+        };
         key_to_string(key)
     }
 

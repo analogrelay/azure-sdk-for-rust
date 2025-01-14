@@ -4,7 +4,7 @@
 mod authorization_policy;
 mod signature_target;
 
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 pub use authorization_policy::AuthorizationPolicy;
 use azure_core::{ClientOptions, Context, Method, Model, Pager, Request, Response};
@@ -70,7 +70,7 @@ impl CosmosPipeline {
         query: Query,
         mut base_request: Request,
         resource_link: ResourceLink,
-    ) -> azure_core::Result<Pager<T>> {
+    ) -> azure_core::Result<Pin<Box<dyn futures::Stream<Item = azure_core::Result<T>>>>> {
         base_request.insert_header(constants::QUERY, "True");
         base_request.add_mandatory_header(&constants::QUERY_CONTENT_TYPE);
         base_request.set_json(&query)?;
@@ -79,7 +79,7 @@ impl CosmosPipeline {
         // First we clone the pipeline to pass it in to the closure
         let pipeline = self.pipeline.clone();
         let ctx = ctx.with_value(resource_link).into_owned();
-        Ok(Pager::from_callback(move |continuation| {
+        let pager = Pager::from_callback(move |continuation| {
             // Then we have to clone it again to pass it in to the async block.
             // This is because Pageable can't borrow any data, it has to own it all.
             // That's probably good, because it means a Pageable can outlive the client that produced it, but it requires some extra cloning.
@@ -91,14 +91,20 @@ impl CosmosPipeline {
                     req.insert_header(constants::CONTINUATION, continuation);
                 }
 
-                let resp = pipeline.send(&ctx, &mut req).await?;
+                let resp: Response = pipeline.send(&ctx, &mut req).await?;
 
                 Ok(PagerResult::from_response_header(
                     resp,
                     &constants::CONTINUATION,
                 ))
             }
-        }))
+        });
+
+        Ok(Box::pin(pager.then(|response| async move {
+            let response = response?;
+            let body = response.into_json_body::<T>().await?;
+            Ok(body)
+        })))
     }
 
     /// Helper function to read a throughput offer given a resource ID.
@@ -126,7 +132,7 @@ impl CosmosPipeline {
         let query = Query::from("SELECT * FROM c WHERE c.offerResourceId = @rid")
             .with_parameter("@rid", resource_id)?;
         let offers_link = ResourceLink::root(ResourceType::Offers);
-        let mut results: Pager<OfferResults> = self.send_query_request(
+        let mut results = self.send_query_request::<OfferResults>(
             context.clone(),
             query,
             Request::new(self.url(&offers_link), Method::Post),
@@ -135,9 +141,7 @@ impl CosmosPipeline {
         let offers = results
             .next()
             .await
-            .expect("the first pager result should always be Some, even when there's an error")?
-            .into_body()
-            .await?
+            .expect("expected at least one offer")?
             .offers;
 
         if offers.is_empty() {

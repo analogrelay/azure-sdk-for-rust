@@ -13,7 +13,7 @@ use crate::{
     ThroughputOptions,
 };
 
-use azure_core::{Method, Pager, Request, Response};
+use azure_core::{Method, Request, Response};
 
 /// A client for working with a specific database in a Cosmos DB account.
 ///
@@ -109,7 +109,8 @@ impl DatabaseClient {
         &self,
         query: impl Into<Query>,
         options: Option<QueryContainersOptions<'_>>,
-    ) -> azure_core::Result<Pager<ContainerQueryResults>> {
+    ) -> azure_core::Result<impl futures::Stream<Item = azure_core::Result<ContainerQueryResults>>>
+    {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.containers_link);
         let base_request = Request::new(url, Method::Post);

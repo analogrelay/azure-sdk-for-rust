@@ -1,6 +1,6 @@
 use std::fmt;
 
-use azure_core::{headers::HeaderName, Method, Request, Response};
+use azure_core::{Context, Method, Request, Response};
 use azure_data_cosmos_driver::query::{PipelineResult, QueryPipeline, QueryPlan};
 use futures::Stream;
 use serde::de::DeserializeOwned;
@@ -29,29 +29,34 @@ impl fmt::Debug for QueryEngineState {
     }
 }
 
-pub struct QueryEngine<'a, T> {
+pub struct QueryEngine<T> {
     query: Query,
     pipeline: CosmosPipeline,
     container_link: ResourceLink,
     items_link: ResourceLink,
-    options: QueryOptions<'a>,
+    context: Context<'static>,
     phantom: std::marker::PhantomData<T>,
 }
 
-impl<'a, T> QueryEngine<'a, T> {
+impl<T> QueryEngine<T> {
     pub fn new(
         query: Query,
         pipeline: CosmosPipeline,
         container_link: ResourceLink,
         items_link: ResourceLink,
-        options: Option<QueryOptions<'a>>,
+        options: Option<QueryOptions<'_>>,
     ) -> Self {
+        let context = options
+            .unwrap_or_default()
+            .method_options
+            .context
+            .into_owned();
         Self {
             query,
             pipeline,
             container_link,
             items_link,
-            options: options.unwrap_or_default(),
+            context,
             phantom: std::marker::PhantomData,
         }
     }
@@ -71,11 +76,7 @@ impl<'a, T> QueryEngine<'a, T> {
         req.set_json(&self.query)?;
 
         self.pipeline
-            .send(
-                self.options.method_options.context.clone(),
-                &mut req,
-                self.items_link.clone(),
-            )
+            .send(self.context.clone(), &mut req, self.items_link.clone())
             .await
     }
 
@@ -84,13 +85,13 @@ impl<'a, T> QueryEngine<'a, T> {
         let url = self.pipeline.url(&link);
         let mut req = Request::new(url, Method::Get);
         self.pipeline
-            .send(self.options.method_options.context.clone(), &mut req, link)
+            .send(self.context.clone(), &mut req, link)
             .await
     }
 }
 
-impl<'a, T: DeserializeOwned + 'a> QueryEngine<'a, T> {
-    pub fn into_stream(self) -> impl Stream<Item = azure_core::Result<QueryPage<T>>> + 'a {
+impl<T: DeserializeOwned> QueryEngine<T> {
+    pub fn into_stream(self) -> impl Stream<Item = azure_core::Result<QueryPage<T>>> {
         futures::stream::unfold(
             (self, QueryEngineState::Initial),
             |(mut this, state)| async move {
@@ -186,11 +187,7 @@ impl<'a, T: DeserializeOwned + 'a> QueryEngine<'a, T> {
 
                         let results: Response = self
                             .pipeline
-                            .send(
-                                self.options.method_options.context.clone(),
-                                &mut req,
-                                self.items_link.clone(),
-                            )
+                            .send(self.context.clone(), &mut req, self.items_link.clone())
                             .await?;
                         let continuation = results
                             .headers()

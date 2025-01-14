@@ -236,7 +236,7 @@ impl QueryPipeline {
 
             if let Some(partition) = next_partition {
                 if let Some(value) = partition.queue.pop_front() {
-                    tracing::debug!(partition_key_range_id = %partition.partition_key_range.id, "found item to return");
+                    tracing::trace!(partition_key_range_id = %partition.partition_key_range.id, "found item to return");
                     // If we found an item to return, pop it from the partition and push it into the buffer.
                     self.buffer.push((self.extractor)(value)?);
                 }

@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+use std::pin::Pin;
+
 use crate::{
     constants,
     models::{ContainerProperties, Item, PatchDocument, QueryPage, ThroughputProperties},
@@ -11,7 +13,7 @@ use crate::{
     ReplaceContainerOptions, ThroughputOptions,
 };
 
-use azure_core::{Method, Pager, Request, Response};
+use azure_core::{Method, Request, Response};
 use serde::{de::DeserializeOwned, Serialize};
 
 /// A client for working with a specific container in a Cosmos DB account.
@@ -546,46 +548,48 @@ impl ContainerClient {
     /// ```
     ///
     /// See [`PartitionKey`](crate::PartitionKey) for more information on how to specify a partition key, and [`Query`] for more information on how to specify a query.
-    pub fn query_items<T: DeserializeOwned + Send>(
+    pub fn query_items<T: DeserializeOwned + Send + 'static>(
         &self,
         query: impl Into<Query>,
         partition_key: impl Into<QueryPartitionStrategy>,
         options: Option<QueryOptions<'_>>,
-    ) -> azure_core::Result<Pager<QueryPage<T>>> {
-        let options = options.unwrap_or_default();
-        let url = self.pipeline.url(&self.items_link);
-        let mut base_request = Request::new(url, Method::Post);
-        let QueryPartitionStrategy::SinglePartition(partition_key) = partition_key.into();
-        base_request.insert_headers(&partition_key)?;
-
-        // TODO: Accept cross partition queries in this function instead of query_cross_partition.
-
-        self.pipeline.send_query_request(
-            options.method_options.context,
-            query.into(),
-            base_request,
-            self.items_link.clone(),
-        )
-    }
-
-    // REVIEW: TEMPORARY testing API. This should be integrated into query_items, but that requires a little more work to handle creating a Pager with synthetic Response<T> values.
-    // Or, we change Pager<T> to emit Ts instead of Response<T>s.
-    // TODO: We need to return something Unpin
-    #[cfg(feature = "unstable_driver")]
-    pub fn query_cross_partition<'a, T: DeserializeOwned + Send + 'a>(
-        &self,
-        query: impl Into<Query>,
-        options: Option<QueryOptions<'a>>,
-    ) -> azure_core::Result<impl futures::Stream<Item = azure_core::Result<QueryPage<T>>> + 'a>
+    ) -> azure_core::Result<Pin<Box<dyn futures::Stream<Item = azure_core::Result<QueryPage<T>>>>>>
     {
-        Ok(crate::query_engine::QueryEngine::new(
-            query.into(),
-            self.pipeline.clone(),
-            self.link.clone(),
-            self.items_link.clone(),
-            options,
-        )
-        .into_stream())
+        let stream = match partition_key.into() {
+            QueryPartitionStrategy::SinglePartition(partition_key) => {
+                let options = options.unwrap_or_default();
+                let url = self.pipeline.url(&self.items_link);
+                let mut base_request = Request::new(url, Method::Post);
+                base_request.insert_headers(&partition_key)?;
+
+                Box::pin(self.pipeline.send_query_request::<QueryPage<T>>(
+                    options.method_options.context,
+                    query.into(),
+                    base_request,
+                    self.items_link.clone(),
+                )?)
+                    as Pin<Box<dyn futures::Stream<Item = azure_core::Result<QueryPage<T>>>>>
+            }
+
+            #[cfg(not(feature = "unstable_driver"))]
+            QueryPartitionStrategy::CrossPartition => {
+                return Err(azure_core::Error::message(azure_core::error::ErrorKind::Other, "cross-partition queries are not supported in this version of the SDK. Please enable the 'unstable_driver' feature to use cross-partition queries."));
+            }
+
+            #[cfg(feature = "unstable_driver")]
+            QueryPartitionStrategy::CrossPartition => {
+                let engine = crate::query_engine::QueryEngine::<T>::new(
+                    query.into(),
+                    self.pipeline.clone(),
+                    self.link.clone(),
+                    self.items_link.clone(),
+                    options,
+                );
+                Box::pin(engine.into_stream())
+                    as Pin<Box<dyn futures::Stream<Item = azure_core::Result<QueryPage<T>>>>>
+            }
+        };
+        Ok(stream)
     }
 
     // REVIEW: This is only public for testing purposes. It should be private.
