@@ -1,6 +1,6 @@
 use std::fmt;
 
-use azure_core::{Method, Request, Response};
+use azure_core::{headers::HeaderName, Method, Request, Response};
 use azure_data_cosmos_driver::query::{PipelineResult, QueryPipeline, QueryPlan};
 use futures::Stream;
 use serde::de::DeserializeOwned;
@@ -138,7 +138,7 @@ impl<'a, T: DeserializeOwned + 'a> QueryEngine<'a, T> {
         query_pipeline: &mut QueryPipeline,
     ) -> azure_core::Result<Option<QueryPage<T>>> {
         loop {
-            let next = query_pipeline.next().map_err(to_azure_error)?;
+            let next = query_pipeline.step_pipeline().map_err(to_azure_error)?;
             let Some(pipeline_result) = next else {
                 // The pipeline is done.
                 return Ok(None);
@@ -173,13 +173,16 @@ impl<'a, T: DeserializeOwned + 'a> QueryEngine<'a, T> {
                             constants::PARTITION_KEY_RANGE_ID,
                             &partition.partition_key_range_id,
                         );
-                        if let Some(continuation) = partition.continuation {
+                        if let Some(continuation) = partition.continuation.clone() {
                             req.insert_header(constants::CONTINUATION, continuation);
                         }
                         req.add_mandatory_header(&constants::QUERY_CONTENT_TYPE);
-                        req.set_json(&requests.query)?;
+                        req.insert_header("x-ms-documentdb-query-iscontinuationexpected", "False");
 
-                        tracing::debug!("sending query request");
+                        // TODO: Parameters
+                        req.set_json(&Query::from(&requests.query))?;
+
+                        tracing::debug!(pkrange_id = ?partition.partition_key_range_id, continuation=?partition.continuation, query=?requests.query, "sending query request");
 
                         let results: Response = self
                             .pipeline
@@ -201,7 +204,7 @@ impl<'a, T: DeserializeOwned + 'a> QueryEngine<'a, T> {
                         );
                         query_pipeline
                             .enqueue_data(
-                                &partition.partition_key_range_id,
+                                partition.partition_key_range_id.clone(),
                                 items.items,
                                 continuation,
                             )

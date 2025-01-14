@@ -166,13 +166,14 @@ impl QueryPipeline {
         }
     }
 
+    /// Adds data to the start of the pipeline for a given partition.
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn enqueue_data(
         &mut self,
-        partition_key_range_id: impl Into<String>,
-        values: impl IntoIterator<Item = serde_json::Value>,
+        partition_key_range_id: String,
+        values: Vec<serde_json::Value>,
         continuation: Option<String>,
     ) -> Result<(), Error> {
-        let partition_key_range_id = partition_key_range_id.into();
         let partition = self
             .partitions
             .iter_mut()
@@ -188,7 +189,8 @@ impl QueryPipeline {
         Ok(())
     }
 
-    pub fn next(&mut self) -> Result<Option<PipelineResult>, Error> {
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub fn step_pipeline(&mut self) -> Result<Option<PipelineResult>, Error> {
         self.ensure_buffer()?;
 
         if self.buffer.is_empty() {
@@ -203,6 +205,7 @@ impl QueryPipeline {
 
     /// Ensures the buffer has data to return to the caller. If the buffer is empty, it will request more data from the partitions.
     /// If the buffer is still empty after this call, then there is no more data available in the partition buffers.
+    #[tracing::instrument(level = "trace", skip(self))]
     fn ensure_buffer(&mut self) -> Result<(), Error> {
         // If the buffer is non-empty, return early.
         if !self.buffer.is_empty() {
@@ -233,6 +236,7 @@ impl QueryPipeline {
 
             if let Some(partition) = next_partition {
                 if let Some(value) = partition.queue.pop_front() {
+                    tracing::debug!(partition_key_range_id = %partition.partition_key_range.id, "found item to return");
                     // If we found an item to return, pop it from the partition and push it into the buffer.
                     self.buffer.push((self.extractor)(value)?);
                 }
@@ -250,6 +254,7 @@ impl QueryPipeline {
         for partition in self.partitions.iter() {
             match partition.stage {
                 QueryStage::NotStarted => {
+                    tracing::debug!(partition_key_range_id = %partition.partition_key_range.id, "partition has not started yet, starting");
                     // If the partition has not been started yet, we need to issue a query for it.
                     partition_continuations.push(PartitionContinuation {
                         partition_key_range_id: partition.partition_key_range.id.clone(),
@@ -257,6 +262,7 @@ impl QueryPipeline {
                     });
                 }
                 QueryStage::Continuing(ref continuation) => {
+                    tracing::debug!(partition_key_range_id = %partition.partition_key_range.id, "partition is continuing, requesting more data");
                     // If the partition has a continuation token, we need to issue a query for it.
                     partition_continuations.push(PartitionContinuation {
                         partition_key_range_id: partition.partition_key_range.id.clone(),
@@ -264,6 +270,7 @@ impl QueryPipeline {
                     });
                 }
                 QueryStage::Finished => {
+                    tracing::debug!(partition_key_range_id = %partition.partition_key_range.id, "partition exhausted");
                     // If the partition has been exhausted, we don't need to issue a query for it.
                     continue;
                 }
@@ -408,7 +415,7 @@ mod tests {
     pub fn initial_call_to_next_always_returns_more_data() -> Result<(), Box<dyn std::error::Error>>
     {
         let mut pipeline = create_test_pipeline([]);
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::NeedsMoreData(request)) = result else {
             return Err("expected a PipelineResult::NeedsMoreData".into());
         };
@@ -436,7 +443,7 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut pipeline = create_test_pipeline([]);
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 json!(make_item(1, &1)),
                 json!(make_item(2, &2)),
@@ -446,7 +453,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 json!(make_item(5, &5)),
                 json!(make_item(6, &6)),
@@ -456,7 +463,7 @@ mod tests {
             None,
         )?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -484,7 +491,7 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 make_order_by_item([1], 1),
                 make_order_by_item([3], 3),
@@ -494,7 +501,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item([2], 2),
                 make_order_by_item([4], 4),
@@ -504,7 +511,7 @@ mod tests {
             None,
         )?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -531,7 +538,7 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 make_order_by_item(["aaaa"], 1),
                 make_order_by_item(["aaac"], 3),
@@ -541,7 +548,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item(["aaab"], 2),
                 make_order_by_item(["aaad"], 4),
@@ -551,7 +558,7 @@ mod tests {
             None,
         )?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -578,7 +585,7 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 make_order_by_item([false], 1),
                 make_order_by_item([false], 5),
@@ -588,7 +595,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item([false], 4),
                 make_order_by_item([false], 8),
@@ -598,7 +605,7 @@ mod tests {
             None,
         )?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -628,7 +635,7 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 make_order_by_item([serde_json::Value::Null], 1),
                 make_order_by_item([serde_json::Value::Null], 3),
@@ -638,7 +645,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item([serde_json::Value::Null], 2),
                 make_order_by_item([serde_json::Value::Null], 4),
@@ -648,7 +655,7 @@ mod tests {
             None,
         )?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -678,12 +685,12 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![make_order_by_item([false], 2), make_order_by_item([1], 3)],
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item([serde_json::Value::Null], 1),
                 make_order_by_item([1.1], 4),
@@ -691,9 +698,8 @@ mod tests {
             ],
             None,
         )?;
-        pipeline.enqueue_data("1", vec![], None)?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -720,12 +726,12 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![make_order_by_item([1], 3), make_order_by_item([false], 2)],
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item(["aaa"], 5),
                 make_order_by_item([1.1], 4),
@@ -733,9 +739,8 @@ mod tests {
             ],
             None,
         )?;
-        pipeline.enqueue_data("1", vec![], None)?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };
@@ -761,7 +766,7 @@ mod tests {
         // We're enqueing data that is interleaved by the order by item
         // Reminder: The pipeline ASSUMES data in each partition is ordered!
         pipeline.enqueue_data(
-            "0",
+            "0".into(),
             vec![
                 make_order_by_item(
                     [
@@ -795,7 +800,7 @@ mod tests {
             None,
         )?;
         pipeline.enqueue_data(
-            "1",
+            "1".into(),
             vec![
                 make_order_by_item(
                     [
@@ -828,9 +833,8 @@ mod tests {
             ],
             None,
         )?;
-        pipeline.enqueue_data("1", vec![], None)?;
 
-        let result = pipeline.next()?;
+        let result = pipeline.step_pipeline()?;
         let Some(PipelineResult::Data(data)) = result else {
             return Err("expected a PipelineResult::Data".into());
         };

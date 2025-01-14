@@ -555,7 +555,8 @@ impl ContainerClient {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.items_link);
         let mut base_request = Request::new(url, Method::Post);
-        base_request.insert_headers(&partition_key.into())?;
+        let QueryPartitionStrategy::SinglePartition(partition_key) = partition_key.into();
+        base_request.insert_headers(&partition_key)?;
 
         // TODO: Accept cross partition queries in this function instead of query_cross_partition.
 
@@ -569,6 +570,7 @@ impl ContainerClient {
 
     // REVIEW: TEMPORARY testing API. This should be integrated into query_items, but that requires a little more work to handle creating a Pager with synthetic Response<T> values.
     // Or, we change Pager<T> to emit Ts instead of Response<T>s.
+    // TODO: We need to return something Unpin
     #[cfg(feature = "unstable_driver")]
     pub fn query_cross_partition<'a, T: DeserializeOwned + Send + 'a>(
         &self,
@@ -608,13 +610,14 @@ impl ContainerClient {
     #[cfg(feature = "unstable_driver")]
     pub async fn partition_key_ranges(
         &self,
+        options: Option<QueryOptions<'_>>,
     ) -> azure_core::Result<Response<crate::models::PartitionKeyRanges>> {
         crate::query_engine::QueryEngine::<()>::new(
             Query::from("SELECT * FROM c"), // Doesn't matter, we just need a query.
             self.pipeline.clone(),
             self.link.clone(),
             self.items_link.clone(),
-            None,
+            options,
         )
         .partition_key_ranges()
         .await

@@ -14,22 +14,6 @@ use crate::constants;
 #[derive(Debug, Clone)]
 pub enum QueryPartitionStrategy {
     SinglePartition(PartitionKey),
-    CrossPartition,
-}
-
-impl AsHeaders for QueryPartitionStrategy {
-    type Error = azure_core::Error;
-    type Iter = std::iter::Once<(HeaderName, HeaderValue)>;
-
-    fn as_headers(&self) -> Result<Self::Iter, Self::Error> {
-        match self {
-            QueryPartitionStrategy::SinglePartition(key) => key.as_headers(),
-            QueryPartitionStrategy::CrossPartition => Ok(std::iter::once((
-                constants::QUERY_ENABLE_CROSS_PARTITION,
-                HeaderValue::from_static("true"),
-            ))),
-        }
-    }
 }
 
 impl<T: Into<PartitionKey>> From<T> for QueryPartitionStrategy {

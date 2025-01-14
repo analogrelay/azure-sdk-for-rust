@@ -8,7 +8,7 @@
 
 use azure_core::{headers::HeaderName, request_options::ContentType};
 
-pub const QUERY: HeaderName = HeaderName::from_static("x-ms-documentdb-query");
+pub const QUERY: HeaderName = HeaderName::from_static("x-ms-documentdb-isquery");
 pub const QUERY_ENABLE_CROSS_PARTITION: HeaderName =
     HeaderName::from_static("x-ms-documentdb-query-enablecrosspartition");
 pub const PARTITION_KEY_RANGE_ID: HeaderName =
