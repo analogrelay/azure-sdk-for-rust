@@ -247,10 +247,10 @@ impl SecretClient {
                 let rsp = Response::from_bytes(status, headers, bytes);
                 Ok(match res.next_link {
                     Some(next_link) => PagerResult::Continue {
-                        value: rsp,
+                        response: rsp,
                         continuation: next_link.parse()?,
                     },
-                    None => PagerResult::Complete { value: rsp },
+                    None => PagerResult::Complete { response: rsp },
                 })
             }
         }))
@@ -313,10 +313,10 @@ impl SecretClient {
                 let rsp = Response::from_bytes(status, headers, bytes);
                 Ok(match res.next_link {
                     Some(next_link) => PagerResult::Continue {
-                        value: rsp,
+                        response: rsp,
                         continuation: next_link.parse()?,
                     },
-                    None => PagerResult::Complete { value: rsp },
+                    None => PagerResult::Complete { response: rsp },
                 })
             }
         }))
@@ -376,10 +376,10 @@ impl SecretClient {
                 let rsp = Response::from_bytes(status, headers, bytes);
                 Ok(match res.next_link {
                     Some(next_link) => PagerResult::Continue {
-                        value: rsp,
+                        response: rsp,
                         continuation: next_link.parse()?,
                     },
-                    None => PagerResult::Complete { value: rsp },
+                    None => PagerResult::Complete { response: rsp },
                 })
             }
         }))
