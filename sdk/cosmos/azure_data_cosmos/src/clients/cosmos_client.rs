@@ -10,7 +10,11 @@ use crate::{
 };
 use azure_core::{
     credentials::TokenCredential,
-    http::{request::Request, response::Response, Method, Url},
+    http::{
+        request::{options::ContentType, Request},
+        response::Response,
+        Method, Url,
+    },
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -167,6 +171,7 @@ impl CosmosClient {
         let url = self.pipeline.url(&self.databases_link);
         let mut req = Request::new(url, Method::Post);
         req.insert_headers(&options.throughput)?;
+        req.insert_headers(&ContentType::APPLICATION_JSON)?;
         req.set_json(&RequestBody { id })?;
 
         self.pipeline

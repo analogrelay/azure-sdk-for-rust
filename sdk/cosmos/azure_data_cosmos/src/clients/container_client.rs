@@ -11,7 +11,12 @@ use crate::{
     ReplaceContainerOptions, ThroughputOptions,
 };
 
-use azure_core::http::{headers, request::Request, response::Response, Method};
+use azure_core::http::{
+    headers,
+    request::{options::ContentType, Request},
+    response::Response,
+    Method,
+};
 use serde::{de::DeserializeOwned, Serialize};
 
 /// A client for working with a specific container in a Cosmos DB account.
@@ -109,6 +114,7 @@ impl ContainerClient {
         let options = options.unwrap_or_default();
         let url = self.pipeline.url(&self.link);
         let mut req = Request::new(url, Method::Put);
+        req.insert_headers(&ContentType::APPLICATION_JSON)?;
         req.set_json(&properties)?;
         self.pipeline
             .send(options.method_options.context, &mut req, self.link.clone())
@@ -260,6 +266,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.insert_headers(&ContentType::APPLICATION_JSON)?;
         req.set_json(&item)?;
         self.pipeline
             .send(
@@ -351,6 +358,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.insert_headers(&ContentType::APPLICATION_JSON)?;
         req.set_json(&item)?;
         self.pipeline
             .send(options.method_options.context, &mut req, link)
@@ -440,6 +448,7 @@ impl ContainerClient {
         }
         req.insert_header(constants::IS_UPSERT, "true");
         req.insert_headers(&partition_key.into())?;
+        req.insert_headers(&ContentType::APPLICATION_JSON)?;
         req.set_json(&item)?;
         self.pipeline
             .send(
@@ -606,6 +615,7 @@ impl ContainerClient {
             req.insert_header(headers::PREFER, constants::PREFER_MINIMAL);
         }
         req.insert_headers(&partition_key.into())?;
+        req.insert_headers(&ContentType::from_static("application/json_patch+json"))?;
         req.set_json(&patch)?;
 
         self.pipeline
