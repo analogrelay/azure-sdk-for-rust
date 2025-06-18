@@ -77,6 +77,13 @@ pub struct QueryOptions<'a> {
     /// Specifically, the query engine may be built-in to the SDK in the future, and this option may be removed entirely.
     #[cfg(feature = "preview_query_engine")]
     pub query_engine: Option<crate::query::QueryEngineRef>,
+
+    /// Options to be passed to the query executor.
+    ///
+    /// NOTE: This is an unstable feature and may change in the future.
+    /// Specifically, the query engine may be built-in to the SDK in the future, and this option may be removed entirely.
+    #[cfg(feature = "preview_query_engine")]
+    pub query_executor_options: crate::query::executor::QueryExecutorOptions,
 }
 
 impl QueryOptions<'_> {
@@ -85,8 +92,7 @@ impl QueryOptions<'_> {
             method_options: ClientMethodOptions {
                 context: self.method_options.context.into_owned(),
             },
-            #[cfg(feature = "preview_query_engine")]
-            query_engine: self.query_engine,
+            ..self
         }
     }
 }

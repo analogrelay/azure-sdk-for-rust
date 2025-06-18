@@ -9,6 +9,14 @@ use crate::{
     FeedPage, FeedPager, Query, QueryOptions,
 };
 
+#[derive(Clone, Default)]
+pub struct QueryExecutorOptions {
+    /// Specifies the maximum number of items to return in each request to a single partition.
+    /// This is used to control the size of the response and the number of requests made to the backend.
+    /// Lower values here may result in more requests being made before enough data is collected to return a page.
+    pub max_fetch_items_per_page: Option<usize>,
+}
+
 pub struct QueryExecutor<T: DeserializeOwned> {
     http_pipeline: CosmosPipeline,
     container_link: ResourceLink,
@@ -18,6 +26,7 @@ pub struct QueryExecutor<T: DeserializeOwned> {
     base_request: Option<Request>,
     query: Query,
     pipeline: Option<OwnedQueryPipeline>,
+    options: QueryExecutorOptions,
 
     // Why is our phantom type a function? Because that represents how we _use_ the type T.
     // Normally, PhantomData<T> is only Send/Sync if T is, because PhantomData is indicating that while we don't _name_ T in a field, we should act as though we have a field of type T.
@@ -37,6 +46,7 @@ impl<T: DeserializeOwned + Send + 'static> QueryExecutor<T> {
     ) -> azure_core::Result<Self> {
         let items_link = container_link.feed(ResourceType::Items);
         let context = options.method_options.context.into_owned();
+        let options = options.query_executor_options;
         Ok(Self {
             http_pipeline,
             container_link,
@@ -46,6 +56,7 @@ impl<T: DeserializeOwned + Send + 'static> QueryExecutor<T> {
             base_request: None,
             query,
             pipeline: None,
+            options,
             phantom: std::marker::PhantomData,
         })
     }
@@ -138,6 +149,9 @@ impl<T: DeserializeOwned + Send + 'static> QueryExecutor<T> {
                     constants::PARTITION_KEY_RANGE_ID,
                     request.partition_key_range_id.clone(),
                 );
+                if let Some(max_items) = self.options.max_fetch_items_per_page {
+                    query_request.insert_header(constants::MAX_ITEM_COUNT, max_items.to_string());
+                }
                 if let Some(continuation) = request.continuation {
                     query_request.insert_header(constants::CONTINUATION, continuation);
                 }

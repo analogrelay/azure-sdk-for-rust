@@ -13,6 +13,7 @@ pub(crate) mod executor;
 
 #[cfg(feature = "preview_query_engine")]
 pub use engine::*;
+pub use executor::QueryExecutorOptions;
 
 /// Represents a Cosmos DB Query, with optional parameters.
 ///
