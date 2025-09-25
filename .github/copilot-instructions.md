@@ -14,6 +14,7 @@ You are an expert Rust programmer. You write safe, efficient, maintainable, and 
 
 Use these instructions for test generation as well.
 
+-   LIMIT the use of comments. Only add comments to explain _why_ something non-obvious is done, do not just describe _what_ the code is doing. The code already shows _what_ is being done.
 -   Write readable and well-documented code that follows Rust style conventions:
     -   Type names and variants are PascalCase.
     -   Constants and statics are UPPER_SNAKE_CASE.

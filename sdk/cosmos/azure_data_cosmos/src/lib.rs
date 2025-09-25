@@ -22,6 +22,7 @@ pub(crate) mod resource_context;
 pub(crate) mod utils;
 
 pub mod models;
+mod session;
 
 mod location_cache;
 
@@ -34,3 +35,35 @@ pub use partition_key::*;
 pub use query::Query;
 
 pub use feed::{FeedPage, FeedPager};
+
+/// A logical sequence number (LSN) used in Cosmos DB replication.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Lsn(u64);
+
+impl Lsn {
+    /// Creates a new LSN from a u64 value.
+    pub(crate) fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the inner u64 value.
+    pub(crate) fn value(&self) -> u64 {
+        self.0
+    }
+}
+
+/// A region identifier used in Cosmos DB multi-region operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct RegionId(u32);
+
+impl RegionId {
+    /// Creates a new RegionId from a u32 value.
+    pub(crate) fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Returns the inner u32 value.
+    pub(crate) fn value(&self) -> u32 {
+        self.0
+    }
+}
