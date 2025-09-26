@@ -36,12 +36,11 @@ pub use query::Query;
 
 pub use feed::{FeedPage, FeedPager};
 
-// Re-export session types
-pub use session::Session;
+// Newtypes used internally, so they don't need to be public. They're used to make sure we're using more descriptive APIs
 
 /// A logical sequence number (LSN) used in Cosmos DB replication.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Lsn(u64);
+struct Lsn(u64);
 
 impl Lsn {
     /// Creates a new LSN from a u64 value.
@@ -57,7 +56,7 @@ impl Lsn {
 
 /// A region identifier used in Cosmos DB multi-region operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct RegionId(u32);
+struct RegionId(u32);
 
 impl RegionId {
     /// Creates a new RegionId from a u32 value.
@@ -73,7 +72,7 @@ impl RegionId {
 
 /// A partition key range identifier used to identify partitions in a Cosmos DB container.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PartitionKeyRangeId(String);
+struct PartitionKeyRangeId(String);
 
 impl PartitionKeyRangeId {
     /// Creates a new PartitionKeyRangeId from a String value.
@@ -89,7 +88,7 @@ impl PartitionKeyRangeId {
 
 /// A resource identifier used to identify Cosmos DB resources (containers, databases, etc.).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ResourceId(String);
+struct ResourceId(String);
 
 impl ResourceId {
     /// Creates a new ResourceId from a String value.

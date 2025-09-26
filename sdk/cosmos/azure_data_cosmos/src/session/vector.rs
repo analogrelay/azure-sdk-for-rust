@@ -209,57 +209,8 @@ impl VectorSessionToken {
             regional_lsns: merged_regional_lsns,
         })
     }
-
-    /// Validates whether this token can advance to another session token.
-    /// Returns true if the other token represents valid progress from this token's state.
-    pub fn can_advance_to(&self, other: &VectorSessionToken) -> Result<bool, Error> {
-        if other.version < self.version
-            || (other.version == self.version && other.global_lsn.value() < self.global_lsn.value())
-        {
-            return Ok(false);
-        }
-
-        if other.version == self.version && other.regional_lsns.len() != self.regional_lsns.len() {
-            return Err(Error::InvalidRegions {
-                current: self.to_string(),
-                other: other.to_string(),
-            });
-        }
-
-        for (region_id, other_lsn) in &other.regional_lsns {
-            if let Some(current_lsn) = self.regional_lsns.get(region_id) {
-                // Region exists in both tokens - check progress
-                if other_lsn.value() < current_lsn.value() {
-                    return Ok(false);
-                }
-            } else {
-                if self.version == other.version {
-                    // Despite the version numbers matching, the regions differ - this is an error
-                    return Err(Error::InvalidRegions {
-                        current: self.to_string(),
-                        other: other.to_string(),
-                    });
-                }
-                // If the versions differ, we can ignore the missing region.
-            }
-        }
-
-        // Check for regions that exist in current but not in other
-        for region_id in self.regional_lsns.keys() {
-            if !other.regional_lsns.contains_key(region_id) {
-                if self.version == other.version {
-                    // Despite the version numbers matching, the regions differ - this is an error
-                    return Err(Error::InvalidRegions {
-                        current: self.to_string(),
-                        other: other.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(true)
-    }
 }
+
 impl fmt::Display for VectorSessionToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}#{}", self.version, self.global_lsn.value())?;
