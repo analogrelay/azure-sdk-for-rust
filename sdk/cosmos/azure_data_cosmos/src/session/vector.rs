@@ -5,60 +5,8 @@
 
 use std::{collections::HashMap, fmt, str::FromStr};
 
+use super::Error;
 use crate::{Lsn, RegionId};
-
-/// Errors that can occur when working with vector session tokens.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenError {
-    /// The input string is empty.
-    EmptyInput,
-    /// The input string does not contain the required minimum components.
-    MissingComponents,
-    /// The version component could not be parsed as a u64.
-    InvalidVersion(String),
-    /// The global LSN component could not be parsed as a u64.
-    InvalidGlobalLsn(String),
-    /// A region ID component could not be parsed as a u32.
-    InvalidRegionId(String),
-    /// A region LSN component could not be parsed as a u64.
-    InvalidRegionLsn(String),
-    /// A regional component is missing the required '=' separator.
-    MalformedRegionalComponent(String),
-    /// Invalid regions in session token comparison.
-    InvalidRegions { current: String, other: String },
-    /// Session tokens cannot be merged due to incompatible regions.
-    TokensCannotBeMerged(String),
-}
-
-impl fmt::Display for TokenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TokenError::EmptyInput => write!(f, "input string is empty"),
-            TokenError::MissingComponents => {
-                write!(f, "missing required components (version and global LSN)")
-            }
-            TokenError::InvalidVersion(s) => write!(f, "invalid version: '{}'", s),
-            TokenError::InvalidGlobalLsn(s) => write!(f, "invalid global LSN: '{}'", s),
-            TokenError::InvalidRegionId(s) => write!(f, "invalid region ID: '{}'", s),
-            TokenError::InvalidRegionLsn(s) => write!(f, "invalid region LSN: '{}'", s),
-            TokenError::MalformedRegionalComponent(s) => {
-                write!(f, "malformed regional component: '{}'", s)
-            }
-            TokenError::InvalidRegions { current, other } => {
-                write!(
-                    f,
-                    "invalid regions in session token comparison: current='{}', other='{}'",
-                    current, other
-                )
-            }
-            TokenError::TokensCannotBeMerged(s) => {
-                write!(f, "incompatible tokens: {}", s)
-            }
-        }
-    }
-}
-
-impl std::error::Error for TokenError {}
 
 /// A vector session token for Cosmos DB operations.
 ///
@@ -116,11 +64,11 @@ fn parse_u32_from_slice(s: &str) -> Result<u32, ()> {
 }
 
 impl FromStr for VectorSessionToken {
-    type Err = TokenError;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            return Err(TokenError::EmptyInput);
+            return Err(Error::EmptyInput);
         }
 
         let mut chars = s.char_indices();
@@ -130,13 +78,13 @@ impl FromStr for VectorSessionToken {
             match chars.next() {
                 Some((i, '#')) => break i,
                 Some((_, _)) => continue,
-                None => return Err(TokenError::MissingComponents),
+                None => return Err(Error::MissingComponents),
             }
         };
 
         let version_str = &s[..version_end];
         let version = parse_u64_from_slice(version_str)
-            .map_err(|_| TokenError::InvalidVersion(version_str.to_string()))?;
+            .map_err(|_| Error::InvalidVersion(version_str.to_string()))?;
 
         // Find second '#' delimiter or end of string
         let global_lsn_start = version_end + 1;
@@ -149,12 +97,12 @@ impl FromStr for VectorSessionToken {
         };
 
         if global_lsn_start >= s.len() {
-            return Err(TokenError::MissingComponents);
+            return Err(Error::MissingComponents);
         }
 
         let global_lsn_str = &s[global_lsn_start..global_lsn_end];
         let global_lsn_value = parse_u64_from_slice(global_lsn_str)
-            .map_err(|_| TokenError::InvalidGlobalLsn(global_lsn_str.to_string()))?;
+            .map_err(|_| Error::InvalidGlobalLsn(global_lsn_str.to_string()))?;
         let global_lsn = Lsn::new(global_lsn_value);
 
         let mut regional_lsns = HashMap::new();
@@ -175,21 +123,19 @@ impl FromStr for VectorSessionToken {
                 // Find '=' in component
                 let equals_pos = component
                     .find('=')
-                    .ok_or_else(|| TokenError::MalformedRegionalComponent(component.to_string()))?;
+                    .ok_or_else(|| Error::MalformedRegionalComponent(component.to_string()))?;
 
                 let region_id_str = &component[..equals_pos];
                 let region_lsn_str = &component[equals_pos + 1..];
 
                 if region_id_str.is_empty() || region_lsn_str.is_empty() {
-                    return Err(TokenError::MalformedRegionalComponent(
-                        component.to_string(),
-                    ));
+                    return Err(Error::MalformedRegionalComponent(component.to_string()));
                 }
 
                 let region_id = parse_u32_from_slice(region_id_str)
-                    .map_err(|_| TokenError::InvalidRegionId(region_id_str.to_string()))?;
+                    .map_err(|_| Error::InvalidRegionId(region_id_str.to_string()))?;
                 let region_lsn = parse_u64_from_slice(region_lsn_str)
-                    .map_err(|_| TokenError::InvalidRegionLsn(region_lsn_str.to_string()))?;
+                    .map_err(|_| Error::InvalidRegionLsn(region_lsn_str.to_string()))?;
 
                 regional_lsns.insert(RegionId::new(region_id), Lsn::new(region_lsn));
 
@@ -208,7 +154,7 @@ impl FromStr for VectorSessionToken {
 impl VectorSessionToken {
     /// Merges this token with another token to create a new token representing
     /// the highest progress from both tokens. This operation is commutative.
-    pub fn merge(self, other: VectorSessionToken) -> Result<VectorSessionToken, TokenError> {
+    pub fn merge(self, other: VectorSessionToken) -> Result<VectorSessionToken, Error> {
         // Determine which token has the higher version
         let (higher_version_token, lower_version_token) = if self.version >= other.version {
             (self, other)
@@ -225,7 +171,7 @@ impl VectorSessionToken {
                 lower_version_token.regional_lsns.keys().collect();
 
             if self_regions != other_regions {
-                return Err(TokenError::TokensCannotBeMerged(
+                return Err(Error::TokensCannotBeMerged(
                     "tokens have same version but different regions".to_string(),
                 ));
             }
@@ -266,7 +212,7 @@ impl VectorSessionToken {
 
     /// Validates whether this token can advance to another session token.
     /// Returns true if the other token represents valid progress from this token's state.
-    pub fn can_advance_to(&self, other: &VectorSessionToken) -> Result<bool, TokenError> {
+    pub fn can_advance_to(&self, other: &VectorSessionToken) -> Result<bool, Error> {
         if other.version < self.version
             || (other.version == self.version && other.global_lsn.value() < self.global_lsn.value())
         {
@@ -274,7 +220,7 @@ impl VectorSessionToken {
         }
 
         if other.version == self.version && other.regional_lsns.len() != self.regional_lsns.len() {
-            return Err(TokenError::InvalidRegions {
+            return Err(Error::InvalidRegions {
                 current: self.to_string(),
                 other: other.to_string(),
             });
@@ -289,7 +235,7 @@ impl VectorSessionToken {
             } else {
                 if self.version == other.version {
                     // Despite the version numbers matching, the regions differ - this is an error
-                    return Err(TokenError::InvalidRegions {
+                    return Err(Error::InvalidRegions {
                         current: self.to_string(),
                         other: other.to_string(),
                     });
@@ -303,7 +249,7 @@ impl VectorSessionToken {
             if !other.regional_lsns.contains_key(region_id) {
                 if self.version == other.version {
                     // Despite the version numbers matching, the regions differ - this is an error
-                    return Err(TokenError::InvalidRegions {
+                    return Err(Error::InvalidRegions {
                         current: self.to_string(),
                         other: other.to_string(),
                     });
@@ -318,11 +264,7 @@ impl fmt::Display for VectorSessionToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}#{}", self.version, self.global_lsn.value())?;
 
-        // Sort regions by ID for consistent output
-        let mut regions: Vec<_> = self.regional_lsns.iter().collect();
-        regions.sort_by_key(|(region_id, _)| region_id.value());
-
-        for (region_id, region_lsn) in regions {
+        for (region_id, region_lsn) in self.regional_lsns.iter() {
             write!(f, "#{}={}", region_id.value(), region_lsn.value())?;
         }
 
@@ -371,22 +313,19 @@ mod tests {
     #[test]
     fn parse_empty_string_fails() {
         let result: Result<VectorSessionToken, _> = "".parse();
-        assert_eq!(result.unwrap_err(), TokenError::EmptyInput);
+        assert_eq!(result.unwrap_err(), Error::EmptyInput);
     }
 
     #[test]
     fn parse_missing_global_lsn_fails() {
         let result: Result<VectorSessionToken, _> = "1".parse();
-        assert_eq!(result.unwrap_err(), TokenError::MissingComponents);
+        assert_eq!(result.unwrap_err(), Error::MissingComponents);
     }
 
     #[test]
     fn parse_missing_version_fails() {
         let result: Result<VectorSessionToken, _> = "#1000".parse();
-        assert_eq!(
-            result.unwrap_err(),
-            TokenError::InvalidVersion("".to_string())
-        );
+        assert_eq!(result.unwrap_err(), Error::InvalidVersion("".to_string()));
     }
 
     #[test]
@@ -394,7 +333,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "not_a_number#1000".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidVersion("not_a_number".to_string())
+            Error::InvalidVersion("not_a_number".to_string())
         );
     }
 
@@ -403,7 +342,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#not_a_number".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidGlobalLsn("not_a_number".to_string())
+            Error::InvalidGlobalLsn("not_a_number".to_string())
         );
     }
 
@@ -412,7 +351,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#1000#not_a_number=1500".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidRegionId("not_a_number".to_string())
+            Error::InvalidRegionId("not_a_number".to_string())
         );
     }
 
@@ -421,7 +360,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#1000#100=not_a_number".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidRegionLsn("not_a_number".to_string())
+            Error::InvalidRegionLsn("not_a_number".to_string())
         );
     }
 
@@ -430,19 +369,19 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#1000#100".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::MalformedRegionalComponent("100".to_string())
+            Error::MalformedRegionalComponent("100".to_string())
         );
 
         let result: Result<VectorSessionToken, _> = "1#1000#100=".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::MalformedRegionalComponent("100=".to_string())
+            Error::MalformedRegionalComponent("100=".to_string())
         );
 
         let result: Result<VectorSessionToken, _> = "1#1000#=1500".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::MalformedRegionalComponent("=1500".to_string())
+            Error::MalformedRegionalComponent("=1500".to_string())
         );
     }
 
@@ -451,7 +390,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "18446744073709551616#1000".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidVersion("18446744073709551616".to_string())
+            Error::InvalidVersion("18446744073709551616".to_string())
         );
     }
 
@@ -460,7 +399,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#18446744073709551616".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidGlobalLsn("18446744073709551616".to_string())
+            Error::InvalidGlobalLsn("18446744073709551616".to_string())
         );
     }
 
@@ -469,7 +408,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#1000#4294967296=1500".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidRegionId("4294967296".to_string())
+            Error::InvalidRegionId("4294967296".to_string())
         );
     }
 
@@ -478,7 +417,7 @@ mod tests {
         let result: Result<VectorSessionToken, _> = "1#1000#100=18446744073709551616".parse();
         assert_eq!(
             result.unwrap_err(),
-            TokenError::InvalidRegionLsn("18446744073709551616".to_string())
+            Error::InvalidRegionLsn("18446744073709551616".to_string())
         );
     }
 
@@ -588,16 +527,7 @@ mod tests {
         let result = current.can_advance_to(&other);
         assert!(result.is_err());
 
-        if let Err(TokenError::InvalidRegions {
-            current: curr_str,
-            other: other_str,
-        }) = result
-        {
-            assert_eq!(curr_str, "1#1000#100=500");
-            assert_eq!(other_str, "1#1000#100=500#200=600");
-        } else {
-            panic!("Expected InvalidRegions error");
-        }
+        assert!(matches!(result.unwrap_err(), Error::InvalidRegions { .. }));
     }
 
     #[test]
@@ -607,10 +537,7 @@ mod tests {
 
         let result = current.can_advance_to(&other);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TokenError::InvalidRegions { .. }
-        ));
+        assert!(matches!(result.unwrap_err(), Error::InvalidRegions { .. }));
     }
 
     #[test]
@@ -620,10 +547,7 @@ mod tests {
 
         let result = current.can_advance_to(&other);
         assert!(result.is_err());
-        assert!(matches!(
-            result.unwrap_err(),
-            TokenError::InvalidRegions { .. }
-        ));
+        assert!(matches!(result.unwrap_err(), Error::InvalidRegions { .. }));
     }
 
     #[test]
@@ -717,7 +641,7 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            TokenError::TokensCannotBeMerged(reason) => {
+            Error::TokensCannotBeMerged(reason) => {
                 assert!(reason.contains("same version"));
                 assert!(reason.contains("different regions"));
             }

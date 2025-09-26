@@ -3,6 +3,14 @@
 
 //! Session management for Cosmos DB operations.
 
-pub mod token;
+pub mod container;
+pub mod error;
+pub mod partition;
+pub mod session;
+pub mod vector;
 
-pub use token::*;
+pub use container::*;
+pub use error::*;
+pub use partition::*;
+pub use session::*;
+pub use vector::*;
