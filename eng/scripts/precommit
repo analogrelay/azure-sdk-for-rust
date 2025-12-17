@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit script to run various quick checks before committing code.
+# Optional, but highly recommended to avoid PR churn due to trivial CI issues.
+
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Clippy the whole workspace
+echo "Running cargo clippy..."
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# Run fmt check
+echo "Running cargo fmt..."
+cargo fmt --all -- --check
+
+# Spell check
+if ! command -v npx &> /dev/null
+then
+    echo "NodeJS is not installed. Skipping cspell."
+else
+    echo "Running cspell..."
+    npx cspell lint --config ./.vscode/cspell.json "**/*"
+fi
+
+# Run tests
+echo "Running cargo test..."
+cargo test --workspace --all-features
