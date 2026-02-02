@@ -9,9 +9,32 @@
 //! **Important**: This module does NOT contain data plane item/document types.
 //! The driver is schema-agnostic - data plane operations work with raw bytes (`&[u8]`).
 
+mod dedicated_gateway;
+mod diagnostics;
+mod etag;
+mod partition_key;
+mod policies;
+mod priority;
 mod region;
+mod resource_reference;
+mod session;
+mod throughput_control;
+mod triggers;
 
+pub use dedicated_gateway::DedicatedGatewayOptions;
+pub use diagnostics::DiagnosticsThresholds;
+pub use etag::{ETag, ETagCondition};
+pub use partition_key::{PartitionKey, PartitionKeyValue};
+pub use policies::{
+    ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions,
+    NonIdempotentWriteRetries,
+};
+pub use priority::PriorityLevel;
 pub use region::Region;
+pub use resource_reference::{ContainerReference, DatabaseReference};
+pub use session::SessionToken;
+pub use throughput_control::{ThroughputControlGroupName, ThroughputControlGroupOptions, ThroughputTarget};
+pub use triggers::{TriggerOptions, TriggerReference};
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
