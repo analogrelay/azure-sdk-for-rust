@@ -613,7 +613,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("max_idle_connections_per_endpoint must be at most 64_000"));
+            .contains("max_idle_connections_per_endpoint must be at most 64000"));
     }
 
     #[test]

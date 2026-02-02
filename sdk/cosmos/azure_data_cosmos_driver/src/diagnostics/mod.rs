@@ -9,6 +9,7 @@
 //!
 //! Diagnostics are **operational metadata** tracked by the SDK, not service resources.
 
+use crate::models::Region;
 use std::time::Duration;
 
 /// Diagnostic context for a Cosmos DB operation.
@@ -36,8 +37,8 @@ pub struct DiagnosticsContext {
 /// Information about a region contacted during an operation.
 #[derive(Clone, Debug)]
 pub struct RegionContact {
-    /// Azure region name (e.g., "East US", "West Europe").
-    pub region_name: String,
+    /// Azure region identifier.
+    pub region_name: Region,
 
     /// Endpoint URI for the region.
     pub endpoint: String,
@@ -47,6 +48,38 @@ pub struct RegionContact {
 
     /// Duration spent communicating with this region.
     pub duration: Duration,
+}
+
+impl RegionContact {
+    /// Creates a new region contact.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::diagnostics::RegionContact;
+    /// use azure_data_cosmos_driver::models::Region;
+    /// use std::time::Duration;
+    ///
+    /// let contact = RegionContact::new(
+    ///     Region::WEST_US_2,
+    ///     "https://account.westus2.documents.azure.com".to_string(),
+    ///     true,
+    ///     Duration::from_millis(150),
+    /// );
+    /// ```
+    pub fn new(
+        region: impl Into<Region>,
+        endpoint: String,
+        is_preferred: bool,
+        duration: Duration,
+    ) -> Self {
+        Self {
+            region_name: region.into(),
+            endpoint,
+            is_preferred,
+            duration,
+        }
+    }
 }
 
 impl DiagnosticsContext {

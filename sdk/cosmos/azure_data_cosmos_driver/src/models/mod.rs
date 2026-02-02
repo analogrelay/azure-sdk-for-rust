@@ -9,6 +9,10 @@
 //! **Important**: This module does NOT contain data plane item/document types.
 //! The driver is schema-agnostic - data plane operations work with raw bytes (`&[u8]`).
 
+mod region;
+
+pub use region::Region;
+
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 

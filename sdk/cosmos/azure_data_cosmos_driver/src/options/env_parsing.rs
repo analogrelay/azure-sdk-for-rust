@@ -135,15 +135,63 @@ pub(super) fn parse_duration_millis_from_env(
     min_millis: u64,
     max_millis: u64,
 ) -> azure_core::Result<Duration> {
-    parse_from_env(
-        builder_value,
-        env_var_name,
-        Duration::from_millis(default_millis),
-        ValidationBounds::range(
-            Duration::from_millis(min_millis),
-            Duration::from_millis(max_millis),
-        ),
-    )
+    let value = match builder_value {
+        Some(v) => v,
+        None => match std::env::var(env_var_name) {
+            Ok(v) => {
+                let millis = v.parse::<u64>().map_err(|e| {
+                    azure_core::Error::with_message(
+                        azure_core::error::ErrorKind::DataConversion,
+                        format!(
+                            "Failed to parse {} as u64 milliseconds: {} ({})",
+                            env_var_name, v, e
+                        ),
+                    )
+                })?;
+                Duration::from_millis(millis)
+            }
+            Err(_) => Duration::from_millis(default_millis),
+        },
+    };
+
+    validate_duration_bounds(value, env_var_name, min_millis, max_millis)?;
+    Ok(value)
+}
+
+/// Validates a duration value against min/max bounds (in milliseconds).
+fn validate_duration_bounds(
+    value: Duration,
+    env_var_name: &str,
+    min_millis: u64,
+    max_millis: u64,
+) -> azure_core::Result<()> {
+    let value_millis = value.as_millis() as u64;
+    let field_name = env_var_name
+        .strip_prefix("AZURE_COSMOS_CONNECTION_POOL_")
+        .unwrap_or(env_var_name)
+        .to_lowercase();
+
+    if value_millis < min_millis {
+        return Err(azure_core::Error::with_message(
+            azure_core::error::ErrorKind::Other,
+            format!(
+                "{} must be at least {}ms, got {}ms",
+                field_name, min_millis, value_millis
+            ),
+        ));
+    }
+
+    if value_millis > max_millis {
+        return Err(azure_core::Error::with_message(
+            azure_core::error::ErrorKind::Other,
+            format!(
+                "{} must be at most {}ms, got {}ms",
+                field_name, max_millis, value_millis
+            ),
+        ));
+    }
+
+    Ok(())
 }
 
 /// Parses an optional duration from an environment variable (in milliseconds) with validation.
@@ -155,14 +203,7 @@ pub(super) fn parse_optional_duration_millis_from_env(
 ) -> azure_core::Result<Option<Duration>> {
     match builder_value {
         Some(timeout) => {
-            validate_bounds(
-                timeout,
-                env_var_name,
-                ValidationBounds::range(
-                    Duration::from_millis(min_millis),
-                    Duration::from_millis(max_millis),
-                ),
-            )?;
+            validate_duration_bounds(timeout, env_var_name, min_millis, max_millis)?;
             Ok(Some(timeout))
         }
         None => match std::env::var(env_var_name) {
@@ -170,17 +211,13 @@ pub(super) fn parse_optional_duration_millis_from_env(
                 let timeout = v.parse::<u64>().map(Duration::from_millis).map_err(|e| {
                     azure_core::Error::with_message(
                         azure_core::error::ErrorKind::DataConversion,
-                        format!("Failed to parse {} as milliseconds: {} ({})", env_var_name, v, e),
+                        format!(
+                            "Failed to parse {} as milliseconds: {} ({})",
+                            env_var_name, v, e
+                        ),
                     )
                 })?;
-                validate_bounds(
-                    timeout,
-                    env_var_name,
-                    ValidationBounds::range(
-                        Duration::from_millis(min_millis),
-                        Duration::from_millis(max_millis),
-                    ),
-                )?;
+                validate_duration_bounds(timeout, env_var_name, min_millis, max_millis)?;
                 Ok(Some(timeout))
             }
             Err(_) => Ok(None),
