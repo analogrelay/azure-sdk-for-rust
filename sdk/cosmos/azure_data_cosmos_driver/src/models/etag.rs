@@ -23,8 +23,20 @@ impl ETag {
     }
 }
 
-impl<T: Into<Cow<'static, str>>> From<T> for ETag {
-    fn from(value: T) -> Self {
+impl From<&'static str> for ETag {
+    fn from(value: &'static str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for ETag {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<Cow<'static, str>> for ETag {
+    fn from(value: Cow<'static, str>) -> Self {
         Self::new(value)
     }
 }
@@ -40,12 +52,8 @@ impl std::fmt::Display for ETag {
 /// Used for optimistic concurrency control on write operations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ETagCondition {
-    /// If set, the operation succeeds only if the resource's current ETag matches.
-    /// Used for "update if unchanged" semantics.
-    pub if_match: Option<ETag>,
-    /// If set, the operation succeeds only if the resource's current ETag does NOT match.
-    /// Used for "create if not exists" or conditional reads.
-    pub if_none_match: Option<ETag>,
+    if_match: Option<ETag>,
+    if_none_match: Option<ETag>,
 }
 
 impl ETagCondition {
@@ -54,13 +62,31 @@ impl ETagCondition {
         Self::default()
     }
 
+    /// Gets the If-Match condition.
+    ///
+    /// If set, the operation succeeds only if the resource's current ETag matches.
+    /// Used for "update if unchanged" semantics.
+    pub fn if_match(&self) -> Option<&ETag> {
+        self.if_match.as_ref()
+    }
+
+    /// Gets the If-None-Match condition.
+    ///
+    /// If set, the operation succeeds only if the resource's current ETag does NOT match.
+    /// Used for "create if not exists" or conditional reads.
+    pub fn if_none_match(&self) -> Option<&ETag> {
+        self.if_none_match.as_ref()
+    }
+
     /// Sets the If-Match condition.
+    #[must_use]
     pub fn with_if_match(mut self, etag: impl Into<ETag>) -> Self {
         self.if_match = Some(etag.into());
         self
     }
 
     /// Sets the If-None-Match condition.
+    #[must_use]
     pub fn with_if_none_match(mut self, etag: impl Into<ETag>) -> Self {
         self.if_none_match = Some(etag.into());
         self

@@ -35,7 +35,9 @@ pub use priority::PriorityLevel;
 pub use region::Region;
 pub use resource_reference::{ContainerReference, DatabaseReference};
 pub use session::SessionToken;
-pub use throughput_control::{ThroughputControlGroupName, ThroughputControlGroupOptions, ThroughputTarget};
+pub use throughput_control::{
+    ThroughputControlGroupName, ThroughputControlGroupOptions, ThroughputTarget,
+};
 pub use triggers::{TriggerOptions, TriggerReference};
 
 use serde::{Deserialize, Serialize};

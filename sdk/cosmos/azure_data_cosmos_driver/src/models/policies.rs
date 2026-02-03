@@ -79,6 +79,7 @@ impl ExcludedRegions {
     }
 
     /// Adds a region to exclude.
+    #[must_use]
     pub fn with_region(mut self, region: impl Into<Region>) -> Self {
         self.0.push(region.into());
         self

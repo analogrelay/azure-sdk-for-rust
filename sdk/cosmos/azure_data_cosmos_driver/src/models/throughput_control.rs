@@ -24,8 +24,20 @@ impl ThroughputControlGroupName {
     }
 }
 
-impl<T: Into<Cow<'static, str>>> From<T> for ThroughputControlGroupName {
-    fn from(name: T) -> Self {
+impl From<&'static str> for ThroughputControlGroupName {
+    fn from(name: &'static str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<String> for ThroughputControlGroupName {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<Cow<'static, str>> for ThroughputControlGroupName {
+    fn from(name: Cow<'static, str>) -> Self {
         Self::new(name)
     }
 }
@@ -74,11 +86,24 @@ pub enum ThroughputControlGroupOptions {
     ///
     /// The Cosmos DB service enforces the throughput limits.
     /// See <https://learn.microsoft.com/azure/cosmos-db/nosql/throughput-buckets>
-    ServerSide {
+    ServerSideThroughputBucket {
         /// Unique name identifying this control group.
         name: ThroughputControlGroupName,
         /// Throughput bucket assignment.
         throughput_bucket: u32,
+        /// Whether this group is used by default for requests without explicit assignment.
+        is_default: bool,
+    },
+
+    /// Server-side enforced throughput control using throughput buckets.
+    ///
+    /// The Cosmos DB service enforces the throughput limits.
+    /// See <https://learn.microsoft.com/azure/cosmos-db/nosql/throughput-buckets>
+    ServerSidePriorityBasedThrottling {
+        /// Unique name identifying this control group.
+        name: ThroughputControlGroupName,
+        /// Priority based throttling.
+        priority_level: PriorityLevel,
         /// Whether this group is used by default for requests without explicit assignment.
         is_default: bool,
     },
@@ -89,7 +114,8 @@ impl ThroughputControlGroupOptions {
     pub fn name(&self) -> &ThroughputControlGroupName {
         match self {
             Self::ClientSide { name, .. } => name,
-            Self::ServerSide { name, .. } => name,
+            Self::ServerSideThroughputBucket { name, .. } => name,
+            Self::ServerSidePriorityBasedThrottling { name, .. } => name,
         }
     }
 
@@ -97,7 +123,8 @@ impl ThroughputControlGroupOptions {
     pub fn is_default(&self) -> bool {
         match self {
             Self::ClientSide { is_default, .. } => *is_default,
-            Self::ServerSide { is_default, .. } => *is_default,
+            Self::ServerSideThroughputBucket { is_default, .. } => *is_default,
+            Self::ServerSidePriorityBasedThrottling { is_default, .. } => *is_default,
         }
     }
 }

@@ -136,7 +136,7 @@ impl Region {
     /// assert_eq!(region.as_str(), "westus2");
     /// ```
     pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        let normalized = normalize_region_name(&name.into());
+        let normalized = normalize_region_name(name.into());
         Self { normalized }
     }
 

@@ -114,6 +114,12 @@ impl<T: Into<PartitionKeyValue>> From<Option<T>> for PartitionKeyValue {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionKey(Vec<PartitionKeyValue>);
 
+impl Default for PartitionKey {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+
 impl PartitionKey {
     /// A null partition key value that can be used as a single partition key
     /// or as part of a hierarchical partition key.
@@ -206,5 +212,64 @@ where
 {
     fn from((v1, v2, v3): (T1, T2, T3)) -> Self {
         Self(vec![v1.into(), v2.into(), v3.into()])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_partition_key() {
+        let pk = PartitionKey::from("test");
+        assert_eq!(pk.len(), 1);
+        assert!(!pk.is_empty());
+    }
+
+    #[test]
+    fn numeric_partition_key() {
+        let pk1 = PartitionKey::from(42);
+        let pk2 = PartitionKey::from(42i64);
+        let pk3 = PartitionKey::from(1.5f64);
+        assert_eq!(pk1.len(), 1);
+        assert_eq!(pk2.len(), 1);
+        assert_eq!(pk3.len(), 1);
+    }
+
+    #[test]
+    fn hierarchical_partition_key() {
+        let pk = PartitionKey::from(("tenant", "user", 42));
+        assert_eq!(pk.len(), 3);
+    }
+
+    #[test]
+    fn empty_partition_key() {
+        let pk = PartitionKey::EMPTY;
+        assert!(pk.is_empty());
+        assert_eq!(pk.len(), 0);
+    }
+
+    #[test]
+    fn default_is_empty() {
+        let pk = PartitionKey::default();
+        assert_eq!(pk, PartitionKey::EMPTY);
+    }
+
+    #[test]
+    fn null_partition_key_value() {
+        let pk = PartitionKey::from(None::<String>);
+        assert_eq!(pk.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "at most 3 levels")]
+    fn too_many_levels() {
+        let values = vec![
+            PartitionKeyValue::from("a"),
+            PartitionKeyValue::from("b"),
+            PartitionKeyValue::from("c"),
+            PartitionKeyValue::from("d"),
+        ];
+        let _pk = PartitionKey::from(values);
     }
 }

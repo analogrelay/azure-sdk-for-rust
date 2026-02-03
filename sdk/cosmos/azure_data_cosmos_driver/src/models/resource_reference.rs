@@ -35,10 +35,7 @@ impl DatabaseReference {
     }
 
     /// Creates a new database reference with both name and RID.
-    pub fn new(
-        name: impl Into<Cow<'static, str>>,
-        rid: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn new(name: impl Into<Cow<'static, str>>, rid: impl Into<Cow<'static, str>>) -> Self {
         Self {
             name: Some(name.into()),
             rid: Some(rid.into()),
@@ -56,12 +53,14 @@ impl DatabaseReference {
     }
 
     /// Sets the database name.
+    #[must_use]
     pub fn with_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     /// Sets the database resource identifier (RID).
+    #[must_use]
     pub fn with_rid(mut self, rid: impl Into<Cow<'static, str>>) -> Self {
         self.rid = Some(rid.into());
         self
@@ -99,10 +98,7 @@ pub struct ContainerReference {
 
 impl ContainerReference {
     /// Creates a new container reference from a name.
-    pub fn from_name(
-        database: DatabaseReference,
-        name: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn from_name(database: DatabaseReference, name: impl Into<Cow<'static, str>>) -> Self {
         Self {
             database,
             name: Some(name.into()),
@@ -111,10 +107,7 @@ impl ContainerReference {
     }
 
     /// Creates a new container reference from a resource identifier (RID).
-    pub fn from_rid(
-        database: DatabaseReference,
-        rid: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn from_rid(database: DatabaseReference, rid: impl Into<Cow<'static, str>>) -> Self {
         Self {
             database,
             name: None,
@@ -151,12 +144,14 @@ impl ContainerReference {
     }
 
     /// Sets the container name.
+    #[must_use]
     pub fn with_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     /// Sets the container resource identifier (RID).
+    #[must_use]
     pub fn with_rid(mut self, rid: impl Into<Cow<'static, str>>) -> Self {
         self.rid = Some(rid.into());
         self
