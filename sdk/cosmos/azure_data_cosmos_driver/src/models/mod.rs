@@ -9,16 +9,24 @@
 //! **Important**: This module does NOT contain data plane item/document types.
 //! The driver is schema-agnostic - data plane operations work with raw bytes (`&[u8]`).
 
+mod account_reference;
+mod cosmos_operation;
+mod cosmos_resource_reference;
 mod etag;
 mod partition_key;
 mod resource_reference;
+mod resource_types;
 mod session;
 mod throughput_control;
 mod triggers;
 
+pub use account_reference::{AccountReference, AuthOptions, MasterKey};
+pub use cosmos_operation::CosmosOperation;
+pub use cosmos_resource_reference::CosmosResourceReference;
 pub use etag::{ETag, ETagCondition};
 pub use partition_key::{PartitionKey, PartitionKeyValue};
 pub use resource_reference::{ContainerReference, DatabaseReference};
+pub use resource_types::{OperationType, ResourceType};
 pub use session::SessionToken;
 pub use throughput_control::ThroughputControlGroupName;
 pub use triggers::TriggerReference;

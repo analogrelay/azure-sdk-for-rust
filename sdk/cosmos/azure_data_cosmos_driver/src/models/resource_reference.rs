@@ -3,14 +3,18 @@
 
 //! Resource reference types for databases and containers.
 
+use crate::models::AccountReference;
 use std::borrow::Cow;
 
 /// A reference to a Cosmos DB database.
 ///
-/// Contains either the name or resource identifier (RID) of the database, or both.
+/// Contains either the name or resource identifier (RID) of the database, or both,
+/// along with a reference to its parent account.
 /// Provides methods to generate name-based or RID-based relative paths.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DatabaseReference {
+    /// Reference to the parent account.
+    account: AccountReference,
     /// The database name.
     name: Option<Cow<'static, str>>,
     /// The database resource identifier (RID).
@@ -19,27 +23,39 @@ pub struct DatabaseReference {
 
 impl DatabaseReference {
     /// Creates a new database reference from a name.
-    pub fn from_name(name: impl Into<Cow<'static, str>>) -> Self {
+    pub fn from_name(account: AccountReference, name: impl Into<Cow<'static, str>>) -> Self {
         Self {
+            account,
             name: Some(name.into()),
             rid: None,
         }
     }
 
     /// Creates a new database reference from a resource identifier (RID).
-    pub fn from_rid(rid: impl Into<Cow<'static, str>>) -> Self {
+    pub fn from_rid(account: AccountReference, rid: impl Into<Cow<'static, str>>) -> Self {
         Self {
+            account,
             name: None,
             rid: Some(rid.into()),
         }
     }
 
     /// Creates a new database reference with both name and RID.
-    pub fn new(name: impl Into<Cow<'static, str>>, rid: impl Into<Cow<'static, str>>) -> Self {
+    pub fn new(
+        account: AccountReference,
+        name: impl Into<Cow<'static, str>>,
+        rid: impl Into<Cow<'static, str>>,
+    ) -> Self {
         Self {
+            account,
             name: Some(name.into()),
             rid: Some(rid.into()),
         }
+    }
+
+    /// Returns a reference to the parent account.
+    pub fn account(&self) -> &AccountReference {
+        &self.account
     }
 
     /// Returns the database name, if available.
@@ -86,7 +102,7 @@ impl DatabaseReference {
 /// Contains either the name or resource identifier (RID) of the container, or both,
 /// along with a reference to its parent database.
 /// Provides methods to generate name-based or RID-based relative paths.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContainerReference {
     /// Reference to the parent database.
     database: DatabaseReference,
