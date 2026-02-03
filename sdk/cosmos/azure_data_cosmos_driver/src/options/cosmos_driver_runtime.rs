@@ -220,11 +220,18 @@ impl CosmosDriverRuntime {
         self.vm_metadata_service.metadata()
     }
 
-    /// Returns the Azure VM's unique machine ID, if available.
+    /// Returns the unique machine ID.
     ///
-    /// This is a convenience method that extracts just the VM ID from the metadata.
-    pub fn machine_id(&self) -> Option<&str> {
+    /// This is always available:
+    /// - On Azure VMs: "vmId_{vm-id}" from IMDS
+    /// - Off Azure: "uuid_{generated-uuid}" (stable for process lifetime)
+    pub fn machine_id(&self) -> &str {
         self.vm_metadata_service.machine_id()
+    }
+
+    /// Returns `true` if running on an Azure VM with accessible IMDS.
+    pub fn is_on_azure(&self) -> bool {
+        self.vm_metadata_service.is_on_azure()
     }
 
     /// Returns the throughput control group registry.
@@ -504,33 +511,6 @@ impl CosmosDriverRuntimeBuilder {
             driver_registry: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-
-    /// Builds the [`CosmosDriverRuntime`] synchronously without fetching VM metadata.
-    ///
-    /// This is primarily intended for testing scenarios where async initialization
-    /// is not needed or where VM metadata is not required.
-    ///
-    /// # Note
-    ///
-    /// The resulting `CosmosDriverRuntime` will have no VM metadata available.
-    #[cfg(test)]
-    pub(crate) fn build_sync_for_test(self) -> CosmosDriverRuntime {
-        CosmosDriverRuntime {
-            client_options: self.client_options.unwrap_or_default(),
-            connection_pool: self.connection_pool.unwrap_or_default(),
-            runtime_options: SharedRuntimeOptions::from_options(
-                self.runtime_options.unwrap_or_default(),
-            ),
-            user_agent: self.user_agent,
-            workload_id: self.workload_id,
-            correlation_id: self.correlation_id,
-            user_agent_suffix: self.user_agent_suffix,
-            cpu_memory_monitor: CpuMemoryMonitor::get_or_init(),
-            vm_metadata_service: VmMetadataService::empty(),
-            throughput_control_groups: self.throughput_control_groups,
-            driver_registry: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
 }
 
 /// Cosmos DB driver instance.
@@ -706,9 +686,9 @@ mod tests {
         AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
     }
 
-    #[test]
-    fn default_runtime_options() {
-        let runtime = CosmosDriverRuntimeBuilder::new().build_sync_for_test();
+    #[tokio::test]
+    async fn default_runtime_options() {
+        let runtime = CosmosDriverRuntimeBuilder::new().build().await;
         let snapshot = runtime.runtime_options().snapshot();
         assert!(snapshot.throughput_control_group_name.is_none());
         assert!(snapshot.content_response_on_write.is_none());
@@ -716,17 +696,20 @@ mod tests {
         assert!(runtime.workload_id().is_none());
         assert!(runtime.correlation_id().is_none());
         assert!(runtime.user_agent_suffix().is_none());
+        // machine_id is always available
+        assert!(!runtime.machine_id().is_empty());
     }
 
-    #[test]
-    fn builder_sets_runtime_options() {
+    #[tokio::test]
+    async fn builder_sets_runtime_options() {
         let opts = RuntimeOptions::builder()
             .content_response_on_write(ContentResponseOnWrite::DISABLED)
             .build();
 
         let runtime = CosmosDriverRuntimeBuilder::new()
             .runtime_options(opts)
-            .build_sync_for_test();
+            .build()
+            .await;
 
         let snapshot = runtime.runtime_options().snapshot();
         assert_eq!(
@@ -735,14 +718,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn builder_sets_identity_fields() {
+    #[tokio::test]
+    async fn builder_sets_identity_fields() {
         let runtime = CosmosDriverRuntimeBuilder::new()
             .user_agent(UserAgent::new("my-app/1.0"))
             .workload_id(WorkloadId::new(25))
             .correlation_id(CorrelationId::new("aks-prod-eastus"))
             .user_agent_suffix(UserAgentSuffix::new("myapp-westus2"))
-            .build_sync_for_test();
+            .build()
+            .await;
 
         assert_eq!(runtime.user_agent().unwrap().as_str(), "my-app/1.0");
         assert_eq!(runtime.workload_id().unwrap().value(), 25);
@@ -756,34 +740,36 @@ mod tests {
         );
     }
 
-    #[test]
-    fn effective_correlation_prefers_correlation_id() {
+    #[tokio::test]
+    async fn effective_correlation_prefers_correlation_id() {
         let runtime = CosmosDriverRuntimeBuilder::new()
             .correlation_id(CorrelationId::new("correlation"))
             .user_agent_suffix(UserAgentSuffix::new("suffix"))
-            .build_sync_for_test();
+            .build()
+            .await;
 
         assert_eq!(runtime.effective_correlation(), Some("correlation"));
     }
 
-    #[test]
-    fn effective_correlation_falls_back_to_suffix() {
+    #[tokio::test]
+    async fn effective_correlation_falls_back_to_suffix() {
         let runtime = CosmosDriverRuntimeBuilder::new()
             .user_agent_suffix(UserAgentSuffix::new("suffix"))
-            .build_sync_for_test();
+            .build()
+            .await;
 
         assert_eq!(runtime.effective_correlation(), Some("suffix"));
     }
 
-    #[test]
-    fn effective_correlation_none_when_both_unset() {
-        let runtime = CosmosDriverRuntimeBuilder::new().build_sync_for_test();
+    #[tokio::test]
+    async fn effective_correlation_none_when_both_unset() {
+        let runtime = CosmosDriverRuntimeBuilder::new().build().await;
         assert!(runtime.effective_correlation().is_none());
     }
 
-    #[test]
-    fn runtime_modification() {
-        let runtime = CosmosDriverRuntimeBuilder::new().build_sync_for_test();
+    #[tokio::test]
+    async fn runtime_modification() {
+        let runtime = CosmosDriverRuntimeBuilder::new().build().await;
 
         // Initially none
         assert!(runtime
@@ -807,8 +793,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn effective_options_merge_priority() {
+    #[tokio::test]
+    async fn effective_options_merge_priority() {
         // Runtime has ENABLED
         let cosmos_runtime = CosmosDriverRuntimeBuilder::new()
             .runtime_options(
@@ -816,7 +802,8 @@ mod tests {
                     .content_response_on_write(ContentResponseOnWrite::ENABLED)
                     .build(),
             )
-            .build_sync_for_test();
+            .build()
+            .await;
 
         // Driver has DISABLED
         let driver_options = DriverOptions::builder(test_account())
@@ -847,8 +834,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn effective_options_falls_back_to_runtime() {
+    #[tokio::test]
+    async fn effective_options_falls_back_to_runtime() {
         // Runtime has ENABLED
         let cosmos_runtime = CosmosDriverRuntimeBuilder::new()
             .runtime_options(
@@ -856,7 +843,8 @@ mod tests {
                     .content_response_on_write(ContentResponseOnWrite::ENABLED)
                     .build(),
             )
-            .build_sync_for_test();
+            .build()
+            .await;
 
         // Driver has no override
         let driver_options = DriverOptions::builder(test_account()).build();
@@ -869,6 +857,22 @@ mod tests {
         assert_eq!(
             effective.content_response_on_write,
             Some(ContentResponseOnWrite::ENABLED)
+        );
+    }
+
+    #[tokio::test]
+    async fn machine_id_always_available() {
+        let runtime = CosmosDriverRuntimeBuilder::new().build().await;
+
+        // machine_id is always available (either VM ID or generated UUID)
+        let machine_id = runtime.machine_id();
+        assert!(!machine_id.is_empty());
+
+        // It should have one of the known prefixes
+        assert!(
+            machine_id.starts_with("vmId_") || machine_id.starts_with("uuid_"),
+            "machine_id should start with 'vmId_' or 'uuid_', got: {}",
+            machine_id
         );
     }
 }

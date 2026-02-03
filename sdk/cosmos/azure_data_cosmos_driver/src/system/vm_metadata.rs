@@ -7,12 +7,16 @@ use azure_core::http::{new_http_client, Method, Request};
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock, RwLock};
 use url::Url;
+use uuid::Uuid;
 
 /// Azure Instance Metadata Service endpoint.
 const IMDS_ENDPOINT: &str = "http://169.254.169.254/metadata/instance?api-version=2020-06-01";
 
 /// Prefix for VM ID in machine identifiers.
 pub const VM_ID_PREFIX: &str = "vmId_";
+
+/// Prefix for generated UUID in machine identifiers (when not on Azure VM).
+pub const UUID_PREFIX: &str = "uuid_";
 
 /// Global singleton for Azure VM metadata.
 static VM_METADATA: OnceLock<Arc<VmMetadataServiceInner>> = OnceLock::new();
@@ -94,10 +98,20 @@ struct ComputeMetadata {
 ///
 /// Provides access to cached Azure VM metadata fetched from IMDS.
 /// The metadata is fetched once on first initialization and cached.
+///
+/// # Machine ID
+///
+/// The `machine_id` is always available and uniquely identifies the machine:
+/// - On Azure VMs: Uses the VM ID from IMDS (prefixed with "vmId_")
+/// - Off Azure: Uses a process-wide generated UUID (prefixed with "uuid_")
+///
+/// This ensures that client telemetry always has a stable machine identifier.
 #[derive(Clone, Debug)]
 pub struct VmMetadataService {
     /// Cached metadata (None if fetch failed or not on Azure).
     metadata: Option<Arc<AzureVmMetadata>>,
+    /// Machine ID - always available (VM ID or generated UUID).
+    machine_id: Arc<String>,
 }
 
 impl VmMetadataService {
@@ -105,6 +119,9 @@ impl VmMetadataService {
     ///
     /// On first call, this will attempt to fetch metadata from IMDS.
     /// This is an async operation since it uses azure_core's HTTP client.
+    ///
+    /// This method never fails - if IMDS is unreachable, the service will
+    /// still be available with a generated UUID as the machine ID.
     pub async fn get_or_init() -> Self {
         // Use OnceLock to ensure we only fetch once
         let inner = VM_METADATA.get_or_init(|| Arc::new(VmMetadataServiceInner::new()));
@@ -115,18 +132,14 @@ impl VmMetadataService {
             inner.fetch_metadata().await;
         }
 
-        // Extract the cached metadata
+        // Extract the cached metadata and machine ID
         let metadata = inner.get_metadata();
+        let machine_id = inner.get_machine_id();
 
-        Self { metadata }
-    }
-
-    /// Creates an empty VM metadata service with no metadata.
-    ///
-    /// This is primarily for testing scenarios where VM metadata is not needed.
-    #[cfg(test)]
-    pub(crate) fn empty() -> Self {
-        Self { metadata: None }
+        Self {
+            metadata,
+            machine_id,
+        }
     }
 
     /// Returns the cached VM metadata, if available.
@@ -138,13 +151,19 @@ impl VmMetadataService {
         self.metadata.as_deref()
     }
 
-    /// Returns the machine ID (VM ID with prefix), if available.
-    pub fn machine_id(&self) -> Option<&str> {
-        self.metadata.as_ref().map(|m| m.vm_id())
+    /// Returns the machine ID.
+    ///
+    /// This is always available:
+    /// - On Azure VMs: "vmId_{vm-id}" from IMDS
+    /// - Off Azure: "uuid_{generated-uuid}" (stable for process lifetime)
+    pub fn machine_id(&self) -> &str {
+        &self.machine_id
     }
 
-    /// Returns `true` if metadata has been fetched successfully.
-    pub fn is_available(&self) -> bool {
+    /// Returns `true` if Azure VM metadata has been fetched successfully.
+    ///
+    /// Note: Even if this returns `false`, `machine_id()` is still available.
+    pub fn is_on_azure(&self) -> bool {
         self.metadata.is_some()
     }
 }
@@ -154,6 +173,8 @@ impl VmMetadataService {
 struct VmMetadataServiceInner {
     /// Cached metadata.
     metadata: RwLock<Option<Arc<AzureVmMetadata>>>,
+    /// Machine ID (VM ID or generated UUID).
+    machine_id: RwLock<Option<Arc<String>>>,
     /// Whether fetch has completed (success or failure).
     fetch_complete: RwLock<bool>,
 }
@@ -162,6 +183,7 @@ impl VmMetadataServiceInner {
     fn new() -> Self {
         Self {
             metadata: RwLock::new(None),
+            machine_id: RwLock::new(None),
             fetch_complete: RwLock::new(false),
         }
     }
@@ -172,6 +194,14 @@ impl VmMetadataServiceInner {
 
     fn get_metadata(&self) -> Option<Arc<AzureVmMetadata>> {
         self.metadata.read().unwrap().clone()
+    }
+
+    fn get_machine_id(&self) -> Arc<String> {
+        self.machine_id
+            .read()
+            .unwrap()
+            .clone()
+            .expect("machine_id should be set after fetch completes")
     }
 
     async fn fetch_metadata(&self) {
@@ -186,6 +216,7 @@ impl VmMetadataServiceInner {
         // Check if IMDS access is disabled via environment variable
         if std::env::var("COSMOS_DISABLE_IMDS").is_ok() {
             tracing::info!("IMDS access disabled via COSMOS_DISABLE_IMDS");
+            self.set_fallback_machine_id();
             *self.fetch_complete.write().unwrap() = true;
             return;
         }
@@ -195,20 +226,38 @@ impl VmMetadataServiceInner {
         match result {
             Ok(metadata) => {
                 tracing::debug!("Fetched Azure VM metadata: {:?}", metadata);
+                let vm_id = metadata.vm_id();
+                let machine_id = if vm_id.is_empty() {
+                    // VM ID is empty, use fallback
+                    self.generate_fallback_machine_id()
+                } else {
+                    format!("{}{}", VM_ID_PREFIX, vm_id)
+                };
+                *self.machine_id.write().unwrap() = Some(Arc::new(machine_id));
                 *self.metadata.write().unwrap() = Some(Arc::new(metadata));
             }
             Err(e) => {
                 tracing::debug!("Failed to fetch Azure VM metadata (not on Azure?): {}", e);
+                self.set_fallback_machine_id();
             }
         }
 
         *self.fetch_complete.write().unwrap() = true;
     }
 
+    fn set_fallback_machine_id(&self) {
+        let machine_id = self.generate_fallback_machine_id();
+        *self.machine_id.write().unwrap() = Some(Arc::new(machine_id));
+    }
+
+    fn generate_fallback_machine_id(&self) -> String {
+        format!("{}{}", UUID_PREFIX, Uuid::new_v4())
+    }
+
     async fn do_fetch() -> azure_core::Result<AzureVmMetadata> {
         let url: Url = IMDS_ENDPOINT.parse().expect("valid IMDS URL");
         let mut request = Request::new(url, Method::Get);
-        request.insert_header("Metadata", "true");
+        request.insert_header("metadata", "true");
 
         let http_client = new_http_client();
         let response = http_client.execute_request(&request).await?;

@@ -7,7 +7,6 @@
 //! Options follow a three-level hierarchy: Runtime → Driver → Operation.
 
 mod connection_pool;
-mod cosmos_driver_runtime;
 mod dedicated_gateway;
 mod diagnostics_thresholds;
 mod driver_options;
@@ -23,7 +22,6 @@ mod throughput_control;
 mod triggers;
 
 pub use connection_pool::{ConnectionPoolOptions, ConnectionPoolOptionsBuilder};
-pub use cosmos_driver_runtime::{CosmosDriver, CosmosDriverRuntime, CosmosDriverRuntimeBuilder};
 pub use dedicated_gateway::DedicatedGatewayOptions;
 pub use diagnostics_thresholds::DiagnosticsThresholds;
 pub use driver_options::{DriverOptions, DriverOptionsBuilder};

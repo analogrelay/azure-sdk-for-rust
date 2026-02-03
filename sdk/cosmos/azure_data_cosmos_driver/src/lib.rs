@@ -23,11 +23,13 @@
 //! the consuming SDK in its native language.
 
 pub mod diagnostics;
+pub mod driver;
 pub mod models;
 pub mod options;
 pub mod system;
 
 // Re-export key types at crate root
 pub use diagnostics::DiagnosticsContext;
-pub use options::{CosmosDriver, CosmosDriverRuntime, DriverOptions};
+pub use driver::{CosmosDriver, CosmosDriverRuntime, CosmosDriverRuntimeBuilder};
+pub use options::DriverOptions;
 pub use system::{CpuMemoryHistory, CpuMemoryMonitor, VmMetadataService};
