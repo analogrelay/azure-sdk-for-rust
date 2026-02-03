@@ -105,3 +105,41 @@ impl<T: Into<Region>> FromIterator<T> for ExcludedRegions {
         Self(iter.into_iter().map(Into::into).collect())
     }
 }
+
+/// Controls whether JavaScript stored procedure logging is enabled.
+///
+/// When enabled, script logs from stored procedures are included in the response.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct ScriptLoggingEnabled(pub bool);
+
+impl ScriptLoggingEnabled {
+    /// Script logging is enabled.
+    pub const ENABLED: Self = Self(true);
+    /// Script logging is disabled.
+    pub const DISABLED: Self = Self(false);
+}
+
+impl From<bool> for ScriptLoggingEnabled {
+    fn from(value: bool) -> Self {
+        Self(value)
+    }
+}
+
+/// Controls whether quota information is included in responses.
+///
+/// When enabled, container quota stats are returned in the response headers.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct QuotaInfoEnabled(pub bool);
+
+impl QuotaInfoEnabled {
+    /// Quota info is enabled.
+    pub const ENABLED: Self = Self(true);
+    /// Quota info is disabled.
+    pub const DISABLED: Self = Self(false);
+}
+
+impl From<bool> for QuotaInfoEnabled {
+    fn from(value: bool) -> Self {
+        Self(value)
+    }
+}

@@ -12,6 +12,7 @@
 mod dedicated_gateway;
 mod diagnostics;
 mod etag;
+mod operation_options;
 mod partition_key;
 mod policies;
 mod priority;
@@ -24,10 +25,11 @@ mod triggers;
 pub use dedicated_gateway::DedicatedGatewayOptions;
 pub use diagnostics::DiagnosticsThresholds;
 pub use etag::{ETag, ETagCondition};
+pub use operation_options::OperationOptions;
 pub use partition_key::{PartitionKey, PartitionKeyValue};
 pub use policies::{
     ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions,
-    NonIdempotentWriteRetries,
+    NonIdempotentWriteRetries, QuotaInfoEnabled, ScriptLoggingEnabled,
 };
 pub use priority::PriorityLevel;
 pub use region::Region;
