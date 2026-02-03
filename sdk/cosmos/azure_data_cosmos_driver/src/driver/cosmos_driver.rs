@@ -181,7 +181,9 @@ mod tests {
     use crate::{
         driver::CosmosDriverRuntimeBuilder,
         models::AccountReference,
-        options::{ContentResponseOnWrite, CorrelationId, RuntimeOptions, UserAgentSuffix, WorkloadId},
+        options::{
+            ContentResponseOnWrite, CorrelationId, RuntimeOptions, UserAgentSuffix, WorkloadId,
+        },
     };
 
     use super::*;
@@ -197,7 +199,10 @@ mod tests {
         assert!(snapshot.throughput_control_group_name.is_none());
         assert!(snapshot.content_response_on_write.is_none());
         // user_agent is always available with base prefix
-        assert!(runtime.user_agent().as_str().starts_with("azsdk-rust-cosmos-driver/"));
+        assert!(runtime
+            .user_agent()
+            .as_str()
+            .starts_with("azsdk-rust-cosmos-driver/"));
         assert!(runtime.user_agent().suffix().is_none());
         assert!(runtime.workload_id().is_none());
         assert!(runtime.correlation_id().is_none());
@@ -254,7 +259,10 @@ mod tests {
             .build()
             .await;
 
-        assert!(runtime.user_agent().as_str().starts_with("azsdk-rust-cosmos-driver/"));
+        assert!(runtime
+            .user_agent()
+            .as_str()
+            .starts_with("azsdk-rust-cosmos-driver/"));
         assert!(runtime.user_agent().as_str().contains("my-suffix"));
         assert_eq!(runtime.user_agent().suffix(), Some("my-suffix"));
     }
@@ -266,7 +274,10 @@ mod tests {
             .build()
             .await;
 
-        assert!(runtime.user_agent().as_str().starts_with("azsdk-rust-cosmos-driver/"));
+        assert!(runtime
+            .user_agent()
+            .as_str()
+            .starts_with("azsdk-rust-cosmos-driver/"));
         assert!(runtime.user_agent().as_str().contains("w42"));
     }
 
@@ -277,7 +288,10 @@ mod tests {
             .build()
             .await;
 
-        assert!(runtime.user_agent().as_str().starts_with("azsdk-rust-cosmos-driver/"));
+        assert!(runtime
+            .user_agent()
+            .as_str()
+            .starts_with("azsdk-rust-cosmos-driver/"));
         assert!(runtime.user_agent().as_str().contains("my-correlation"));
     }
 

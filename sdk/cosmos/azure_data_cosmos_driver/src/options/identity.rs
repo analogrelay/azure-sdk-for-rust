@@ -137,7 +137,13 @@ impl fmt::Display for UserAgent {
 fn strip_non_ascii(input: &str) -> String {
     input
         .chars()
-        .map(|c| if c.is_ascii() && !c.is_ascii_control() { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii() && !c.is_ascii_control() {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 

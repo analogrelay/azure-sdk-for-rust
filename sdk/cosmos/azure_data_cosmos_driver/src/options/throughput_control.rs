@@ -44,7 +44,10 @@ pub(crate) struct ClientSideMutableValues {
 
 impl ClientSideMutableValues {
     /// Creates new mutable values.
-    pub(crate) fn new(target_throughput: ThroughputTarget, priority_level: Option<PriorityLevel>) -> Self {
+    pub(crate) fn new(
+        target_throughput: ThroughputTarget,
+        priority_level: Option<PriorityLevel>,
+    ) -> Self {
         Self {
             target_throughput,
             priority_level,
