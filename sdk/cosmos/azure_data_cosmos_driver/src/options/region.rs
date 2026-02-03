@@ -18,7 +18,7 @@ use std::fmt;
 /// # Examples
 ///
 /// ```
-/// use azure_data_cosmos_driver::models::Region;
+/// use azure_data_cosmos_driver::options::Region;
 ///
 /// // Use predefined constants
 /// let region = Region::WEST_US_2;
@@ -130,7 +130,7 @@ impl Region {
     /// # Examples
     ///
     /// ```
-    /// use azure_data_cosmos_driver::models::Region;
+    /// use azure_data_cosmos_driver::options::Region;
     ///
     /// let region = Region::new("West US 2");
     /// assert_eq!(region.as_str(), "westus2");
@@ -145,7 +145,7 @@ impl Region {
     /// # Examples
     ///
     /// ```
-    /// use azure_data_cosmos_driver::models::Region;
+    /// use azure_data_cosmos_driver::options::Region;
     ///
     /// let region = Region::WEST_US_2;
     /// assert_eq!(region.as_str(), "westus2");
@@ -162,7 +162,7 @@ impl Region {
     /// # Examples
     ///
     /// ```
-    /// use azure_data_cosmos_driver::models::Region;
+    /// use azure_data_cosmos_driver::options::Region;
     ///
     /// // Known region uses standard display name
     /// let known = Region::WEST_US_2;
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn equality_and_ordering() {
-        let mut regions = vec![Region::WEST_US_2, Region::EAST_US, Region::CENTRAL_US];
+        let mut regions = [Region::WEST_US_2, Region::EAST_US, Region::CENTRAL_US];
         regions.sort();
 
         assert_eq!(regions[0], Region::CENTRAL_US);

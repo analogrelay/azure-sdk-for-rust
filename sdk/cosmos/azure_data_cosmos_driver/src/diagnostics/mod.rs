@@ -9,7 +9,7 @@
 //!
 //! Diagnostics are **operational metadata** tracked by the SDK, not service resources.
 
-use crate::models::Region;
+use crate::options::Region;
 use std::time::Duration;
 
 /// Diagnostic context for a Cosmos DB operation.
@@ -57,7 +57,7 @@ impl RegionContact {
     ///
     /// ```
     /// use azure_data_cosmos_driver::diagnostics::RegionContact;
-    /// use azure_data_cosmos_driver::models::Region;
+    /// use azure_data_cosmos_driver::options::Region;
     /// use std::time::Duration;
     ///
     /// let contact = RegionContact::new(

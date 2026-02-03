@@ -210,15 +210,18 @@ where
 
 ### What Qualifies as a "Model"
 
-**Definition**: A serializable data structure representing a Cosmos DB management/metadata resource or operation envelope.
+**Definition**: A serializable data structure representing values transmitted over the wire to or from the Cosmos DB service (request/response body or header values).
+
+**Critical Requirement**: All types in `models/` **must be serializable** and used for wire format. Configuration types that control SDK behavior belong in `options/`.
 
 **Include in `models/` module**:
 - ✅ **Management/metadata resource representations**: Account properties, offers, database properties, container properties, partition key ranges (NOT data plane documents/items)
 - ✅ **Supporting structures**: Types that are properties of models (IndexingPolicy, PartitionKeyDefinition, VectorEmbeddingPolicy, consistency levels, indexing modes, connection modes)
 - ✅ **Operation-specific envelopes**: Structures created for operation support (TransactionalBatch, PatchDocument, BulkOperations)
+- ✅ **Header/wire values**: Types serialized into request headers or body (ETag, SessionToken, PartitionKey, TriggerReference, ThroughputControlGroupName)
 
 **Exclude from `models/` (use dedicated modules)**:
-- ❌ Options/configuration types → `options/` module
+- ❌ **Configuration/options types** → `options/` module (e.g., Region for excluded regions, TriggerOptions for which triggers to use, ThroughputControlGroupOptions)
 - ❌ Client types → `clients/` module
 - ❌ Error types → `error.rs` or crate root
 - ❌ **Diagnostics/telemetry types** → `diagnostics/` module

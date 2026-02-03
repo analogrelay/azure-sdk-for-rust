@@ -6,15 +6,14 @@
 use azure_core::http::headers::Headers;
 
 use crate::{
-    models::{
-        ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds, ETagCondition,
-        EndToEndOperationLatencyPolicy, ExcludedRegions, NonIdempotentWriteRetries, PartitionKey,
-        QuotaInfoEnabled, ScriptLoggingEnabled, ThroughputControlGroupName,
+    models::{ETagCondition, PartitionKey, SessionToken, ThroughputControlGroupName},
+    options::{
+        ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
+        EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,
+        NonIdempotentWriteRetries, PriorityLevel, QuotaInfoEnabled, ReadConsistencyStrategy,
+        ScriptLoggingEnabled, TriggerOptions,
     },
-    options::ReadConsistencyStrategy,
 };
-
-use super::{PriorityLevel, SessionToken, TriggerOptions};
 
 /// Options that can be applied to Cosmos DB operations.
 ///
@@ -24,13 +23,12 @@ use super::{PriorityLevel, SessionToken, TriggerOptions};
 /// # Example
 ///
 /// ```ignore
-/// use azure_data_cosmos_driver::models::{
-///     OperationOptions, PartitionKey, PriorityLevel, ContentResponseOnWrite,
-/// };
+/// use azure_data_cosmos_driver::options::OperationOptions;
+/// use azure_data_cosmos_driver::models::{PartitionKey, PriorityLevel, ContentResponseOnWrite};
 ///
 /// let options = OperationOptions::new()
 ///     .partition_key(PartitionKey::from("my-partition"))
-///     .priority_level(PriorityLevel::LOW)
+///     .priority_level(PriorityLevel::Low)
 ///     .content_response_on_write(ContentResponseOnWrite::DISABLED);
 /// ```
 #[derive(Clone, Debug, Default)]
@@ -55,6 +53,9 @@ pub struct OperationOptions {
     content_response_on_write: Option<ContentResponseOnWrite>,
     non_idempotent_write_retries: Option<NonIdempotentWriteRetries>,
     priority_level: Option<PriorityLevel>,
+
+    // Only patch operations
+    filter_predicate: Option<FilterPredicate>,
 
     // Only StoredProc executions
     script_logging_enabled: Option<ScriptLoggingEnabled>,
@@ -256,5 +257,20 @@ impl OperationOptions {
     /// Gets the custom headers.
     pub fn custom_headers_ref(&self) -> Option<&Headers> {
         self.custom_headers.as_ref()
+    }
+
+    /// Sets the filter predicate for conditional patch operations.
+    ///
+    /// The filter predicate is a SQL-like condition that must evaluate to true
+    /// for the patch operation to be applied. Only used with patch operations.
+    #[must_use]
+    pub fn filter_predicate(mut self, predicate: impl Into<FilterPredicate>) -> Self {
+        self.filter_predicate = Some(predicate.into());
+        self
+    }
+
+    /// Gets the filter predicate.
+    pub fn filter_predicate_ref(&self) -> Option<&FilterPredicate> {
+        self.filter_predicate.as_ref()
     }
 }
