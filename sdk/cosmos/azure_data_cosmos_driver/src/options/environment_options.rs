@@ -1,34 +1,57 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Driver-level configuration options.
+//! Environment-level configuration options.
 
-use azure_core::http::headers::Headers;
+use azure_core::http::{headers::Headers, ClientOptions};
 use std::sync::{Arc, RwLock};
 
 use crate::{
     models::ThroughputControlGroupName,
     options::{
-        ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
-        EndToEndOperationLatencyPolicy, ExcludedRegions, ReadConsistencyStrategy,
+        ConnectionPoolOptions, ContentResponseOnWrite, DedicatedGatewayOptions,
+        DiagnosticsThresholds, EndToEndOperationLatencyPolicy, ExcludedRegions,
+        ReadConsistencyStrategy,
     },
 };
 
-use super::environment_options::MutableDefaults;
-
-/// Thread-safe wrapper for driver-level mutable defaults.
+/// Thread-safe mutable defaults for operation options.
 ///
-/// Provides interior mutability for runtime configuration changes at the driver level.
+/// These defaults can be modified at runtime and will be applied to all operations
+/// that don't explicitly override them.
 #[derive(Clone, Debug, Default)]
-pub struct DriverDefaults(Arc<RwLock<MutableDefaults>>);
+pub struct MutableDefaults {
+    /// Default throughput control group name.
+    pub throughput_control_group_name: Option<ThroughputControlGroupName>,
+    /// Default dedicated gateway options.
+    pub dedicated_gateway_options: Option<DedicatedGatewayOptions>,
+    /// Default diagnostics thresholds.
+    pub diagnostics_thresholds: Option<DiagnosticsThresholds>,
+    /// Default end-to-end latency policy.
+    pub end_to_end_latency_policy: Option<EndToEndOperationLatencyPolicy>,
+    /// Default custom headers.
+    pub custom_headers: Option<Headers>,
+    /// Default excluded regions.
+    pub excluded_regions: Option<ExcludedRegions>,
+    /// Default read consistency strategy.
+    pub read_consistency_strategy: Option<ReadConsistencyStrategy>,
+    /// Default content response on write setting.
+    pub content_response_on_write: Option<ContentResponseOnWrite>,
+}
 
-impl DriverDefaults {
-    /// Creates a new empty driver defaults.
+/// Thread-safe wrapper for mutable defaults.
+///
+/// Provides interior mutability for runtime configuration changes.
+#[derive(Clone, Debug, Default)]
+pub struct SharedDefaults(Arc<RwLock<MutableDefaults>>);
+
+impl SharedDefaults {
+    /// Creates a new empty shared defaults.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Creates driver defaults from existing mutable defaults.
+    /// Creates shared defaults from existing mutable defaults.
     pub fn from_defaults(defaults: MutableDefaults) -> Self {
         Self(Arc::new(RwLock::new(defaults)))
     }
@@ -101,10 +124,10 @@ impl DriverDefaults {
     }
 }
 
-/// Configuration options for a Cosmos DB driver instance.
+/// Configuration options for a Cosmos DB environment.
 ///
-/// A driver represents a connection to a specific Cosmos DB account. It inherits
-/// environment-level defaults but can override them with driver-specific settings.
+/// An environment represents the global configuration shared across all drivers
+/// and connections. It includes connection pool settings and default operation options.
 ///
 /// # Thread Safety
 ///
@@ -115,10 +138,10 @@ impl DriverDefaults {
 ///
 /// ```
 /// use azure_data_cosmos_driver::options::{
-///     DriverOptions, DriverOptionsBuilder, ContentResponseOnWrite,
+///     EnvironmentOptions, EnvironmentOptionsBuilder, ContentResponseOnWrite,
 /// };
 ///
-/// let options = DriverOptionsBuilder::new()
+/// let options = EnvironmentOptionsBuilder::new()
 ///     .default_content_response_on_write(ContentResponseOnWrite::DISABLED)
 ///     .build();
 ///
@@ -126,37 +149,70 @@ impl DriverDefaults {
 /// options.defaults().set_content_response_on_write(Some(ContentResponseOnWrite::ENABLED));
 /// ```
 #[derive(Clone, Debug, Default)]
-pub struct DriverOptions {
-    /// Thread-safe mutable defaults for operation options at the driver level.
-    defaults: DriverDefaults,
+pub struct EnvironmentOptions {
+    /// Core HTTP client options from azure_core.
+    client_options: ClientOptions,
+
+    /// Connection pool configuration for managing TCP connections.
+    connection_pool: ConnectionPoolOptions,
+
+    /// Thread-safe mutable defaults for operation options.
+    defaults: SharedDefaults,
 }
 
-impl DriverOptions {
-    /// Returns a new builder for creating driver options.
-    pub fn builder() -> DriverOptionsBuilder {
-        DriverOptionsBuilder::new()
+impl EnvironmentOptions {
+    /// Returns a new builder for creating environment options.
+    pub fn builder() -> EnvironmentOptionsBuilder {
+        EnvironmentOptionsBuilder::new()
+    }
+
+    /// Returns the HTTP client options.
+    pub fn client_options(&self) -> &ClientOptions {
+        &self.client_options
+    }
+
+    /// Returns the connection pool options.
+    pub fn connection_pool(&self) -> &ConnectionPoolOptions {
+        &self.connection_pool
     }
 
     /// Returns the thread-safe mutable defaults.
     ///
     /// Use this to modify default operation options at runtime.
-    pub fn defaults(&self) -> &DriverDefaults {
+    pub fn defaults(&self) -> &SharedDefaults {
         &self.defaults
     }
 }
 
-/// Builder for creating [`DriverOptions`].
+/// Builder for creating [`EnvironmentOptions`].
 ///
 /// Only mutable default properties can be set through this builder.
+/// Connection pool and client options are set directly.
 #[derive(Clone, Debug, Default)]
-pub struct DriverOptionsBuilder {
+pub struct EnvironmentOptionsBuilder {
+    client_options: Option<ClientOptions>,
+    connection_pool: Option<ConnectionPoolOptions>,
     defaults: MutableDefaults,
 }
 
-impl DriverOptionsBuilder {
+impl EnvironmentOptionsBuilder {
     /// Creates a new builder with default values.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the HTTP client options.
+    #[must_use]
+    pub fn client_options(mut self, options: ClientOptions) -> Self {
+        self.client_options = Some(options);
+        self
+    }
+
+    /// Sets the connection pool options.
+    #[must_use]
+    pub fn connection_pool(mut self, options: ConnectionPoolOptions) -> Self {
+        self.connection_pool = Some(options);
+        self
     }
 
     /// Sets the default throughput control group name.
@@ -221,10 +277,12 @@ impl DriverOptionsBuilder {
         self
     }
 
-    /// Builds the [`DriverOptions`].
-    pub fn build(self) -> DriverOptions {
-        DriverOptions {
-            defaults: DriverDefaults::from_defaults(self.defaults),
+    /// Builds the [`EnvironmentOptions`].
+    pub fn build(self) -> EnvironmentOptions {
+        EnvironmentOptions {
+            client_options: self.client_options.unwrap_or_default(),
+            connection_pool: self.connection_pool.unwrap_or_default(),
+            defaults: SharedDefaults::from_defaults(self.defaults),
         }
     }
 }
@@ -234,8 +292,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_driver_options() {
-        let options = DriverOptions::default();
+    fn default_environment_options() {
+        let options = EnvironmentOptions::default();
         let defaults = options.defaults().snapshot();
         assert!(defaults.throughput_control_group_name.is_none());
         assert!(defaults.content_response_on_write.is_none());
@@ -243,7 +301,7 @@ mod tests {
 
     #[test]
     fn builder_sets_defaults() {
-        let options = DriverOptionsBuilder::new()
+        let options = EnvironmentOptionsBuilder::new()
             .default_content_response_on_write(ContentResponseOnWrite::DISABLED)
             .build();
 
@@ -256,7 +314,7 @@ mod tests {
 
     #[test]
     fn runtime_modification() {
-        let options = DriverOptions::default();
+        let options = EnvironmentOptions::default();
 
         // Initially none
         assert!(options

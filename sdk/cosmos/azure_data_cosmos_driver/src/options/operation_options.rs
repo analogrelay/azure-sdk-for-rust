@@ -43,6 +43,7 @@ pub struct OperationOptions {
     custom_headers: Option<Headers>,
     quota_info_enabled: Option<QuotaInfoEnabled>,
     excluded_regions: Option<ExcludedRegions>,
+    priority_level: Option<PriorityLevel>,
 
     // just read operations
     read_consistency_strategy: Option<ReadConsistencyStrategy>,
@@ -52,7 +53,6 @@ pub struct OperationOptions {
     triggers: Option<TriggerOptions>,
     content_response_on_write: Option<ContentResponseOnWrite>,
     non_idempotent_write_retries: Option<NonIdempotentWriteRetries>,
-    priority_level: Option<PriorityLevel>,
 
     // Only patch operations
     filter_predicate: Option<FilterPredicate>,

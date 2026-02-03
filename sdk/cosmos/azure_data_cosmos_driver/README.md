@@ -61,9 +61,13 @@ This crate follows **strict semantic versioning** but can move to new major vers
 
 ```rust,no_run
 use azure_data_cosmos_driver::{DriverBuilder, options::DriverOptions};
+use azure_identity::DeveloperToolsCredential;
 
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
+    // Use logged-in developer credentials (Azure CLI, azd, etc.)
+    let credential = DeveloperToolsCredential::new(None)?;
+
     let driver = DriverBuilder::new()
         .build(
             "https://myaccount.documents.azure.com",

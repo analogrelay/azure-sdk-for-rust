@@ -11,6 +11,7 @@ mod dedicated_gateway;
 mod diagnostics_thresholds;
 mod driver_options;
 mod env_parsing;
+mod environment_options;
 mod operation_options;
 mod policies;
 mod priority;
@@ -22,7 +23,10 @@ mod triggers;
 pub use connection_pool::{ConnectionPoolOptions, ConnectionPoolOptionsBuilder};
 pub use dedicated_gateway::DedicatedGatewayOptions;
 pub use diagnostics_thresholds::DiagnosticsThresholds;
-pub use driver_options::DriverOptions;
+pub use driver_options::{DriverDefaults, DriverOptions, DriverOptionsBuilder};
+pub use environment_options::{
+    EnvironmentOptions, EnvironmentOptionsBuilder, MutableDefaults, SharedDefaults,
+};
 pub use operation_options::OperationOptions;
 pub use policies::{
     ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,

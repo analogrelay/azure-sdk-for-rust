@@ -30,4 +30,4 @@ pub mod options;
 // Re-export key types at crate root
 pub use builders::DriverBuilder;
 pub use diagnostics::DiagnosticsContext;
-pub use options::DriverOptions;
+pub use options::{DriverOptions, EnvironmentOptions};
