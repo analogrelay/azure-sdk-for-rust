@@ -3,7 +3,9 @@
 
 //! Cosmos DB operation representation.
 
-use crate::models::{CosmosResourceReference, OperationType, PartitionKey, ResourceType};
+use crate::models::{
+    ContainerReference, CosmosResourceReference, OperationType, PartitionKey, ResourceType,
+};
 use azure_core::http::headers::Headers;
 
 /// Represents a Cosmos DB operation with its routing and execution context.
@@ -70,6 +72,13 @@ impl CosmosOperation {
     /// Returns a reference to the resource being operated on.
     pub fn resource_reference(&self) -> &CosmosResourceReference {
         &self.resource_reference
+    }
+
+    /// Returns the container for this operation, if applicable.
+    ///
+    /// Returns `None` for account-level and database-level operations.
+    pub fn container(&self) -> Option<&ContainerReference> {
+        self.resource_reference.container()
     }
 
     /// Returns the partition key, if set.

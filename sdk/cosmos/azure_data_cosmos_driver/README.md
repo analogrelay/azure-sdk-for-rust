@@ -60,24 +60,28 @@ This crate follows **strict semantic versioning** but can move to new major vers
 ## Usage
 
 ```rust,no_run
-use azure_data_cosmos_driver::{DriverBuilder, options::DriverOptions};
+use azure_data_cosmos_driver::{CosmosDriverRuntime, options::DriverOptions};
+use azure_data_cosmos_driver::models::AccountReference;
 use azure_identity::DeveloperToolsCredential;
+use url::Url;
 
 #[tokio::main]
 async fn main() -> azure_core::Result<()> {
     // Use logged-in developer credentials (Azure CLI, azd, etc.)
     let credential = DeveloperToolsCredential::new(None)?;
 
-    let driver = DriverBuilder::new()
-        .build(
-            "https://myaccount.documents.azure.com",
-            credential,
-            DriverOptions::default(),
-        )
-        .await?;
+    let account = AccountReference::new(
+        Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ).with_credential(credential);
+
+    // Create the runtime
+    let runtime = CosmosDriverRuntime::builder().build().await;
+
+    // Get or create a driver for the account (singleton per endpoint)
+    let driver = runtime.get_or_create_driver(account, None).await?;
 
     // Driver operations work with raw bytes
-    // let response = driver.create_item(partition_key, &json_bytes, &options).await?;
+    // let response = driver.execute_operation(operation, options).await?;
 
     Ok(())
 }

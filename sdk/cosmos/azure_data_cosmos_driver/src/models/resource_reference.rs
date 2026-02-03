@@ -11,7 +11,7 @@ use std::borrow::Cow;
 /// Contains either the name or resource identifier (RID) of the database, or both,
 /// along with a reference to its parent account.
 /// Provides methods to generate name-based or RID-based relative paths.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct DatabaseReference {
     /// Reference to the parent account.
     account: AccountReference,
@@ -102,7 +102,7 @@ impl DatabaseReference {
 /// Contains either the name or resource identifier (RID) of the container, or both,
 /// along with a reference to its parent database.
 /// Provides methods to generate name-based or RID-based relative paths.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ContainerReference {
     /// Reference to the parent database.
     database: DatabaseReference,

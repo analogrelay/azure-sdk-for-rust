@@ -11,7 +11,7 @@ use crate::{
         ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
         EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,
         NonIdempotentWriteRetries, PriorityLevel, QuotaInfoEnabled, ReadConsistencyStrategy,
-        ScriptLoggingEnabled, TriggerOptions,
+        RuntimeOptions, ScriptLoggingEnabled, TriggerOptions,
     },
 };
 
@@ -19,6 +19,12 @@ use crate::{
 ///
 /// This struct provides a fluent builder interface for configuring request options
 /// such as consistency levels, session tokens, triggers, and other policies.
+///
+/// # Runtime Options
+///
+/// Many settings (like `throughput_control_group_name`, `dedicated_gateway_options`, etc.)
+/// are shared with `EnvironmentOptions` and `DriverOptions` via [`RuntimeOptions`].
+/// Operation-level settings override driver-level, which override environment-level defaults.
 ///
 /// # Example
 ///
@@ -33,25 +39,20 @@ use crate::{
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct OperationOptions {
-    // common options
+    // Shared runtime options (can be set at environment/driver/operation level)
+    runtime: RuntimeOptions,
+
+    // Operation-specific options (not shared with environment/driver)
     session_token: Option<SessionToken>,
     partition_key: Option<PartitionKey>,
-    throughput_control_group_name: Option<ThroughputControlGroupName>,
-    dedicated_gateway_options: Option<DedicatedGatewayOptions>,
-    diagnostics_thresholds: Option<DiagnosticsThresholds>,
-    end_to_end_latency_policy: Option<EndToEndOperationLatencyPolicy>,
-    custom_headers: Option<Headers>,
     quota_info_enabled: Option<QuotaInfoEnabled>,
-    excluded_regions: Option<ExcludedRegions>,
     priority_level: Option<PriorityLevel>,
 
-    // just read operations
-    read_consistency_strategy: Option<ReadConsistencyStrategy>,
+    // Just read operations
     etag_condition: Option<ETagCondition>,
 
-    // just write operations
+    // Just write operations
     triggers: Option<TriggerOptions>,
-    content_response_on_write: Option<ContentResponseOnWrite>,
     non_idempotent_write_retries: Option<NonIdempotentWriteRetries>,
 
     // Only patch operations
@@ -65,6 +66,25 @@ impl OperationOptions {
     /// Creates a new empty `OperationOptions`.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns the embedded runtime options.
+    ///
+    /// These are the options shared with environment and driver levels.
+    pub fn runtime(&self) -> &RuntimeOptions {
+        &self.runtime
+    }
+
+    /// Returns a mutable reference to the embedded runtime options.
+    pub fn runtime_mut(&mut self) -> &mut RuntimeOptions {
+        &mut self.runtime
+    }
+
+    /// Creates effective runtime options by merging with a base.
+    ///
+    /// Operation-level settings take precedence over the base settings.
+    pub fn effective_runtime(&self, base: &RuntimeOptions) -> RuntimeOptions {
+        self.runtime.merge_with_base(base)
     }
 
     /// Sets the trigger options for this operation.
@@ -82,13 +102,13 @@ impl OperationOptions {
     /// Sets the read consistency strategy for this operation.
     #[must_use]
     pub fn read_consistency_strategy(mut self, strategy: ReadConsistencyStrategy) -> Self {
-        self.read_consistency_strategy = Some(strategy);
+        self.runtime.read_consistency_strategy = Some(strategy);
         self
     }
 
     /// Gets the read consistency strategy.
     pub fn read_consistency_strategy_ref(&self) -> Option<&ReadConsistencyStrategy> {
-        self.read_consistency_strategy.as_ref()
+        self.runtime.read_consistency_strategy.as_ref()
     }
 
     /// Sets the session token for session consistency.
@@ -130,49 +150,49 @@ impl OperationOptions {
     /// Sets whether the response should include the content after write operations.
     #[must_use]
     pub fn content_response_on_write(mut self, value: ContentResponseOnWrite) -> Self {
-        self.content_response_on_write = Some(value);
+        self.runtime.content_response_on_write = Some(value);
         self
     }
 
     /// Gets the content response on write setting.
     pub fn content_response_on_write_ref(&self) -> Option<&ContentResponseOnWrite> {
-        self.content_response_on_write.as_ref()
+        self.runtime.content_response_on_write.as_ref()
     }
 
     /// Sets the throughput control group name for this operation.
     #[must_use]
     pub fn throughput_control_group_name(mut self, name: ThroughputControlGroupName) -> Self {
-        self.throughput_control_group_name = Some(name);
+        self.runtime.throughput_control_group_name = Some(name);
         self
     }
 
     /// Gets the throughput control group name.
     pub fn throughput_control_group_name_ref(&self) -> Option<&ThroughputControlGroupName> {
-        self.throughput_control_group_name.as_ref()
+        self.runtime.throughput_control_group_name.as_ref()
     }
 
     /// Sets the dedicated gateway options for integrated cache.
     #[must_use]
     pub fn dedicated_gateway_options(mut self, options: DedicatedGatewayOptions) -> Self {
-        self.dedicated_gateway_options = Some(options);
+        self.runtime.dedicated_gateway_options = Some(options);
         self
     }
 
     /// Gets the dedicated gateway options.
     pub fn dedicated_gateway_options_ref(&self) -> Option<&DedicatedGatewayOptions> {
-        self.dedicated_gateway_options.as_ref()
+        self.runtime.dedicated_gateway_options.as_ref()
     }
 
     /// Sets the diagnostics thresholds for this operation.
     #[must_use]
     pub fn diagnostics_thresholds(mut self, thresholds: DiagnosticsThresholds) -> Self {
-        self.diagnostics_thresholds = Some(thresholds);
+        self.runtime.diagnostics_thresholds = Some(thresholds);
         self
     }
 
     /// Gets the diagnostics thresholds.
     pub fn diagnostics_thresholds_ref(&self) -> Option<&DiagnosticsThresholds> {
-        self.diagnostics_thresholds.as_ref()
+        self.runtime.diagnostics_thresholds.as_ref()
     }
 
     /// Sets whether non-idempotent write retries are enabled.
@@ -190,25 +210,25 @@ impl OperationOptions {
     /// Sets the end-to-end operation latency policy.
     #[must_use]
     pub fn end_to_end_latency_policy(mut self, policy: EndToEndOperationLatencyPolicy) -> Self {
-        self.end_to_end_latency_policy = Some(policy);
+        self.runtime.end_to_end_latency_policy = Some(policy);
         self
     }
 
     /// Gets the end-to-end operation latency policy.
     pub fn end_to_end_latency_policy_ref(&self) -> Option<&EndToEndOperationLatencyPolicy> {
-        self.end_to_end_latency_policy.as_ref()
+        self.runtime.end_to_end_latency_policy.as_ref()
     }
 
     /// Sets the regions to exclude from routing.
     #[must_use]
     pub fn excluded_regions(mut self, regions: ExcludedRegions) -> Self {
-        self.excluded_regions = Some(regions);
+        self.runtime.excluded_regions = Some(regions);
         self
     }
 
     /// Gets the excluded regions.
     pub fn excluded_regions_ref(&self) -> Option<&ExcludedRegions> {
-        self.excluded_regions.as_ref()
+        self.runtime.excluded_regions.as_ref()
     }
 
     /// Sets the priority level for this operation.
@@ -250,13 +270,13 @@ impl OperationOptions {
     /// Sets custom HTTP headers to include in the request.
     #[must_use]
     pub fn custom_headers(mut self, headers: Headers) -> Self {
-        self.custom_headers = Some(headers);
+        self.runtime.custom_headers = Some(headers);
         self
     }
 
     /// Gets the custom headers.
     pub fn custom_headers_ref(&self) -> Option<&Headers> {
-        self.custom_headers.as_ref()
+        self.runtime.custom_headers.as_ref()
     }
 
     /// Sets the filter predicate for conditional patch operations.

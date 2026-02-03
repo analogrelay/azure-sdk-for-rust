@@ -3,103 +3,10 @@
 
 //! Driver-level configuration options.
 
-use azure_core::http::headers::Headers;
-use std::sync::{Arc, RwLock};
-
 use crate::{
-    models::ThroughputControlGroupName,
-    options::{
-        ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
-        EndToEndOperationLatencyPolicy, ExcludedRegions, ReadConsistencyStrategy,
-    },
+    models::AccountReference,
+    options::{RuntimeOptions, SharedRuntimeOptions},
 };
-
-use super::environment_options::MutableDefaults;
-
-/// Thread-safe wrapper for driver-level mutable defaults.
-///
-/// Provides interior mutability for runtime configuration changes at the driver level.
-#[derive(Clone, Debug, Default)]
-pub struct DriverDefaults(Arc<RwLock<MutableDefaults>>);
-
-impl DriverDefaults {
-    /// Creates a new empty driver defaults.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates driver defaults from existing mutable defaults.
-    pub fn from_defaults(defaults: MutableDefaults) -> Self {
-        Self(Arc::new(RwLock::new(defaults)))
-    }
-
-    /// Returns a snapshot of the current defaults.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the lock is poisoned.
-    pub fn snapshot(&self) -> MutableDefaults {
-        self.0.read().expect("lock poisoned").clone()
-    }
-
-    /// Sets the default throughput control group name.
-    pub fn set_throughput_control_group_name(&self, name: Option<ThroughputControlGroupName>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .throughput_control_group_name = name;
-    }
-
-    /// Sets the default dedicated gateway options.
-    pub fn set_dedicated_gateway_options(&self, options: Option<DedicatedGatewayOptions>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .dedicated_gateway_options = options;
-    }
-
-    /// Sets the default diagnostics thresholds.
-    pub fn set_diagnostics_thresholds(&self, thresholds: Option<DiagnosticsThresholds>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .diagnostics_thresholds = thresholds;
-    }
-
-    /// Sets the default end-to-end latency policy.
-    pub fn set_end_to_end_latency_policy(&self, policy: Option<EndToEndOperationLatencyPolicy>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .end_to_end_latency_policy = policy;
-    }
-
-    /// Sets the default custom headers.
-    pub fn set_custom_headers(&self, headers: Option<Headers>) {
-        self.0.write().expect("lock poisoned").custom_headers = headers;
-    }
-
-    /// Sets the default excluded regions.
-    pub fn set_excluded_regions(&self, regions: Option<ExcludedRegions>) {
-        self.0.write().expect("lock poisoned").excluded_regions = regions;
-    }
-
-    /// Sets the default read consistency strategy.
-    pub fn set_read_consistency_strategy(&self, strategy: Option<ReadConsistencyStrategy>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .read_consistency_strategy = strategy;
-    }
-
-    /// Sets the default content response on write setting.
-    pub fn set_content_response_on_write(&self, value: Option<ContentResponseOnWrite>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .content_response_on_write = value;
-    }
-}
 
 /// Configuration options for a Cosmos DB driver instance.
 ///
@@ -108,123 +15,97 @@ impl DriverDefaults {
 ///
 /// # Thread Safety
 ///
-/// The mutable defaults can be modified at runtime via the `defaults()` accessor.
+/// The runtime options can be modified at runtime via the `runtime_options()` accessor.
 /// Changes are thread-safe and will be applied to subsequent operations.
 ///
 /// # Example
 ///
 /// ```
+/// use azure_data_cosmos_driver::models::AccountReference;
 /// use azure_data_cosmos_driver::options::{
-///     DriverOptions, DriverOptionsBuilder, ContentResponseOnWrite,
+///     DriverOptions, DriverOptionsBuilder, RuntimeOptions, ContentResponseOnWrite,
 /// };
+/// use url::Url;
 ///
-/// let options = DriverOptionsBuilder::new()
-///     .default_content_response_on_write(ContentResponseOnWrite::DISABLED)
+/// let account = AccountReference::new(
+///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+/// ).with_master_key("my-master-key");
+///
+/// let runtime = RuntimeOptions::builder()
+///     .content_response_on_write(ContentResponseOnWrite::DISABLED)
+///     .build();
+///
+/// let options = DriverOptionsBuilder::new(account)
+///     .runtime_options(runtime)
 ///     .build();
 ///
 /// // Later, modify defaults at runtime
-/// options.defaults().set_content_response_on_write(Some(ContentResponseOnWrite::ENABLED));
+/// options.runtime_options().set_content_response_on_write(Some(ContentResponseOnWrite::ENABLED));
 /// ```
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct DriverOptions {
-    /// Thread-safe mutable defaults for operation options at the driver level.
-    defaults: DriverDefaults,
+    /// The Cosmos DB account reference (required).
+    account: AccountReference,
+    /// Thread-safe runtime options for operation options at the driver level.
+    runtime_options: SharedRuntimeOptions,
 }
 
 impl DriverOptions {
     /// Returns a new builder for creating driver options.
-    pub fn builder() -> DriverOptionsBuilder {
-        DriverOptionsBuilder::new()
+    ///
+    /// The account reference is required.
+    pub fn builder(account: AccountReference) -> DriverOptionsBuilder {
+        DriverOptionsBuilder::new(account)
     }
 
-    /// Returns the thread-safe mutable defaults.
+    /// Returns the account reference.
+    pub fn account(&self) -> &AccountReference {
+        &self.account
+    }
+
+    /// Returns the thread-safe runtime options.
     ///
     /// Use this to modify default operation options at runtime.
-    pub fn defaults(&self) -> &DriverDefaults {
-        &self.defaults
+    pub fn runtime_options(&self) -> &SharedRuntimeOptions {
+        &self.runtime_options
     }
 }
 
 /// Builder for creating [`DriverOptions`].
 ///
-/// Only mutable default properties can be set through this builder.
-#[derive(Clone, Debug, Default)]
+/// Use [`RuntimeOptions::builder()`] to create runtime options, then pass them
+/// to this builder via [`runtime_options()`](Self::runtime_options).
+#[derive(Clone, Debug)]
 pub struct DriverOptionsBuilder {
-    defaults: MutableDefaults,
+    account: AccountReference,
+    runtime_options: Option<RuntimeOptions>,
 }
 
 impl DriverOptionsBuilder {
-    /// Creates a new builder with default values.
-    pub fn new() -> Self {
-        Self::default()
+    /// Creates a new builder with the required account reference.
+    pub fn new(account: AccountReference) -> Self {
+        Self {
+            account,
+            runtime_options: None,
+        }
     }
 
-    /// Sets the default throughput control group name.
+    /// Sets the runtime options (defaults for operations).
+    ///
+    /// Use [`RuntimeOptions::builder()`] to create the runtime options.
     #[must_use]
-    pub fn default_throughput_control_group_name(
-        mut self,
-        name: ThroughputControlGroupName,
-    ) -> Self {
-        self.defaults.throughput_control_group_name = Some(name);
-        self
-    }
-
-    /// Sets the default dedicated gateway options.
-    #[must_use]
-    pub fn default_dedicated_gateway_options(mut self, options: DedicatedGatewayOptions) -> Self {
-        self.defaults.dedicated_gateway_options = Some(options);
-        self
-    }
-
-    /// Sets the default diagnostics thresholds.
-    #[must_use]
-    pub fn default_diagnostics_thresholds(mut self, thresholds: DiagnosticsThresholds) -> Self {
-        self.defaults.diagnostics_thresholds = Some(thresholds);
-        self
-    }
-
-    /// Sets the default end-to-end latency policy.
-    #[must_use]
-    pub fn default_end_to_end_latency_policy(
-        mut self,
-        policy: EndToEndOperationLatencyPolicy,
-    ) -> Self {
-        self.defaults.end_to_end_latency_policy = Some(policy);
-        self
-    }
-
-    /// Sets the default custom headers.
-    #[must_use]
-    pub fn default_custom_headers(mut self, headers: Headers) -> Self {
-        self.defaults.custom_headers = Some(headers);
-        self
-    }
-
-    /// Sets the default excluded regions.
-    #[must_use]
-    pub fn default_excluded_regions(mut self, regions: ExcludedRegions) -> Self {
-        self.defaults.excluded_regions = Some(regions);
-        self
-    }
-
-    /// Sets the default read consistency strategy.
-    #[must_use]
-    pub fn default_read_consistency_strategy(mut self, strategy: ReadConsistencyStrategy) -> Self {
-        self.defaults.read_consistency_strategy = Some(strategy);
-        self
-    }
-
-    /// Sets the default content response on write setting.
-    #[must_use]
-    pub fn default_content_response_on_write(mut self, value: ContentResponseOnWrite) -> Self {
-        self.defaults.content_response_on_write = Some(value);
+    pub fn runtime_options(mut self, options: RuntimeOptions) -> Self {
+        self.runtime_options = Some(options);
         self
     }
 
     /// Builds the [`DriverOptions`].
     pub fn build(self) -> DriverOptions {
         DriverOptions {
-            defaults: DriverDefaults::from_defaults(self.defaults),
+            account: self.account,
+            runtime_options: SharedRuntimeOptions::from_options(
+                self.runtime_options.unwrap_or_default(),
+            ),
         }
     }
 }
@@ -232,47 +113,65 @@ impl DriverOptionsBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::options::ContentResponseOnWrite;
+    use url::Url;
 
-    #[test]
-    fn default_driver_options() {
-        let options = DriverOptions::default();
-        let defaults = options.defaults().snapshot();
-        assert!(defaults.throughput_control_group_name.is_none());
-        assert!(defaults.content_response_on_write.is_none());
+    fn test_account() -> AccountReference {
+        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
     }
 
     #[test]
-    fn builder_sets_defaults() {
-        let options = DriverOptionsBuilder::new()
-            .default_content_response_on_write(ContentResponseOnWrite::DISABLED)
+    fn builder_creates_options_with_account() {
+        let account = test_account();
+        let options = DriverOptionsBuilder::new(account.clone()).build();
+
+        assert_eq!(options.account(), &account);
+        assert!(options
+            .runtime_options()
+            .snapshot()
+            .content_response_on_write
+            .is_none());
+    }
+
+    #[test]
+    fn builder_sets_runtime_options() {
+        let runtime = RuntimeOptions::builder()
+            .content_response_on_write(ContentResponseOnWrite::DISABLED)
             .build();
 
-        let defaults = options.defaults().snapshot();
+        let options = DriverOptionsBuilder::new(test_account())
+            .runtime_options(runtime)
+            .build();
+
+        let snapshot = options.runtime_options().snapshot();
         assert_eq!(
-            defaults.content_response_on_write,
+            snapshot.content_response_on_write,
             Some(ContentResponseOnWrite::DISABLED)
         );
     }
 
     #[test]
     fn runtime_modification() {
-        let options = DriverOptions::default();
+        let options = DriverOptionsBuilder::new(test_account()).build();
 
         // Initially none
         assert!(options
-            .defaults()
+            .runtime_options()
             .snapshot()
             .content_response_on_write
             .is_none());
 
         // Modify at runtime
         options
-            .defaults()
+            .runtime_options()
             .set_content_response_on_write(Some(ContentResponseOnWrite::ENABLED));
 
         // Now set
         assert_eq!(
-            options.defaults().snapshot().content_response_on_write,
+            options
+                .runtime_options()
+                .snapshot()
+                .content_response_on_write,
             Some(ContentResponseOnWrite::ENABLED)
         );
     }

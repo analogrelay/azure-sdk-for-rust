@@ -113,6 +113,15 @@ impl PartialEq for AccountReference {
     }
 }
 
+impl Eq for AccountReference {}
+
+// Manual Hash implementation to match PartialEq (compares by endpoint only).
+impl std::hash::Hash for AccountReference {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.endpoint.hash(state);
+    }
+}
+
 impl AccountReference {
     /// Creates a new account reference with the specified endpoint.
     ///
