@@ -19,6 +19,7 @@ mod resource_types;
 mod session;
 mod throughput_control;
 mod triggers;
+mod user_agent;
 
 pub use account_reference::{AccountReference, AuthOptions, MasterKey};
 pub use cosmos_operation::CosmosOperation;
@@ -30,6 +31,7 @@ pub use resource_types::{OperationType, ResourceType};
 pub use session::SessionToken;
 pub use throughput_control::ThroughputControlGroupName;
 pub use triggers::TriggerReference;
+pub use user_agent::UserAgent;
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;

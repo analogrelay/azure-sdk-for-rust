@@ -10,10 +10,10 @@ use std::{
 };
 
 use crate::{
-    models::{ContainerReference, ThroughputControlGroupName},
+    models::{ContainerReference, ThroughputControlGroupName, UserAgent},
     options::{
         ConnectionPoolOptions, CorrelationId, SharedRuntimeOptions, ThroughputControlGroupOptions,
-        ThroughputControlGroupRegistry, UserAgent, UserAgentSuffix, WorkloadId,
+        ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
     },
     system::{AzureVmMetadata, CpuMemoryHistory, CpuMemoryMonitor, VmMetadataService},
 };

@@ -25,7 +25,7 @@ pub use connection_pool::{ConnectionPoolOptions, ConnectionPoolOptionsBuilder};
 pub use dedicated_gateway::DedicatedGatewayOptions;
 pub use diagnostics_thresholds::DiagnosticsThresholds;
 pub use driver_options::{DriverOptions, DriverOptionsBuilder};
-pub use identity::{CorrelationId, UserAgent, UserAgentSuffix, WorkloadId};
+pub use identity::{CorrelationId, UserAgentSuffix, WorkloadId};
 pub use operation_options::OperationOptions;
 pub use policies::{
     ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,
