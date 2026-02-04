@@ -13,12 +13,16 @@
 //! - **Emulator operations**: Lazily-initialized pools for local emulator
 //!   with certificate validation disabled.
 
+mod authorization_policy;
 mod emulator;
 mod headers_policy;
+mod pipeline;
 
-use crate::{models::AccountEndpoint, options::ConnectionPoolOptions};
-use azure_core::http::{ClientOptions, Transport};
+use crate::{models::{AccountEndpoint, AuthOptions}, options::ConnectionPoolOptions};
+use authorization_policy::AuthorizationPolicy;
+use azure_core::http::{policies::Policy, Transport};
 use headers_policy::CosmosHeadersPolicy;
+use pipeline::CosmosPipeline;
 use std::sync::{Arc, OnceLock};
 
 pub(crate) use emulator::is_emulator_host;
@@ -38,6 +42,12 @@ pub(crate) use emulator::is_emulator_host;
 /// - **Emulator pools**: Lazily created when connecting to emulator hosts with
 ///   certificate validation disabled.
 ///
+/// # Custom Pipeline
+///
+/// This transport uses a custom [`CosmosPipeline`] that does not include any
+/// default azure_core policies (no automatic retry, logging, or telemetry).
+/// The Cosmos driver has full control over request processing.
+///
 /// # Thread Safety
 ///
 /// All pools are thread-safe and can be accessed concurrently. The transport
@@ -50,17 +60,19 @@ pub(crate) struct CosmosTransport {
     /// Headers policy for setting Cosmos-specific headers.
     headers_policy: Arc<CosmosHeadersPolicy>,
 
-    /// Pipeline for metadata operations (REST/JSON).
-    metadata_options: ClientOptions,
+    /// Unauthenticated pipeline for metadata operations (REST/JSON).
+    /// Used as a base for creating authenticated pipelines per-driver.
+    metadata_transport: Transport,
 
-    /// Pipeline for data plane operations.
-    dataplane_options: ClientOptions,
+    /// Unauthenticated pipeline for data plane operations.
+    /// Used as a base for creating authenticated pipelines per-driver.
+    dataplane_transport: Transport,
 
-    /// Lazily-initialized pipeline for emulator metadata operations.
-    emulator_metadata_options: OnceLock<ClientOptions>,
+    /// Lazily-initialized transport for emulator metadata operations.
+    emulator_metadata_transport: OnceLock<Transport>,
 
-    /// Lazily-initialized pipeline for emulator data plane operations.
-    emulator_dataplane_options: OnceLock<ClientOptions>,
+    /// Lazily-initialized transport for emulator data plane operations.
+    emulator_dataplane_transport: OnceLock<Transport>,
 }
 
 impl CosmosTransport {
@@ -75,47 +87,95 @@ impl CosmosTransport {
         user_agent: impl Into<String>,
     ) -> azure_core::Result<Self> {
         let headers_policy = Arc::new(CosmosHeadersPolicy::new(user_agent));
-        let metadata_options = Self::create_metadata_options(&connection_pool, false)?;
-        let dataplane_options = Self::create_dataplane_options(&connection_pool, false)?;
+
+        let metadata_client = Self::create_reqwest_client(&connection_pool, true, false)?;
+        let metadata_transport = Transport::new(Arc::new(metadata_client));
+
+        let dataplane_client = Self::create_reqwest_client(&connection_pool, false, false)?;
+        let dataplane_transport = Transport::new(Arc::new(dataplane_client));
 
         Ok(Self {
             connection_pool,
             headers_policy,
-            metadata_options,
-            dataplane_options,
-            emulator_metadata_options: OnceLock::new(),
-            emulator_dataplane_options: OnceLock::new(),
+            metadata_transport,
+            dataplane_transport,
+            emulator_metadata_transport: OnceLock::new(),
+            emulator_dataplane_transport: OnceLock::new(),
         })
     }
 
-    /// Returns the client options for metadata operations.
+    /// Creates an authenticated pipeline for metadata operations.
     ///
-    /// If the endpoint is an emulator host and emulator certificate validation
-    /// is disabled, returns options with TLS validation disabled.
-    pub(crate) fn metadata_options(&self, endpoint: &AccountEndpoint) -> &ClientOptions {
+    /// # Arguments
+    ///
+    /// * `endpoint` - The account endpoint to determine emulator vs production transport
+    /// * `auth` - Authentication options for signing requests
+    pub(crate) fn create_metadata_pipeline(
+        &self,
+        endpoint: &AccountEndpoint,
+        auth: &AuthOptions,
+    ) -> CosmosPipeline {
+        let transport = self.get_metadata_transport(endpoint);
+        self.create_authenticated_pipeline(transport, auth)
+    }
+
+    /// Creates an authenticated pipeline for data plane operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - The account endpoint to determine emulator vs production transport
+    /// * `auth` - Authentication options for signing requests
+    pub(crate) fn create_dataplane_pipeline(
+        &self,
+        endpoint: &AccountEndpoint,
+        auth: &AuthOptions,
+    ) -> CosmosPipeline {
+        let transport = self.get_dataplane_transport(endpoint);
+        self.create_authenticated_pipeline(transport, auth)
+    }
+
+    /// Gets the transport for metadata operations.
+    fn get_metadata_transport(&self, endpoint: &AccountEndpoint) -> Transport {
         if self.should_use_emulator_transport(endpoint) {
-            self.emulator_metadata_options.get_or_init(|| {
-                Self::create_metadata_options(&self.connection_pool, true)
-                    .expect("failed to create emulator metadata options")
-            })
+            self.emulator_metadata_transport
+                .get_or_init(|| {
+                    let client =
+                        Self::create_reqwest_client(&self.connection_pool, true, true)
+                            .expect("failed to create emulator metadata client");
+                    Transport::new(Arc::new(client))
+                })
+                .clone()
         } else {
-            &self.metadata_options
+            self.metadata_transport.clone()
         }
     }
 
-    /// Returns the client options for data plane operations.
-    ///
-    /// If the endpoint is an emulator host and emulator certificate validation
-    /// is disabled, returns options with TLS validation disabled.
-    pub(crate) fn dataplane_options(&self, endpoint: &AccountEndpoint) -> &ClientOptions {
+    /// Gets the transport for data plane operations.
+    fn get_dataplane_transport(&self, endpoint: &AccountEndpoint) -> Transport {
         if self.should_use_emulator_transport(endpoint) {
-            self.emulator_dataplane_options.get_or_init(|| {
-                Self::create_dataplane_options(&self.connection_pool, true)
-                    .expect("failed to create emulator dataplane options")
-            })
+            self.emulator_dataplane_transport
+                .get_or_init(|| {
+                    let client =
+                        Self::create_reqwest_client(&self.connection_pool, false, true)
+                            .expect("failed to create emulator dataplane client");
+                    Transport::new(Arc::new(client))
+                })
+                .clone()
         } else {
-            &self.dataplane_options
+            self.dataplane_transport.clone()
         }
+    }
+
+    /// Creates an authenticated pipeline with headers and authorization policies.
+    fn create_authenticated_pipeline(&self, transport: Transport, auth: &AuthOptions) -> CosmosPipeline {
+        let auth_policy = Arc::new(AuthorizationPolicy::new(auth));
+
+        let policies: Vec<Arc<dyn Policy>> = vec![
+            Arc::clone(&self.headers_policy) as Arc<dyn Policy>,
+            auth_policy as Arc<dyn Policy>,
+        ];
+
+        CosmosPipeline::new(policies, transport)
     }
 
     /// Returns the connection pool options.
@@ -123,43 +183,11 @@ impl CosmosTransport {
         &self.connection_pool
     }
 
-    /// Returns the headers policy for use in pipeline construction.
-    ///
-    /// This policy sets Cosmos-specific headers on every request including
-    /// API version, SDK capabilities, and user agent.
-    pub(crate) fn headers_policy(&self) -> Arc<CosmosHeadersPolicy> {
-        Arc::clone(&self.headers_policy)
-    }
-
     /// Determines if emulator transport should be used for the given endpoint.
     fn should_use_emulator_transport(&self, endpoint: &AccountEndpoint) -> bool {
         self.connection_pool
             .is_emulator_server_cert_validation_disabled()
             && is_emulator_host(endpoint)
-    }
-
-    /// Creates client options for metadata operations.
-    fn create_metadata_options(
-        pool: &ConnectionPoolOptions,
-        for_emulator: bool,
-    ) -> azure_core::Result<ClientOptions> {
-        let client = Self::create_reqwest_client(pool, true, for_emulator)?;
-        Ok(ClientOptions {
-            transport: Some(Transport::new(Arc::new(client))),
-            ..Default::default()
-        })
-    }
-
-    /// Creates client options for data plane operations.
-    fn create_dataplane_options(
-        pool: &ConnectionPoolOptions,
-        for_emulator: bool,
-    ) -> azure_core::Result<ClientOptions> {
-        let client = Self::create_reqwest_client(pool, false, for_emulator)?;
-        Ok(ClientOptions {
-            transport: Some(Transport::new(Arc::new(client))),
-            ..Default::default()
-        })
     }
 
     /// Creates a reqwest client with the appropriate settings.

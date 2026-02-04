@@ -17,7 +17,10 @@ publish = false # Internal implementation layer, not yet ready for crates.io
 [dependencies]
 async-lock.workspace = true
 async-trait.workspace = true
-azure_core = { workspace = true, features = ["reqwest_native_tls"] }
+azure_core = { workspace = true, features = [
+  "reqwest_native_tls",
+  "hmac_rust",
+] }
 futures.workspace = true
 reqwest = { workspace = true, features = ["native-tls"] }
 serde.workspace = true

@@ -32,8 +32,9 @@ const SDK_SUPPORTED_CAPABILITIES: HeaderName =
 
 /// Supported capabilities bitmask value.
 ///
+/// Currently no special capabilities are supported. In the future:
 /// - Bit 0 (1): Partition merge support
-const SUPPORTED_CAPABILITIES_VALUE: &str = "1";
+const SUPPORTED_CAPABILITIES_VALUE: &str = "0";
 
 /// Cache-Control header name.
 const CACHE_CONTROL: HeaderName = HeaderName::from_static("cache-control");
