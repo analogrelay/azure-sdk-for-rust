@@ -15,15 +15,15 @@ use std::borrow::Cow;
 /// and either a name or resource identifier (RID) for the resource itself.
 ///
 /// Use the factory methods to create references for specific resource types:
-/// - [`CosmosResourceReference::account`] - Account-level resources
-/// - [`CosmosResourceReference::database`] - Database resources
-/// - [`CosmosResourceReference::document_collection`] - Container/collection resources
-/// - [`CosmosResourceReference::document`] - Document/item resources
-/// - [`CosmosResourceReference::stored_procedure`] - Stored procedure resources
-/// - [`CosmosResourceReference::trigger`] - Trigger resources
-/// - [`CosmosResourceReference::user_defined_function`] - UDF resources
+/// - [`CosmosResourceReference::account_resource`] - Account-level resources
+/// - [`CosmosResourceReference::database_by_name`] / [`CosmosResourceReference::database_by_rid`] - Database resources
+/// - [`CosmosResourceReference::document_collection_by_name`] / [`CosmosResourceReference::document_collection_by_rid`] - Container/collection resources
+/// - [`CosmosResourceReference::document_by_name`] / [`CosmosResourceReference::document_by_rid`] - Document/item resources
+/// - [`CosmosResourceReference::stored_procedure_by_name`] / [`CosmosResourceReference::stored_procedure_by_rid`] - Stored procedure resources
+/// - [`CosmosResourceReference::trigger_by_name`] / [`CosmosResourceReference::trigger_by_rid`] - Trigger resources
+/// - [`CosmosResourceReference::user_defined_function_by_name`] / [`CosmosResourceReference::user_defined_function_by_rid`] - UDF resources
 /// - [`CosmosResourceReference::partition_key_range`] - Partition key range resources
-/// - [`CosmosResourceReference::offer`] - Offer resources
+/// - [`CosmosResourceReference::offer_by_rid`] - Offer resources
 #[derive(Clone, Debug, PartialEq)]
 pub struct CosmosResourceReference {
     /// The type of resource being referenced.

@@ -403,6 +403,21 @@ Always add a comment explaining **why** the warning is allowed.
 - Always run `cargo fmt` on generated or modified Rust code before considering the task complete.
 - When editing existing files, ensure the changes conform to `rustfmt` standards.
 
+### Pre-Completion Validation
+
+Before considering any task complete, run the following checks on all modified crates:
+
+1. **Build check**: `cargo build -p <crate-name>`
+2. **Clippy lint check**: `cargo clippy -p <crate-name>`
+3. **Documentation check**: `cargo doc -p <crate-name> --no-deps --all-features`
+   - This catches broken intra-doc links (e.g., referencing non-existent methods in `[`backtick links`]`)
+   - All documentation warnings must be resolved before completing the task
+4. **Test check** (if tests exist): `cargo test -p <crate-name> --all-features`
+
+**Common documentation link errors to avoid**:
+- When documenting factory methods or APIs, ensure the linked method names match the actual implementation
+- Use the exact method name (e.g., `method_by_name` not just `method`) in doc links like `[`StructName::method_by_name`]`
+
 ### Copyright Header
 
 **All Rust source files** in the `sdk/cosmos` directory must begin with the following copyright header:
