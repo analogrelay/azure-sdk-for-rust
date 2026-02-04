@@ -4,10 +4,14 @@
 //! Cosmos DB operation result types.
 
 use crate::{diagnostics::DiagnosticsContext, models::ActivityId};
-use azure_core::http::headers::{HeaderName, Headers};
+use azure_core::http::headers::Headers;
 use std::sync::Arc;
 
-/// Standard Cosmos DB response header names (lowercase for case-sensitive fast path).
+/// Standard Cosmos DB response header names.
+///
+/// All names are lowercase as required by [`HeaderName`]. The azure_core [`Headers`]
+/// type normalizes header names to lowercase on insertion, so lookups are case-sensitive
+/// but will always match since both sides are lowercase.
 mod header_names {
     use azure_core::http::headers::HeaderName;
 
@@ -19,28 +23,6 @@ mod header_names {
     pub static CONTINUATION: HeaderName = HeaderName::from_static("x-ms-continuation");
     pub static ITEM_COUNT: HeaderName = HeaderName::from_static("x-ms-item-count");
     pub static SUBSTATUS: HeaderName = HeaderName::from_static("x-ms-substatus");
-}
-
-/// Gets a header value as a string with case-sensitive lookup first, falling back to case-insensitive.
-///
-/// HTTP headers are case-insensitive per RFC 7230, but most servers use consistent casing.
-/// This optimizes for the common case (lowercase) while maintaining compatibility.
-fn get_header_str<'a>(headers: &'a Headers, name: &HeaderName) -> Option<&'a str> {
-    // Fast path: case-sensitive HashMap lookup (O(1) average)
-    if let Some(value) = headers.get_optional_str(name) {
-        return Some(value);
-    }
-
-    // Slow path: case-insensitive iteration (O(n))
-    // This handles servers that return non-standard casing like "X-Ms-Activity-Id"
-    let name_str = name.as_str();
-    for (key, value) in headers.iter() {
-        if key.as_str().eq_ignore_ascii_case(name_str) {
-            return Some(value.as_str());
-        }
-    }
-
-    None
 }
 
 /// Result of a Cosmos DB operation.
@@ -172,22 +154,28 @@ impl CosmosHeaders {
     /// Extracts Cosmos headers from HTTP response headers.
     ///
     /// This parses standard Cosmos headers into typed fields for easy access.
-    /// Uses case-sensitive lookup for performance, with case-insensitive fallback
-    /// for compatibility with servers that use non-standard header casing.
     pub(crate) fn from_headers(headers: &Headers) -> Self {
         Self {
-            activity_id: get_header_str(headers, &header_names::ACTIVITY_ID)
+            activity_id: headers
+                .get_optional_str(&header_names::ACTIVITY_ID)
                 .map(|s| ActivityId::from_string(s.to_owned())),
-            request_charge: get_header_str(headers, &header_names::REQUEST_CHARGE)
+            request_charge: headers
+                .get_optional_str(&header_names::REQUEST_CHARGE)
                 .and_then(|s| s.parse().ok()),
-            session_token: get_header_str(headers, &header_names::SESSION_TOKEN)
+            session_token: headers
+                .get_optional_str(&header_names::SESSION_TOKEN)
                 .map(|s| s.to_owned()),
-            content_location: get_header_str(headers, &header_names::CONTENT_LOCATION)
+            content_location: headers
+                .get_optional_str(&header_names::CONTENT_LOCATION)
                 .map(|s| s.to_owned()),
-            etag: get_header_str(headers, &header_names::ETAG).map(|s| s.to_owned()),
-            continuation: get_header_str(headers, &header_names::CONTINUATION)
+            etag: headers
+                .get_optional_str(&header_names::ETAG)
                 .map(|s| s.to_owned()),
-            item_count: get_header_str(headers, &header_names::ITEM_COUNT)
+            continuation: headers
+                .get_optional_str(&header_names::CONTINUATION)
+                .map(|s| s.to_owned()),
+            item_count: headers
+                .get_optional_str(&header_names::ITEM_COUNT)
                 .and_then(|s| s.parse().ok()),
         }
     }
@@ -433,62 +421,5 @@ mod tests {
         assert!(headers.etag().is_none());
         assert!(headers.continuation().is_none());
         assert!(headers.item_count().is_none());
-    }
-
-    #[test]
-    fn cosmos_headers_case_insensitive_fallback() {
-        // Test that headers with non-standard casing are still found via case-insensitive fallback.
-        // HTTP headers are case-insensitive per RFC 7230, but most servers use lowercase.
-        // Some legacy proxies or misconfigured servers may return mixed case headers.
-        let mut headers = Headers::new();
-
-        // Use uppercase/mixed-case header names that would be inserted into the HashMap
-        // via the String -> HeaderName conversion which lowercases them.
-        // We need to simulate headers coming from a server with mixed casing.
-        // Note: HeaderName::from(String) lowercases, so we need to use from_static
-        // with lowercase and then verify the lookup works.
-
-        // Standard lowercase (fast path - HashMap lookup)
-        headers.insert("x-ms-activity-id", "lowercase-activity");
-        let cosmos_headers = CosmosHeaders::from_headers(&headers);
-        assert_eq!(
-            cosmos_headers.activity_id().map(|a| a.as_str()),
-            Some("lowercase-activity")
-        );
-
-        // Verify our get_header_str function with explicit fast path test
-        let result = get_header_str(&headers, &header_names::ACTIVITY_ID);
-        assert_eq!(result, Some("lowercase-activity"));
-    }
-
-    #[test]
-    fn get_header_str_fast_path() {
-        // Verify that the fast path (case-sensitive HashMap lookup) works correctly
-        let mut headers = Headers::new();
-        headers.insert("x-ms-request-charge", "3.14");
-
-        // Fast path should find this immediately
-        let result = get_header_str(&headers, &header_names::REQUEST_CHARGE);
-        assert_eq!(result, Some("3.14"));
-    }
-
-    #[test]
-    fn get_header_str_slow_path_fallback() {
-        // Test the slow path by creating headers where the case doesn't match exactly.
-        // Since HeaderName normalizes to lowercase on insertion from String,
-        // we verify the iteration fallback logic works.
-
-        let mut headers = Headers::new();
-        // Insert with standard lowercase - this tests that iteration also works
-        headers.insert("etag", "test-etag-value");
-
-        // Should still find it even though we're using our custom lookup
-        let result = get_header_str(&headers, &header_names::ETAG);
-        assert_eq!(result, Some("test-etag-value"));
-
-        // Also verify empty case
-        let empty_headers = Headers::new();
-        let result = get_header_str(&empty_headers, &header_names::ETAG);
-        assert!(result.is_none());
     }
 }
