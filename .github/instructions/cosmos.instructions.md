@@ -398,6 +398,11 @@ cargo clippy --workspace --all-features --all-targets --keep-going --no-deps
 
 Always add a comment explaining **why** the warning is allowed.
 
+### Code Formatting
+
+- Always run `cargo fmt` on generated or modified Rust code before considering the task complete.
+- When editing existing files, ensure the changes conform to `rustfmt` standards.
+
 ### Copyright Header
 
 **All Rust source files** in the `sdk/cosmos` directory must begin with the following copyright header:

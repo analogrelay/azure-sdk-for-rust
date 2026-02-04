@@ -10,7 +10,10 @@ use std::{
 };
 
 use crate::{
-    models::{AccountEndpoint, ContainerProperties, ContainerReference, ThroughputControlGroupName, UserAgent},
+    models::{
+        AccountEndpoint, ContainerProperties, ContainerReference, ThroughputControlGroupName,
+        UserAgent,
+    },
     options::{
         ConnectionPoolOptions, CorrelationId, SharedRuntimeOptions, ThroughputControlGroupOptions,
         ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
@@ -314,9 +317,7 @@ impl CosmosDriverRuntime {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = ContainerProperties>,
     {
-        self.container_cache
-            .get_or_fetch(container, fetch_fn)
-            .await
+        self.container_cache.get_or_fetch(container, fetch_fn).await
     }
 
     /// Invalidates cached container properties.

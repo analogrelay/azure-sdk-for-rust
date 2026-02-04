@@ -79,7 +79,9 @@ mod tests {
     use url::Url;
 
     fn test_endpoint(name: &str) -> AccountEndpoint {
-        AccountEndpoint::from(Url::parse(&format!("https://{name}.documents.azure.com:443/")).unwrap())
+        AccountEndpoint::from(
+            Url::parse(&format!("https://{name}.documents.azure.com:443/")).unwrap(),
+        )
     }
 
     fn test_properties(region_name: &str) -> AccountProperties {
