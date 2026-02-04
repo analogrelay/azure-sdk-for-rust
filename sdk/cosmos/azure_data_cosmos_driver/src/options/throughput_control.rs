@@ -559,14 +559,14 @@ mod tests {
         let account =
             AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap());
         let db = DatabaseReference::from_name(account, "testdb");
-        ContainerReference::from_name(db, "testcontainer")
+        ContainerReference::from_database(&db, "testcontainer")
     }
 
     fn test_container_2() -> ContainerReference {
         let account =
             AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap());
         let db = DatabaseReference::from_name(account, "testdb");
-        ContainerReference::from_name(db, "container2")
+        ContainerReference::from_database(&db, "container2")
     }
 
     #[test]

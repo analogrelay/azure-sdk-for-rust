@@ -3,7 +3,10 @@
 
 //! Generic resource reference type for Cosmos DB resources.
 
-use crate::models::{AccountReference, ContainerReference, DatabaseReference, ResourceType};
+use crate::models::{
+    AccountReference, ContainerReference, DatabaseReference, ItemReference, ResourceType,
+    StoredProcedureReference, TriggerReference, UdfReference,
+};
 use std::borrow::Cow;
 
 /// A generic reference to any Cosmos DB resource.
@@ -379,6 +382,214 @@ impl CosmosResourceReference {
     }
 }
 
+// =============================================================================
+// From implementations for typed references
+// =============================================================================
+
+impl From<DatabaseReference> for CosmosResourceReference {
+    /// Converts a `DatabaseReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::Database` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(database: DatabaseReference) -> Self {
+        if database.is_by_name() {
+            Self::database_by_name(database)
+        } else {
+            Self::database_by_rid(database)
+        }
+    }
+}
+
+impl From<ContainerReference> for CosmosResourceReference {
+    /// Converts a `ContainerReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::DocumentCollection` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(container: ContainerReference) -> Self {
+        if container.is_by_name() {
+            Self::document_collection_by_name(container)
+        } else {
+            Self::document_collection_by_rid(container)
+        }
+    }
+}
+
+impl From<ItemReference> for CosmosResourceReference {
+    /// Converts an `ItemReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::Document` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(item: ItemReference) -> Self {
+        let account = item.account().clone();
+        let id = item.id();
+
+        if item.is_by_name() {
+            // For name-based items, we need to reconstruct the container reference
+            if let Some(container_id) = id.container_id() {
+                let db_name = container_id
+                    .database_name()
+                    .expect("name-based item must have database name");
+                let container_name = container_id
+                    .name()
+                    .expect("name-based item must have container name");
+                let container = ContainerReference::from_name(
+                    account.clone(),
+                    db_name.to_owned(),
+                    container_name.to_owned(),
+                );
+                let item_name = item.name().expect("name-based item must have name");
+                Self::document_by_name(container, item_name.to_owned())
+            } else {
+                // This shouldn't happen for a properly constructed name-based item
+                panic!("Invalid name-based ItemReference: missing container ID");
+            }
+        } else {
+            // For RID-based items, we reconstruct with RIDs
+            let container_rid = id
+                .container_rid()
+                .expect("RID-based item must have container RID");
+            let item_rid = item.rid().expect("RID-based item must have RID");
+            // For RID-based, we need to get the database RID from somewhere
+            // Since we don't store full hierarchy in RID mode, create a minimal container ref
+            let container = ContainerReference::from_rid(
+                account.clone(),
+                container_rid.to_owned(), // Use container RID as db_rid placeholder
+                container_rid.to_owned(),
+            );
+            Self::document_by_rid(container, item_rid.to_owned())
+        }
+    }
+}
+
+impl From<StoredProcedureReference> for CosmosResourceReference {
+    /// Converts a `StoredProcedureReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::StoredProcedure` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(sproc: StoredProcedureReference) -> Self {
+        let account = sproc.account().clone();
+
+        if sproc.is_by_name() {
+            let id = sproc.id();
+            if let Some(container_id) = id.container_id() {
+                let db_name = container_id
+                    .database_name()
+                    .expect("name-based sproc must have database name");
+                let container_name = container_id
+                    .name()
+                    .expect("name-based sproc must have container name");
+                let container = ContainerReference::from_name(
+                    account.clone(),
+                    db_name.to_owned(),
+                    container_name.to_owned(),
+                );
+                let sproc_name = sproc.name().expect("name-based sproc must have name");
+                Self::stored_procedure_by_name(container, sproc_name.to_owned())
+            } else {
+                panic!("Invalid name-based StoredProcedureReference: missing container ID");
+            }
+        } else {
+            let container_rid = sproc
+                .id()
+                .container_rid()
+                .expect("RID-based sproc must have container RID");
+            let sproc_rid = sproc.rid().expect("RID-based sproc must have RID");
+            let container = ContainerReference::from_rid(
+                account.clone(),
+                container_rid.to_owned(),
+                container_rid.to_owned(),
+            );
+            Self::stored_procedure_by_rid(container, sproc_rid.to_owned())
+        }
+    }
+}
+
+impl From<TriggerReference> for CosmosResourceReference {
+    /// Converts a `TriggerReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::Trigger` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(trigger: TriggerReference) -> Self {
+        let account = trigger.account().clone();
+
+        if trigger.is_by_name() {
+            let id = trigger.id();
+            if let Some(container_id) = id.container_id() {
+                let db_name = container_id
+                    .database_name()
+                    .expect("name-based trigger must have database name");
+                let container_name = container_id
+                    .name()
+                    .expect("name-based trigger must have container name");
+                let container = ContainerReference::from_name(
+                    account.clone(),
+                    db_name.to_owned(),
+                    container_name.to_owned(),
+                );
+                let trigger_name = trigger.name().expect("name-based trigger must have name");
+                Self::trigger_by_name(container, trigger_name.to_owned())
+            } else {
+                panic!("Invalid name-based TriggerReference: missing container ID");
+            }
+        } else {
+            let container_rid = trigger
+                .id()
+                .container_rid()
+                .expect("RID-based trigger must have container RID");
+            let trigger_rid = trigger.rid().expect("RID-based trigger must have RID");
+            let container = ContainerReference::from_rid(
+                account.clone(),
+                container_rid.to_owned(),
+                container_rid.to_owned(),
+            );
+            Self::trigger_by_rid(container, trigger_rid.to_owned())
+        }
+    }
+}
+
+impl From<UdfReference> for CosmosResourceReference {
+    /// Converts a `UdfReference` into a `CosmosResourceReference`.
+    ///
+    /// The resulting reference has `ResourceType::UserDefinedFunction` and preserves
+    /// the name-based or RID-based addressing mode.
+    fn from(udf: UdfReference) -> Self {
+        let account = udf.account().clone();
+
+        if udf.is_by_name() {
+            let id = udf.id();
+            if let Some(container_id) = id.container_id() {
+                let db_name = container_id
+                    .database_name()
+                    .expect("name-based UDF must have database name");
+                let container_name = container_id
+                    .name()
+                    .expect("name-based UDF must have container name");
+                let container = ContainerReference::from_name(
+                    account.clone(),
+                    db_name.to_owned(),
+                    container_name.to_owned(),
+                );
+                let udf_name = udf.name().expect("name-based UDF must have name");
+                Self::user_defined_function_by_name(container, udf_name.to_owned())
+            } else {
+                panic!("Invalid name-based UdfReference: missing container ID");
+            }
+        } else {
+            let container_rid = udf
+                .id()
+                .container_rid()
+                .expect("RID-based UDF must have container RID");
+            let udf_rid = udf.rid().expect("RID-based UDF must have RID");
+            let container = ContainerReference::from_rid(
+                account.clone(),
+                container_rid.to_owned(),
+                container_rid.to_owned(),
+            );
+            Self::user_defined_function_by_rid(container, udf_rid.to_owned())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,7 +604,7 @@ mod tests {
     }
 
     fn test_container() -> ContainerReference {
-        ContainerReference::from_name(test_database(), "testcontainer")
+        ContainerReference::from_database(&test_database(), "testcontainer")
     }
 
     #[test]

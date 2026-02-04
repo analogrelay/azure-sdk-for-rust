@@ -149,7 +149,7 @@ impl CosmosDriverRuntimeBuilder {
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     /// );
     /// let database = DatabaseReference::from_name(account, "mydb");
-    /// let container = ContainerReference::from_name(database, "mycollection");
+    /// let container = ContainerReference::from_database(&database, "mycollection");
     ///
     /// // Register a default group for the container
     /// let runtime = CosmosDriverRuntimeBuilder::new()
@@ -217,6 +217,8 @@ impl CosmosDriverRuntimeBuilder {
             vm_metadata_service: VmMetadataService::get_or_init().await,
             throughput_control_groups: self.throughput_control_groups,
             driver_registry: Arc::new(RwLock::new(HashMap::new())),
+            account_metadata_cache: Arc::new(super::cache::AccountMetadataCache::new()),
+            container_cache: Arc::new(super::cache::ContainerCache::new()),
         }
     }
 }

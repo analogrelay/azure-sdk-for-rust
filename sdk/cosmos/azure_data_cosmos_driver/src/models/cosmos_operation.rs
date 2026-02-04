@@ -26,17 +26,21 @@ use azure_core::http::headers::Headers;
 /// ```
 /// use azure_data_cosmos_driver::models::{
 ///     AccountReference, ContainerReference, CosmosOperation, CosmosResourceReference,
-///     DatabaseReference, OperationType, PartitionKey,
+///     DatabaseReference, ItemReference, OperationType, PartitionKey,
 /// };
 /// use url::Url;
 ///
 /// let account = AccountReference::new(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 /// );
-/// let database = DatabaseReference::from_name(account, "mydb");
-/// let container = ContainerReference::from_name(database, "mycontainer");
 ///
-/// // Create a read operation for a document
+/// // Using typed ItemReference (recommended)
+/// let item_ref = ItemReference::from_name(account.clone(), "mydb", "mycontainer", "doc1");
+/// let operation = CosmosOperation::read(item_ref)
+///     .with_partition_key(PartitionKey::from("partition1"));
+///
+/// // Or using CosmosResourceReference directly
+/// let container = ContainerReference::from_name(account, "mydb", "mycontainer");
 /// let operation = CosmosOperation::read(
 ///     CosmosResourceReference::document_by_name(container, "doc1"),
 /// )
@@ -124,7 +128,11 @@ impl CosmosOperation {
     // ===== Factory Methods =====
 
     /// Creates a new operation with the specified type and resource reference.
-    fn new(operation_type: OperationType, resource_reference: CosmosResourceReference) -> Self {
+    fn new(
+        operation_type: OperationType,
+        resource_reference: impl Into<CosmosResourceReference>,
+    ) -> Self {
+        let resource_reference = resource_reference.into();
         let resource_type = resource_reference.resource_type();
         Self {
             operation_type,
@@ -137,57 +145,90 @@ impl CosmosOperation {
     }
 
     /// Creates a Create operation.
-    pub fn create(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`, `ContainerReference`, etc.
+    pub fn create(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Create, resource_reference)
     }
 
     /// Creates a Read operation.
-    pub fn read(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`, `ContainerReference`, etc.
+    pub fn read(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Read, resource_reference)
     }
 
     /// Creates a ReadFeed operation.
-    pub fn read_feed(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ContainerReference`, `DatabaseReference`, etc.
+    pub fn read_feed(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::ReadFeed, resource_reference)
     }
 
     /// Creates a Replace operation.
-    pub fn replace(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`, `ContainerReference`, etc.
+    pub fn replace(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Replace, resource_reference)
     }
 
     /// Creates a Delete operation.
-    pub fn delete(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`, `ContainerReference`, etc.
+    pub fn delete(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Delete, resource_reference)
     }
 
     /// Creates an Upsert operation.
-    pub fn upsert(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`.
+    pub fn upsert(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Upsert, resource_reference)
     }
 
     /// Creates a Query operation.
-    pub fn query(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ContainerReference`.
+    pub fn query(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Query, resource_reference)
     }
 
     /// Creates an Execute operation (for stored procedures).
-    pub fn execute(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including `StoredProcedureReference`.
+    pub fn execute(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Execute, resource_reference)
     }
 
     /// Creates a Patch operation.
-    pub fn patch(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`.
+    pub fn patch(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Patch, resource_reference)
     }
 
     /// Creates a Batch operation.
-    pub fn batch(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ContainerReference`.
+    pub fn batch(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Batch, resource_reference)
     }
 
     /// Creates a Head operation.
-    pub fn head(resource_reference: CosmosResourceReference) -> Self {
+    ///
+    /// Accepts any type that can be converted into a `CosmosResourceReference`,
+    /// including typed references like `ItemReference`, `ContainerReference`, etc.
+    pub fn head(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Head, resource_reference)
     }
 
@@ -217,7 +258,7 @@ mod tests {
     }
 
     fn test_container() -> ContainerReference {
-        ContainerReference::from_name(test_database(), "testcontainer")
+        ContainerReference::from_database(&test_database(), "testcontainer")
     }
 
     #[test]

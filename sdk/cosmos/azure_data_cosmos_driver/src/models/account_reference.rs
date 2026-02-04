@@ -4,8 +4,59 @@
 //! Account reference and authentication types.
 
 use azure_core::credentials::{Secret, TokenCredential};
-use std::sync::Arc;
+use std::{hash::Hash, sync::Arc};
 use url::Url;
+
+/// An account endpoint URL used as a cache key.
+///
+/// This is a newtype wrapper around `Url` that implements `Hash` and `Eq`
+/// based on the URL only (ignoring authentication). Used as a key in
+/// account-scoped caches.
+#[derive(Clone, Debug)]
+pub(crate) struct AccountEndpoint(Url);
+
+impl AccountEndpoint {
+    /// Creates a new account endpoint from a URL.
+    pub(crate) fn new(url: Url) -> Self {
+        Self(url)
+    }
+
+    /// Returns the endpoint URL.
+    pub(crate) fn url(&self) -> &Url {
+        &self.0
+    }
+
+    /// Consumes the `AccountEndpoint` and returns the inner URL.
+    pub(crate) fn into_url(self) -> Url {
+        self.0
+    }
+}
+
+impl PartialEq for AccountEndpoint {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for AccountEndpoint {}
+
+impl Hash for AccountEndpoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl From<Url> for AccountEndpoint {
+    fn from(url: Url) -> Self {
+        Self::new(url)
+    }
+}
+
+impl From<&AccountReference> for AccountEndpoint {
+    fn from(account: &AccountReference) -> Self {
+        Self::new(account.endpoint().clone())
+    }
+}
 
 /// A master key for authenticating with a Cosmos DB account.
 ///

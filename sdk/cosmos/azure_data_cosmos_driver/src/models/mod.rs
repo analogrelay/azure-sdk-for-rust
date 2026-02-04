@@ -14,6 +14,7 @@ mod cosmos_operation;
 mod cosmos_resource_reference;
 mod etag;
 mod partition_key;
+mod resource_id;
 mod resource_reference;
 mod resource_types;
 mod session;
@@ -26,15 +27,69 @@ pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;
 pub use etag::{ETag, ETagCondition};
 pub use partition_key::{PartitionKey, PartitionKeyValue};
-pub use resource_reference::{ContainerReference, DatabaseReference};
+pub use resource_id::{ResourceName, ResourceRid};
+pub use resource_reference::{
+    ContainerReference, DatabaseReference, ItemReference, StoredProcedureReference,
+    TriggerReference, UdfReference,
+};
 pub use resource_types::{OperationType, ResourceType};
 pub use session::SessionToken;
 pub use throughput_control::ThroughputControlGroupName;
-pub use triggers::TriggerReference;
+pub use triggers::TriggerInvocation;
 pub use user_agent::UserAgent;
 
+pub(crate) use account_reference::AccountEndpoint;
+
+use crate::options::Region;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+
+/// Properties of a Cosmos DB account.
+///
+/// Contains metadata about a Cosmos DB account including its regions and capabilities.
+/// Used internally by the driver for routing and caching.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub(crate) struct AccountProperties {
+    /// The account's primary (write) region.
+    pub write_region: Region,
+    /// All readable regions for this account (ordered by preference).
+    pub read_regions: Vec<Region>,
+    /// The system-assigned resource ID for the account.
+    pub rid: Option<String>,
+}
+
+impl AccountProperties {
+    /// Creates new account properties.
+    pub fn new(write_region: Region, read_regions: Vec<Region>) -> Self {
+        Self {
+            write_region,
+            read_regions,
+            rid: None,
+        }
+    }
+
+    /// Sets the account's resource ID.
+    #[must_use]
+    pub fn with_rid(mut self, rid: impl Into<String>) -> Self {
+        self.rid = Some(rid.into());
+        self
+    }
+}
+
+/// Properties of a Cosmos DB database.
+///
+/// Returned by database read/query operations and used when creating databases.
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DatabaseProperties {
+    /// Unique identifier for the database within the account.
+    pub id: Cow<'static, str>,
+
+    /// System-managed properties (e.g., _rid, _ts, _etag).
+    #[serde(flatten)]
+    pub system_properties: SystemProperties,
+}
 
 /// Properties of a Cosmos DB container.
 ///

@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    models::{ContainerReference, ThroughputControlGroupName, UserAgent},
+    models::{AccountEndpoint, ContainerProperties, ContainerReference, ThroughputControlGroupName, UserAgent},
     options::{
         ConnectionPoolOptions, CorrelationId, SharedRuntimeOptions, ThroughputControlGroupOptions,
         ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
@@ -18,7 +18,10 @@ use crate::{
     system::{AzureVmMetadata, CpuMemoryHistory, CpuMemoryMonitor, VmMetadataService},
 };
 
-use super::{CosmosDriver, CosmosDriverRuntimeBuilder};
+use super::{
+    cache::{AccountMetadataCache, ContainerCache},
+    CosmosDriver, CosmosDriverRuntimeBuilder,
+};
 
 /// The Cosmos DB driver runtime environment.
 ///
@@ -118,6 +121,18 @@ pub struct CosmosDriverRuntime {
     ///
     /// Ensures singleton driver per account reference.
     pub(crate) driver_registry: Arc<RwLock<HashMap<String, Arc<CosmosDriver>>>>,
+
+    /// Cache for account metadata (regions, capabilities).
+    ///
+    /// Entries are populated on first access to an account and used for routing.
+    /// Wrapped in `Arc` for cheap cloning.
+    pub(crate) account_metadata_cache: Arc<AccountMetadataCache>,
+
+    /// Cache for container metadata (partition key definition, indexing policy).
+    ///
+    /// Entries are populated on first access to a container and used for
+    /// partition key extraction and routing. Wrapped in `Arc` for cheap cloning.
+    pub(crate) container_cache: Arc<ContainerCache>,
 }
 
 impl CosmosDriverRuntime {
@@ -271,5 +286,61 @@ impl CosmosDriverRuntime {
     ) -> Option<&Arc<ThroughputControlGroupOptions>> {
         self.throughput_control_groups
             .get_default_for_container(container)
+    }
+
+    // ===== Cache Access Methods =====
+
+    /// Returns cached container properties if available.
+    ///
+    /// Returns `None` if the container hasn't been cached yet.
+    /// Use [`get_or_fetch_container_properties`] to fetch and cache if needed.
+    pub(crate) async fn get_cached_container_properties(
+        &self,
+        container: &ContainerReference,
+    ) -> Option<Arc<ContainerProperties>> {
+        self.container_cache.get(container).await
+    }
+
+    /// Gets container properties, fetching and caching if not already cached.
+    ///
+    /// The `fetch_fn` is only called if the container is not in the cache.
+    /// Concurrent requests for the same container share the same fetch operation.
+    pub(crate) async fn get_or_fetch_container_properties<F, Fut>(
+        &self,
+        container: ContainerReference,
+        fetch_fn: F,
+    ) -> Arc<ContainerProperties>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = ContainerProperties>,
+    {
+        self.container_cache
+            .get_or_fetch(container, fetch_fn)
+            .await
+    }
+
+    /// Invalidates cached container properties.
+    ///
+    /// Call this when container properties may have changed (e.g., after
+    /// updating indexing policy).
+    pub(crate) async fn invalidate_container_cache(&self, container: &ContainerReference) {
+        self.container_cache.invalidate(container).await;
+    }
+
+    /// Invalidates cached account metadata.
+    ///
+    /// Call this when account configuration may have changed (e.g., after
+    /// adding/removing regions).
+    pub(crate) async fn invalidate_account_cache(&self, endpoint: &AccountEndpoint) {
+        self.account_metadata_cache.invalidate(endpoint).await;
+    }
+
+    /// Clears all caches.
+    ///
+    /// This is primarily useful for testing or when the connection needs
+    /// to be fully refreshed.
+    pub(crate) async fn clear_all_caches(&self) {
+        self.account_metadata_cache.clear().await;
+        self.container_cache.clear().await;
     }
 }
