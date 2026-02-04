@@ -80,7 +80,11 @@ where
 
 impl RequestDiagnostics {
     /// Creates a new request diagnostics entry for a request being started.
-    pub(crate) fn new(execution_context: ExecutionContext, region: Region, endpoint: String) -> Self {
+    pub(crate) fn new(
+        execution_context: ExecutionContext,
+        region: Region,
+        endpoint: String,
+    ) -> Self {
         Self {
             execution_context,
             region,

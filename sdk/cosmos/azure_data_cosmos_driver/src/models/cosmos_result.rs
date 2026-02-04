@@ -265,9 +265,7 @@ impl CosmosHeaders {
 mod tests {
     use super::*;
     use crate::{
-        diagnostics::DiagnosticsContextBuilder,
-        models::SubStatusCode,
-        options::DiagnosticsOptions,
+        diagnostics::DiagnosticsContextBuilder, models::SubStatusCode, options::DiagnosticsOptions,
     };
     use azure_core::http::StatusCode;
 

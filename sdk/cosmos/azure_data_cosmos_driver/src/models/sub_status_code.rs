@@ -454,7 +454,8 @@ impl SubStatusCode {
     pub const PARTITION_KEY_QUOTA_OVER_LIMIT: SubStatusCode = SubStatusCode(1014);
 
     /// Shared throughput database collection count exceeded (1019).
-    pub const SHARED_THROUGHPUT_DATABASE_COLLECTION_COUNT_EXCEEDED: SubStatusCode = SubStatusCode(1019);
+    pub const SHARED_THROUGHPUT_DATABASE_COLLECTION_COUNT_EXCEEDED: SubStatusCode =
+        SubStatusCode(1019);
 
     /// Shared throughput database count exceeded (1020).
     pub const SHARED_THROUGHPUT_DATABASE_COUNT_EXCEEDED: SubStatusCode = SubStatusCode(1020);
@@ -487,10 +488,12 @@ impl SubStatusCode {
     pub const PARTITION_MIGRATING_COLLECTION_DELETED: SubStatusCode = SubStatusCode(1031);
 
     /// Partition migration source partition deleted in master (1034).
-    pub const PARTITION_MIGRATION_SOURCE_PARTITION_DELETED_IN_MASTER: SubStatusCode = SubStatusCode(1034);
+    pub const PARTITION_MIGRATION_SOURCE_PARTITION_DELETED_IN_MASTER: SubStatusCode =
+        SubStatusCode(1034);
 
     /// Partition migration shared throughput database partition resource not found in master (1035).
-    pub const PARTITION_MIGRATION_SHARED_THROUGHPUT_DB_PARTITION_NOT_FOUND: SubStatusCode = SubStatusCode(1035);
+    pub const PARTITION_MIGRATION_SHARED_THROUGHPUT_DB_PARTITION_NOT_FOUND: SubStatusCode =
+        SubStatusCode(1035);
 
     /// Partition migration partition resource not found in master (1036).
     pub const PARTITION_MIGRATION_PARTITION_RESOURCE_NOT_FOUND: SubStatusCode = SubStatusCode(1036);
@@ -510,10 +513,12 @@ impl SubStatusCode {
     pub const PARTITION_KEY_HASH_COLLISION: SubStatusCode = SubStatusCode(3302);
 
     /// Partition migration document count mismatch between source and target (3050).
-    pub const PARTITION_MIGRATION_DOC_COUNT_MISMATCH_SOURCE_TARGET: SubStatusCode = SubStatusCode(3050);
+    pub const PARTITION_MIGRATION_DOC_COUNT_MISMATCH_SOURCE_TARGET: SubStatusCode =
+        SubStatusCode(3050);
 
     /// Partition migration document count mismatch between target partition replicas (3051).
-    pub const PARTITION_MIGRATION_DOC_COUNT_MISMATCH_TARGET_REPLICAS: SubStatusCode = SubStatusCode(3051);
+    pub const PARTITION_MIGRATION_DOC_COUNT_MISMATCH_TARGET_REPLICAS: SubStatusCode =
+        SubStatusCode(3051);
 
     // ----- 410: Gone -----
 
@@ -562,7 +567,8 @@ impl SubStatusCode {
     pub const CANNOT_ACQUIRE_PARTITION_LOCK: SubStatusCode = SubStatusCode(2008);
 
     /// Storage split conflicting with n-way throughput split (2011).
-    pub const STORAGE_SPLIT_CONFLICTING_WITH_NWAY_THROUGHPUT_SPLIT: SubStatusCode = SubStatusCode(2011);
+    pub const STORAGE_SPLIT_CONFLICTING_WITH_NWAY_THROUGHPUT_SPLIT: SubStatusCode =
+        SubStatusCode(2011);
 
     /// Merge is disabled (2012).
     pub const MERGE_DISABLED: SubStatusCode = SubStatusCode(2012);
@@ -841,7 +847,10 @@ mod tests {
     fn debug_known_code() {
         // RU_BUDGET_EXCEEDED (3200) is unambiguous
         let code = SubStatusCode::RU_BUDGET_EXCEEDED;
-        assert_eq!(format!("{:?}", code), "SubStatusCode::RUBudgetExceeded(3200)");
+        assert_eq!(
+            format!("{:?}", code),
+            "SubStatusCode::RUBudgetExceeded(3200)"
+        );
     }
 
     #[test]
@@ -979,13 +988,19 @@ mod tests {
     #[test]
     fn sdk_server_codes() {
         // Verify SDK server-side codes match Java/.NET
-        assert_eq!(SubStatusCode::NAME_CACHE_STALE_EXCEEDED_RETRY_LIMIT.value(), 21001);
+        assert_eq!(
+            SubStatusCode::NAME_CACHE_STALE_EXCEEDED_RETRY_LIMIT.value(),
+            21001
+        );
         assert_eq!(
             SubStatusCode::PARTITION_KEY_RANGE_GONE_EXCEEDED_RETRY_LIMIT.value(),
             21002
         );
         assert_eq!(SubStatusCode::SERVER_GENERATED_410.value(), 21005);
-        assert_eq!(SubStatusCode::GLOBAL_STRONG_WRITE_BARRIER_NOT_MET.value(), 21006);
+        assert_eq!(
+            SubStatusCode::GLOBAL_STRONG_WRITE_BARRIER_NOT_MET.value(),
+            21006
+        );
         assert_eq!(SubStatusCode::READ_QUORUM_NOT_MET.value(), 21007);
         assert_eq!(SubStatusCode::SERVER_GENERATED_503.value(), 21008);
     }

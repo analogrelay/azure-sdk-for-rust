@@ -302,14 +302,12 @@ impl DiagnosticsContext {
         };
 
         match effective_verbosity {
-            DiagnosticsVerbosity::Default | DiagnosticsVerbosity::Detailed => {
-                self.cached_json_detailed.get_or_init(|| self.compute_json_detailed())
-            }
-            DiagnosticsVerbosity::Summary => {
-                self.cached_json_summary.get_or_init(|| {
-                    self.compute_json_summary(self.options.max_summary_size_bytes())
-                })
-            }
+            DiagnosticsVerbosity::Default | DiagnosticsVerbosity::Detailed => self
+                .cached_json_detailed
+                .get_or_init(|| self.compute_json_detailed()),
+            DiagnosticsVerbosity::Summary => self
+                .cached_json_summary
+                .get_or_init(|| self.compute_json_summary(self.options.max_summary_size_bytes())),
         }
     }
 
@@ -623,14 +621,17 @@ mod tests {
 
     #[test]
     fn json_caching_detailed() {
-        let ctx = make_context_with(ActivityId::from_string("cache-test".to_string()), |builder| {
-            let handle = builder.start_request(
-                ExecutionContext::Initial,
-                Region::WEST_US_2,
-                "https://test.documents.azure.com".to_string(),
-            );
-            builder.complete_request(handle, StatusCode::Ok);
-        });
+        let ctx = make_context_with(
+            ActivityId::from_string("cache-test".to_string()),
+            |builder| {
+                let handle = builder.start_request(
+                    ExecutionContext::Initial,
+                    Region::WEST_US_2,
+                    "https://test.documents.azure.com".to_string(),
+                );
+                builder.complete_request(handle, StatusCode::Ok);
+            },
+        );
 
         // First call computes
         let json1 = ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed));
@@ -675,9 +676,11 @@ mod tests {
 
     #[test]
     fn status_codes_stored() {
-        let mut builder =
-            DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
-        builder.set_operation_status(StatusCode::NotFound, Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE));
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        builder.set_operation_status(
+            StatusCode::NotFound,
+            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE),
+        );
         let ctx = builder.complete();
 
         assert_eq!(ctx.status_code(), Some(StatusCode::NotFound));
