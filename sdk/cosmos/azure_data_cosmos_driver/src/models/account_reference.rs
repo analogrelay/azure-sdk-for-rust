@@ -26,6 +26,14 @@ impl AccountEndpoint {
         &self.0
     }
 
+    /// Returns the host portion of the endpoint URL.
+    ///
+    /// Returns an empty string if the URL has no host (which shouldn't
+    /// happen for valid Cosmos DB endpoints).
+    pub(crate) fn host(&self) -> &str {
+        self.0.host_str().unwrap_or("")
+    }
+
     /// Consumes the `AccountEndpoint` and returns the inner URL.
     pub(crate) fn into_url(self) -> Url {
         self.0
@@ -49,6 +57,14 @@ impl Hash for AccountEndpoint {
 impl From<Url> for AccountEndpoint {
     fn from(url: Url) -> Self {
         Self::new(url)
+    }
+}
+
+impl TryFrom<&str> for AccountEndpoint {
+    type Error = url::ParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self::new(Url::parse(value)?))
     }
 }
 

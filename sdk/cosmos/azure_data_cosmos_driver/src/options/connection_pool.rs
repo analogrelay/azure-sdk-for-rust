@@ -11,35 +11,48 @@ use super::env_parsing::{
 /// Configuration for connection pooling behavior.
 ///
 /// Controls how the driver manages connections to Cosmos DB endpoints.
+/// This type is immutable after construction - use [`ConnectionPoolOptionsBuilder`]
+/// to create instances with custom values.
 ///
-/// Use [`ConnectionPoolOptionsBuilder`] to construct instances with custom values.
+/// # Example
+///
+/// ```rust
+/// use azure_data_cosmos_driver::options::ConnectionPoolOptions;
+/// use std::time::Duration;
+///
+/// let options = ConnectionPoolOptions::builder()
+///     .max_idle_connections_per_endpoint(5_000)
+///     .max_connect_timeout(Duration::from_secs(3))
+///     .build()
+///     .expect("valid options");
+///
+/// // Access via getters
+/// assert_eq!(options.max_idle_connections_per_endpoint(), 5_000);
+/// assert_eq!(options.max_connect_timeout(), Duration::from_secs(3));
+/// ```
 #[derive(Clone, Debug)]
 pub struct ConnectionPoolOptions {
-    pub(crate) is_proxy_allowed: bool,
+    is_proxy_allowed: bool,
 
-    pub(crate) min_connect_timeout: Duration,
-    pub(crate) max_connect_timeout: Duration,
+    min_connect_timeout: Duration,
+    max_connect_timeout: Duration,
 
-    pub(crate) min_dataplane_request_timeout: Duration,
-    pub(crate) max_dataplane_request_timeout: Duration,
-    pub(crate) min_metadata_request_timeout: Duration,
-    pub(crate) max_metadata_request_timeout: Duration,
+    min_dataplane_request_timeout: Duration,
+    max_dataplane_request_timeout: Duration,
+    min_metadata_request_timeout: Duration,
+    max_metadata_request_timeout: Duration,
 
-    pub(crate) max_idle_connections_per_endpoint: usize,
+    max_idle_connections_per_endpoint: usize,
 
-    pub(crate) idle_connection_timeout: Option<Duration>,
+    idle_connection_timeout: Option<Duration>,
 
-    /// Whether to allow using HTTP/2 for gateway mode connections.
-    pub(crate) is_http2_allowed: bool,
+    is_http2_allowed: bool,
 
-    /// Whether to allow the Gateway 2.0 feature for gateway mode connections.
-    /// If true the driver will use Gateway 2.0 features when communicating with the Cosmos DB service if
-    /// the Gateway 2.0 feature is enabled for the account.
-    pub(crate) is_gateway20_allowed: bool,
+    is_gateway20_allowed: bool,
 
-    pub(crate) emulator_server_cert_validation_disabled: bool,
+    emulator_server_cert_validation_disabled: bool,
 
-    pub(crate) local_address: Option<IpAddr>,
+    local_address: Option<IpAddr>,
 }
 
 impl Default for ConnectionPoolOptions {
@@ -54,6 +67,80 @@ impl ConnectionPoolOptions {
     /// Creates a new builder for `ConnectionPoolOptions`.
     pub fn builder() -> ConnectionPoolOptionsBuilder {
         ConnectionPoolOptionsBuilder::new()
+    }
+
+    /// Returns whether proxy usage is allowed.
+    ///
+    /// When `true`, the `HTTPS_PROXY` environment variable will be respected.
+    /// When using a proxy, no end-to-end SLAs are guaranteed by Azure Cosmos DB.
+    pub fn is_proxy_allowed(&self) -> bool {
+        self.is_proxy_allowed
+    }
+
+    /// Returns the minimum connection timeout.
+    pub fn min_connect_timeout(&self) -> Duration {
+        self.min_connect_timeout
+    }
+
+    /// Returns the maximum connection timeout.
+    pub fn max_connect_timeout(&self) -> Duration {
+        self.max_connect_timeout
+    }
+
+    /// Returns the minimum data plane request timeout.
+    pub fn min_dataplane_request_timeout(&self) -> Duration {
+        self.min_dataplane_request_timeout
+    }
+
+    /// Returns the maximum data plane request timeout.
+    pub fn max_dataplane_request_timeout(&self) -> Duration {
+        self.max_dataplane_request_timeout
+    }
+
+    /// Returns the minimum metadata request timeout.
+    pub fn min_metadata_request_timeout(&self) -> Duration {
+        self.min_metadata_request_timeout
+    }
+
+    /// Returns the maximum metadata request timeout.
+    pub fn max_metadata_request_timeout(&self) -> Duration {
+        self.max_metadata_request_timeout
+    }
+
+    /// Returns the maximum number of idle connections per endpoint.
+    pub fn max_idle_connections_per_endpoint(&self) -> usize {
+        self.max_idle_connections_per_endpoint
+    }
+
+    /// Returns the idle connection timeout, if set.
+    pub fn idle_connection_timeout(&self) -> Option<Duration> {
+        self.idle_connection_timeout
+    }
+
+    /// Returns whether HTTP/2 is allowed for gateway mode connections.
+    pub fn is_http2_allowed(&self) -> bool {
+        self.is_http2_allowed
+    }
+
+    /// Returns whether Gateway 2.0 feature is allowed.
+    ///
+    /// If `true`, the driver will use Gateway 2.0 features when communicating
+    /// with the Cosmos DB service (if the account supports it). Gateway 2.0
+    /// requires HTTP/2, so this returns `false` if HTTP/2 is disabled.
+    pub fn is_gateway20_allowed(&self) -> bool {
+        self.is_gateway20_allowed
+    }
+
+    /// Returns whether server certificate validation is disabled for emulator connections.
+    ///
+    /// This only takes effect when connecting to localhost/emulator endpoints.
+    pub fn is_emulator_server_cert_validation_disabled(&self) -> bool {
+        self.emulator_server_cert_validation_disabled
+    }
+
+    /// Returns the local IP address to bind to, if set.
+    pub fn local_address(&self) -> Option<IpAddr> {
+        self.local_address
     }
 }
 
@@ -371,32 +458,32 @@ mod tests {
     fn connection_pool_options_builder_defaults() {
         let options = ConnectionPoolOptionsBuilder::new().build().unwrap();
 
-        assert!(!options.is_proxy_allowed);
-        assert_eq!(options.min_connect_timeout, Duration::from_millis(100));
-        assert_eq!(options.max_connect_timeout, Duration::from_millis(5_000));
+        assert!(!options.is_proxy_allowed());
+        assert_eq!(options.min_connect_timeout(), Duration::from_millis(100));
+        assert_eq!(options.max_connect_timeout(), Duration::from_millis(5_000));
         assert_eq!(
-            options.min_dataplane_request_timeout,
+            options.min_dataplane_request_timeout(),
             Duration::from_millis(100)
         );
         assert_eq!(
-            options.max_dataplane_request_timeout,
+            options.max_dataplane_request_timeout(),
             Duration::from_millis(6_000)
         );
         assert_eq!(
-            options.min_metadata_request_timeout,
+            options.min_metadata_request_timeout(),
             Duration::from_millis(100)
         );
         assert_eq!(
-            options.max_metadata_request_timeout,
+            options.max_metadata_request_timeout(),
             Duration::from_millis(65_000)
         );
-        assert!(options.is_http2_allowed);
-        assert!(!options.is_gateway20_allowed);
-        assert!(!options.emulator_server_cert_validation_disabled);
-        assert_eq!(options.idle_connection_timeout, None);
-        assert_eq!(options.local_address, None);
+        assert!(options.is_http2_allowed());
+        assert!(!options.is_gateway20_allowed());
+        assert!(!options.is_emulator_server_cert_validation_disabled());
+        assert_eq!(options.idle_connection_timeout(), None);
+        assert_eq!(options.local_address(), None);
         // Default is 1_000 when HTTP/2 is allowed (which is true by default)
-        assert_eq!(options.max_idle_connections_per_endpoint, 1_000);
+        assert_eq!(options.max_idle_connections_per_endpoint(), 1_000);
     }
 
     #[test]
@@ -417,34 +504,34 @@ mod tests {
             .build()
             .unwrap();
 
-        assert!(options.is_proxy_allowed);
-        assert_eq!(options.min_connect_timeout, Duration::from_millis(200));
-        assert_eq!(options.max_connect_timeout, Duration::from_millis(3_000));
+        assert!(options.is_proxy_allowed());
+        assert_eq!(options.min_connect_timeout(), Duration::from_millis(200));
+        assert_eq!(options.max_connect_timeout(), Duration::from_millis(3_000));
         assert_eq!(
-            options.min_dataplane_request_timeout,
+            options.min_dataplane_request_timeout(),
             Duration::from_millis(500)
         );
         assert_eq!(
-            options.max_dataplane_request_timeout,
+            options.max_dataplane_request_timeout(),
             Duration::from_millis(10_000)
         );
         assert_eq!(
-            options.min_metadata_request_timeout,
+            options.min_metadata_request_timeout(),
             Duration::from_millis(150)
         );
         assert_eq!(
-            options.max_metadata_request_timeout,
+            options.max_metadata_request_timeout(),
             Duration::from_millis(30_000)
         );
-        assert_eq!(options.max_idle_connections_per_endpoint, 5_000);
+        assert_eq!(options.max_idle_connections_per_endpoint(), 5_000);
         assert_eq!(
-            options.idle_connection_timeout,
+            options.idle_connection_timeout(),
             Some(Duration::from_millis(600_000))
         );
-        assert!(!options.is_http2_allowed);
+        assert!(!options.is_http2_allowed());
         // gateway20 is set to true but HTTP/2 is false, so it should be false
-        assert!(!options.is_gateway20_allowed);
-        assert!(options.emulator_server_cert_validation_disabled);
+        assert!(!options.is_gateway20_allowed());
+        assert!(options.is_emulator_server_cert_validation_disabled());
     }
 
     #[test]
@@ -638,7 +725,7 @@ mod tests {
             .unwrap();
 
         // Gateway 2.0 should be disabled if HTTP/2 is not allowed
-        assert!(!options.is_gateway20_allowed);
+        assert!(!options.is_gateway20_allowed());
     }
 
     #[test]
@@ -649,6 +736,6 @@ mod tests {
             .unwrap();
 
         // When HTTP/2 is disabled, default should be 10_000
-        assert_eq!(options.max_idle_connections_per_endpoint, 10_000);
+        assert_eq!(options.max_idle_connections_per_endpoint(), 10_000);
     }
 }

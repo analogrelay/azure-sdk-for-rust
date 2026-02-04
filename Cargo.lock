@@ -342,6 +342,7 @@ dependencies = [
  "azure_core",
  "azure_identity",
  "futures",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

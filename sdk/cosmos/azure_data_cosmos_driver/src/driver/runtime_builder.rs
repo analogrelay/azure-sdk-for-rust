@@ -20,7 +20,7 @@ use crate::{
     system::{CpuMemoryMonitor, VmMetadataService},
 };
 
-use super::{CosmosDriver, CosmosDriverRuntime};
+use super::{transport::CosmosTransport, CosmosDriver, CosmosDriverRuntime};
 
 /// Builder for creating [`CosmosDriverRuntime`].
 ///
@@ -198,11 +198,16 @@ impl CosmosDriverRuntimeBuilder {
     /// 3. `correlation_id` if set
     /// 4. No suffix (base user agent only)
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP transport cannot be created (e.g., TLS
+    /// configuration failure).
+    ///
     /// # Note
     ///
     /// This method is async because it may need to fetch Azure VM metadata from
     /// the Instance Metadata Service (IMDS) on first initialization.
-    pub async fn build(self) -> CosmosDriverRuntime {
+    pub async fn build(self) -> azure_core::Result<CosmosDriverRuntime> {
         // Compute user agent from suffix/workloadId/correlationId (in priority order)
         let user_agent = if let Some(ref suffix) = self.user_agent_suffix {
             UserAgent::from_suffix(suffix)
@@ -214,9 +219,16 @@ impl CosmosDriverRuntimeBuilder {
             UserAgent::default()
         };
 
-        CosmosDriverRuntime {
+        let connection_pool = self.connection_pool.unwrap_or_default();
+        let transport = Arc::new(CosmosTransport::new(
+            connection_pool.clone(),
+            user_agent.as_str(),
+        )?);
+
+        Ok(CosmosDriverRuntime {
             client_options: self.client_options.unwrap_or_default(),
-            connection_pool: self.connection_pool.unwrap_or_default(),
+            connection_pool,
+            transport,
             diagnostics_options: Arc::new(self.diagnostics_options.unwrap_or_default()),
             runtime_options: SharedRuntimeOptions::from_options(
                 self.runtime_options.unwrap_or_default(),
@@ -231,7 +243,7 @@ impl CosmosDriverRuntimeBuilder {
             driver_registry: Arc::new(RwLock::new(HashMap::new())),
             account_metadata_cache: Arc::new(super::cache::AccountMetadataCache::new()),
             container_cache: Arc::new(super::cache::ContainerCache::new()),
-        }
+        })
     }
 }
 
@@ -261,7 +273,7 @@ impl CosmosDriverRuntime {
     /// use url::Url;
     ///
     /// # async fn example() -> azure_core::Result<()> {
-    /// let runtime = CosmosDriverRuntime::builder().build().await;
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     ///
     /// let account = AccountReference::new(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),

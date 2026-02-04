@@ -23,6 +23,7 @@ use crate::{
 
 use super::{
     cache::{AccountMetadataCache, ContainerCache},
+    transport::CosmosTransport,
     CosmosDriver, CosmosDriverRuntimeBuilder,
 };
 
@@ -55,7 +56,7 @@ use super::{
 /// let cosmos_runtime = CosmosDriverRuntimeBuilder::new()
 ///     .runtime_options(runtime)
 ///     .build()
-///     .await;
+///     .await?;
 ///
 /// // Get or create a driver for an account
 /// let account = AccountReference::new(
@@ -76,6 +77,12 @@ pub struct CosmosDriverRuntime {
 
     /// Connection pool configuration for managing TCP connections.
     pub(crate) connection_pool: ConnectionPoolOptions,
+
+    /// HTTP transport manager with connection pools.
+    ///
+    /// Manages separate pools for metadata and data plane operations,
+    /// with lazy initialization of emulator-specific pools.
+    pub(crate) transport: Arc<CosmosTransport>,
 
     /// Diagnostics configuration for output verbosity and size limits.
     pub(crate) diagnostics_options: Arc<DiagnosticsOptions>,
@@ -157,6 +164,14 @@ impl CosmosDriverRuntime {
         &self.connection_pool
     }
 
+    /// Returns the HTTP transport manager.
+    ///
+    /// The transport provides access to connection pools configured for
+    /// metadata and data plane operations, with automatic emulator detection.
+    pub(crate) fn transport(&self) -> &Arc<CosmosTransport> {
+        &self.transport
+    }
+
     /// Returns the diagnostics options.
     ///
     /// Use this to access verbosity and size settings for diagnostic output.
@@ -215,8 +230,8 @@ impl CosmosDriverRuntime {
     /// ```no_run
     /// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
     ///
-    /// # async fn example() {
-    /// let runtime = CosmosDriverRuntime::builder().build().await;
+    /// # async fn example() -> azure_core::Result<()> {
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     /// let history = runtime.cpu_memory_snapshot();
     ///
     /// if let Some(cpu) = history.latest_cpu() {
@@ -226,6 +241,7 @@ impl CosmosDriverRuntime {
     /// if history.is_cpu_overloaded() {
     ///     println!("Warning: CPU is overloaded");
     /// }
+    /// # Ok(())
     /// # }
     /// ```
     pub fn cpu_memory_snapshot(&self) -> CpuMemoryHistory {
@@ -244,12 +260,13 @@ impl CosmosDriverRuntime {
     /// ```no_run
     /// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
     ///
-    /// # async fn example() {
-    /// let runtime = CosmosDriverRuntime::builder().build().await;
+    /// # async fn example() -> azure_core::Result<()> {
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     /// if let Some(metadata) = runtime.vm_metadata() {
     ///     println!("VM ID: {}", metadata.vm_id());
     ///     println!("Location: {}", metadata.location());
     /// }
+    /// # Ok(())
     /// # }
     /// ```
     pub fn vm_metadata(&self) -> Option<&AzureVmMetadata> {

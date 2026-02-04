@@ -75,7 +75,7 @@ async fn main() -> azure_core::Result<()> {
     ).with_credential(credential);
 
     // Create the runtime
-    let runtime = CosmosDriverRuntime::builder().build().await;
+    let runtime = CosmosDriverRuntime::builder().build().await?;
 
     // Get or create a driver for the account (singleton per endpoint)
     let driver = runtime.get_or_create_driver(account, None).await?;

@@ -25,6 +25,8 @@ mod request_event;
 mod serialization;
 
 pub use diagnostics_context::DiagnosticsContext;
+// Re-export for internal use by tests in other modules (false positive unused warning - used in tests)
+#[cfg(test)]
 pub(crate) use diagnostics_context::DiagnosticsContextBuilder;
 pub use execution_context::ExecutionContext;
 pub use request_diagnostics::{RequestDiagnostics, RequestHandle};

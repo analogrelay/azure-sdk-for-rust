@@ -14,6 +14,7 @@ pub(crate) mod cache;
 mod cosmos_driver;
 mod runtime;
 mod runtime_builder;
+pub(crate) mod transport;
 
 pub use cosmos_driver::CosmosDriver;
 pub use runtime::CosmosDriverRuntime;
