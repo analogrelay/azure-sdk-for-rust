@@ -52,6 +52,11 @@ pub(crate) fn is_emulator_host(endpoint: &AccountEndpoint) -> bool {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    /// Mutex to serialize tests that modify the AZURE_COSMOS_EMULATOR_HOST env var.
+    /// This prevents race conditions when tests run in parallel.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn localhost_is_emulator() {
@@ -95,6 +100,8 @@ mod tests {
 
     #[test]
     fn custom_emulator_host_via_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
         // Save and clear any existing value
         let original = env::var(AZURE_COSMOS_EMULATOR_HOST).ok();
 
@@ -117,6 +124,8 @@ mod tests {
 
     #[test]
     fn custom_emulator_host_case_insensitive() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
         // Save and clear any existing value
         let original = env::var(AZURE_COSMOS_EMULATOR_HOST).ok();
 
@@ -138,6 +147,8 @@ mod tests {
 
     #[test]
     fn empty_env_var_uses_default_hosts() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
         // Save and clear any existing value
         let original = env::var(AZURE_COSMOS_EMULATOR_HOST).ok();
 

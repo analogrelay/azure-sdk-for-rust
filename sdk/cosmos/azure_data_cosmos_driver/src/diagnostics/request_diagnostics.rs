@@ -66,6 +66,12 @@ pub struct RequestDiagnostics {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
 
+    /// Whether the request was sent on the wire before failure.
+    /// This is critical for retry decisions - if true, non-idempotent
+    /// operations should not be retried without additional safeguards.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub request_sent: bool,
+
     /// Error message if the request failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -101,6 +107,7 @@ impl RequestDiagnostics {
             duration_ms: 0,
             events: Vec::new(),
             timed_out: false,
+            request_sent: false,
             error: None,
         }
     }
@@ -120,6 +127,28 @@ impl RequestDiagnostics {
     pub(crate) fn timeout(&mut self) {
         self.completed_at = Some(Instant::now());
         self.timed_out = true;
+        self.duration_ms = self
+            .completed_at
+            .unwrap()
+            .duration_since(self.started_at)
+            .as_millis() as u64;
+    }
+
+    /// Records failure of this request with an error message.
+    ///
+    /// Use this for transport-level failures (connection errors, DNS failures, etc.)
+    /// where no HTTP response was received.
+    ///
+    /// # Note on retry safety
+    ///
+    /// The `request_sent` parameter indicates whether the request bytes were
+    /// written to the network. This is critical for determining retry safety:
+    /// - `false`: Safe to retry any operation
+    /// - `true`: Only safe to retry idempotent operations (reads, or writes with etag conditions)
+    pub(crate) fn fail(&mut self, error: impl Into<String>, request_sent: bool) {
+        self.completed_at = Some(Instant::now());
+        self.error = Some(error.into());
+        self.request_sent = request_sent;
         self.duration_ms = self
             .completed_at
             .unwrap()
@@ -160,6 +189,11 @@ impl RequestDiagnostics {
     /// Adds a pipeline event.
     pub(crate) fn add_event(&mut self, event: RequestEvent) {
         self.events.push(event);
+    }
+
+    /// Returns whether this request has been completed.
+    pub(crate) fn is_completed(&self) -> bool {
+        self.completed_at.is_some()
     }
 }
 

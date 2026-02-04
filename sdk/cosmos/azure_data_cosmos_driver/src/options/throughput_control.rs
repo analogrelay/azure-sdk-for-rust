@@ -556,15 +556,19 @@ mod tests {
     use url::Url;
 
     fn test_container() -> ContainerReference {
-        let account =
-            AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap());
+        let account = AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        );
         let db = DatabaseReference::from_name(account, "testdb");
         ContainerReference::from_database(&db, "testcontainer")
     }
 
     fn test_container_2() -> ContainerReference {
-        let account =
-            AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap());
+        let account = AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        );
         let db = DatabaseReference::from_name(account, "testdb");
         ContainerReference::from_database(&db, "container2")
     }

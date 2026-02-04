@@ -30,8 +30,9 @@ use azure_core::http::headers::Headers;
 /// };
 /// use url::Url;
 ///
-/// let account = AccountReference::new(
+/// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+///     "my-key",
 /// );
 ///
 /// // Using typed ItemReference (recommended)
@@ -250,7 +251,10 @@ mod tests {
     use url::Url;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     fn test_database() -> DatabaseReference {

@@ -59,9 +59,10 @@ use super::{
 ///     .await?;
 ///
 /// // Get or create a driver for an account
-/// let account = AccountReference::new(
+/// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-/// ).with_master_key("my-key");
+///     "my-key",
+/// );
 ///
 /// let driver = cosmos_runtime.get_or_create_driver(account, None).await?;
 ///

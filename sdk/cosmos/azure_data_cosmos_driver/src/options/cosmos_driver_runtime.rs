@@ -51,9 +51,10 @@ use crate::{
 ///     .await;
 ///
 /// // Get or create a driver for an account
-/// let account = AccountReference::new(
+/// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-/// ).with_master_key("my-key");
+///     "my-key",
+/// );
 ///
 /// let driver = cosmos_runtime.get_or_create_driver(account, None).await?;
 ///
@@ -291,9 +292,10 @@ impl CosmosDriverRuntime {
     /// # async fn example() -> azure_core::Result<()> {
     /// let runtime = CosmosDriverRuntime::builder().build().await;
     ///
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-    /// ).with_master_key("my-key");
+    ///     "my-key",
+    /// );
     ///
     /// // First call creates the driver
     /// let driver = runtime.get_or_create_driver(account.clone(), None).await?;
@@ -454,8 +456,9 @@ impl CosmosDriverRuntimeBuilder {
     /// use url::Url;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
     /// );
     /// let database = DatabaseReference::from_name(account, "mydb");
     /// let container = ContainerReference::from_name(database, "mycollection");
@@ -637,9 +640,10 @@ impl CosmosDriver {
     /// # async fn example() -> azure_core::Result<()> {
     /// let runtime = CosmosDriverRuntime::builder().build().await;
     ///
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-    /// ).with_master_key("my-key");
+    ///     "my-key",
+    /// );
     ///
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     ///
@@ -683,7 +687,10 @@ mod tests {
     use url::Url;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     #[tokio::test]

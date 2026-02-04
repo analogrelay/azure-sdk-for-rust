@@ -115,15 +115,48 @@ impl DiagnosticsContextBuilder {
         }
     }
 
+    /// Records failure of a request with an error message.
+    ///
+    /// Should be called when a transport-level error occurs (connection failure,
+    /// DNS error, TLS error, etc.) and no HTTP response was received.
+    ///
+    /// # Parameters
+    ///
+    /// - `handle`: The request handle from [`start_request`](Self::start_request)
+    /// - `error`: The error message describing the failure
+    /// - `request_sent`: Whether the request was sent on the wire before failure.
+    ///   This is critical for retry safety - see [`RequestDiagnostics::fail`].
+    pub(crate) fn fail_request(
+        &mut self,
+        handle: RequestHandle,
+        error: impl Into<String>,
+        request_sent: bool,
+    ) {
+        if let Some(request) = self.requests.get_mut(handle.0) {
+            request.fail(error, request_sent);
+        }
+    }
+
     /// Updates a request's diagnostics with additional data.
     ///
     /// Use this to add response headers data (charge, activity ID, etc.).
+    ///
+    /// # Panics (debug builds)
+    ///
+    /// Panics if the request has already been completed via [`complete_request`](Self::complete_request).
+    /// In release builds, the update is silently ignored.
     pub(crate) fn update_request<F>(&mut self, handle: RequestHandle, f: F)
     where
         F: FnOnce(&mut RequestDiagnostics),
     {
         if let Some(request) = self.requests.get_mut(handle.0) {
-            f(request);
+            debug_assert!(
+                !request.is_completed(),
+                "update_request called after complete_request - updates should occur before completion"
+            );
+            if !request.is_completed() {
+                f(request);
+            }
         }
     }
 
@@ -590,8 +623,8 @@ mod tests {
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
             );
-            builder.complete_request(handle, StatusCode::Ok);
             builder.update_request(handle, |req| req.request_charge = 1.0);
+            builder.complete_request(handle, StatusCode::Ok);
         });
 
         let json = ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed));
@@ -609,8 +642,8 @@ mod tests {
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
                 );
-                builder.complete_request(handle, StatusCode::TooManyRequests);
                 builder.update_request(handle, |req| req.request_charge = i as f64);
+                builder.complete_request(handle, StatusCode::TooManyRequests);
             }
         });
 
@@ -697,5 +730,59 @@ mod tests {
         assert_eq!(percentile(&[10, 20, 30, 40, 50], 50), 30);
         assert_eq!(percentile(&[10, 20, 30, 40, 50], 0), 10);
         assert_eq!(percentile(&[10, 20, 30, 40, 50], 100), 50);
+    }
+
+    #[test]
+    fn update_before_complete_succeeds() {
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        let handle = builder.start_request(
+            ExecutionContext::Initial,
+            Region::WEST_US_2,
+            "https://test.documents.azure.com".to_string(),
+        );
+
+        // Update before complete - should work
+        builder.update_request(handle, |req| {
+            req.request_charge = 5.5;
+        });
+
+        // Now complete
+        builder.complete_request(handle, StatusCode::Ok);
+
+        let ctx = builder.complete();
+        let requests = ctx.requests();
+        assert_eq!(requests[0].request_charge, 5.5);
+    }
+
+    #[test]
+    fn update_after_complete_is_ignored_in_release() {
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        let handle = builder.start_request(
+            ExecutionContext::Initial,
+            Region::WEST_US_2,
+            "https://test.documents.azure.com".to_string(),
+        );
+
+        // Update with initial value
+        builder.update_request(handle, |req| {
+            req.request_charge = 5.5;
+        });
+
+        // Complete the request
+        builder.complete_request(handle, StatusCode::Ok);
+
+        // In release builds, this update should be silently ignored
+        // In debug builds, this would panic (tested separately)
+        #[cfg(not(debug_assertions))]
+        {
+            builder.update_request(handle, |req| {
+                req.request_charge = 10.0; // Attempt to change after completion
+            });
+
+            let ctx = builder.complete();
+            let requests = ctx.requests();
+            // Value should remain 5.5, not 10.0
+            assert_eq!(requests[0].request_charge, 5.5);
+        }
     }
 }

@@ -25,7 +25,7 @@ mod throughput_control;
 mod triggers;
 mod user_agent;
 
-pub use account_reference::{AccountReference, AuthOptions, MasterKey};
+pub use account_reference::{AccountReference, AccountReferenceBuilder, AuthOptions, MasterKey};
 pub use activity_id::ActivityId;
 pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;

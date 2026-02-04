@@ -156,8 +156,9 @@ impl CosmosDriverRuntimeBuilder {
     /// use url::Url;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
     /// );
     /// let database = DatabaseReference::from_name(account, "mydb");
     /// let container = ContainerReference::from_database(&database, "mycollection");
@@ -275,9 +276,10 @@ impl CosmosDriverRuntime {
     /// # async fn example() -> azure_core::Result<()> {
     /// let runtime = CosmosDriverRuntime::builder().build().await?;
     ///
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-    /// ).with_master_key("my-key");
+    ///     "my-key",
+    /// );
     ///
     /// // First call creates the driver
     /// let driver = runtime.get_or_create_driver(account.clone(), None).await?;

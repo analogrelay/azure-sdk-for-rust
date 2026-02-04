@@ -4,11 +4,20 @@
 //! Cosmos DB driver instance.
 
 use crate::{
-    models::{AccountReference, ContainerReference, CosmosOperation},
-    options::{DriverOptions, OperationOptions, RuntimeOptions, ThroughputControlGroupSnapshot},
+    diagnostics::{DiagnosticsContextBuilder, ExecutionContext},
+    models::{
+        AccountEndpoint, AccountReference, ActivityId, ContainerReference, CosmosHeaders,
+        CosmosOperation, CosmosResult, SubStatusCode,
+    },
+    options::{DriverOptions, OperationOptions, Region, RuntimeOptions, ThroughputControlGroupSnapshot},
 };
+use azure_core::http::{Context, Request};
+use std::sync::Arc;
 
-use super::CosmosDriverRuntime;
+use super::{
+    transport::{uses_dataplane_pipeline, AuthorizationContext},
+    CosmosDriverRuntime,
+};
 
 /// Cosmos DB driver instance.
 ///
@@ -122,7 +131,14 @@ impl CosmosDriver {
     ///
     /// # Returns
     ///
-    /// Returns the raw response bytes on success.
+    /// Returns a [`CosmosResult`] containing the response body, headers, and diagnostics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The account has no authentication configured
+    /// - The resource reference cannot produce a valid path
+    /// - The HTTP request fails
     ///
     /// # Example
     ///
@@ -145,7 +161,7 @@ impl CosmosDriver {
     /// let options = OperationOptions::new()
     ///     .content_response_on_write(ContentResponseOnWrite::DISABLED);
     ///
-    /// // let response = driver.execute_operation(operation, options).await?;
+    /// // let result = driver.execute_operation(operation, options).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -153,7 +169,7 @@ impl CosmosDriver {
         &self,
         operation: CosmosOperation,
         options: OperationOptions,
-    ) -> azure_core::Result<Vec<u8>> {
+    ) -> azure_core::Result<CosmosResult> {
         // Step 1: Derive effective runtime options
         let effective_options = self.effective_runtime_options(&options);
 
@@ -162,15 +178,134 @@ impl CosmosDriver {
             self.effective_throughput_control_group(&effective_options, container)
         });
 
-        // TODO: Implement actual operation execution
-        // - Build HTTP request based on operation type
-        // - Apply effective options (headers, policies)
-        // - Apply throughput control group settings if present
-        // - Send request via HTTP client
-        // - Handle response/errors
+        // Step 3: Initialize diagnostics
+        let activity_id = ActivityId::new_uuid();
+        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
+            activity_id.clone(),
+            Arc::clone(self.runtime.diagnostics_options()),
+        );
 
-        // Placeholder: Return empty response
-        Ok(Vec::new())
+        // Step 4: Get authentication (guaranteed to be present by AccountReference)
+        let account = operation.resource_reference().account();
+        let auth = account.auth();
+
+        // Step 5: Build resource link for authorization
+        let resource_ref = operation.resource_reference();
+        let resource_link = resource_ref.link_for_signing();
+
+        // Step 6: Build request URL
+        let request_path = resource_ref.request_path();
+        let endpoint = AccountEndpoint::from(account);
+        let url = endpoint.join_path(&request_path);
+
+        // Step 7: Determine HTTP method and create request
+        let operation_type = operation.operation_type();
+        let resource_type = operation.resource_type();
+        let method = operation_type.http_method();
+        let mut request = Request::new(url, method);
+
+        // Step 8: Add body if present
+        if let Some(body) = operation.body() {
+            request.set_body(body.to_vec());
+        }
+
+        // Step 9: Add operation headers
+        for (name, value) in operation.headers().iter() {
+            request.insert_header(name.clone(), value.clone());
+        }
+
+        // Step 10: Create authorization context
+        // Strip leading slash from resource link for signing
+        let signing_link = resource_link.trim_start_matches('/');
+        let auth_context = AuthorizationContext::new(method, resource_type, signing_link);
+
+        // Step 11: Select and create appropriate pipeline
+        let transport = self.runtime.transport();
+        let pipeline = if uses_dataplane_pipeline(resource_type, operation_type) {
+            transport.create_dataplane_pipeline(&endpoint, auth)
+        } else {
+            transport.create_metadata_pipeline(&endpoint, auth)
+        };
+
+        // Step 12: Build context with authorization info
+        let mut ctx = Context::default();
+        ctx.insert(auth_context);
+
+        // Step 13: Start request tracking in diagnostics
+        // For now, use a placeholder region - proper region routing will come later
+        let region = Region::new("Unknown");
+        let request_handle = diagnostics_builder.start_request(
+            ExecutionContext::Initial,
+            region,
+            endpoint.host().to_owned(),
+        );
+
+        // Step 14: Execute request
+        let result = pipeline.send(&ctx, &mut request).await;
+
+        // Step 15: Handle response or error
+        match result {
+            Ok(response) => {
+                let status_code = response.status();
+
+                // Extract sub-status from headers if present
+                let sub_status = response
+                    .headers()
+                    .get_optional_str(&azure_core::http::headers::HeaderName::from_static(
+                        "x-ms-substatus",
+                    ))
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .map(SubStatusCode::new);
+
+                // Update request with response data (before completing to keep it mutable)
+                if let Some(charge) = response
+                    .headers()
+                    .get_optional_str(&azure_core::http::headers::HeaderName::from_static(
+                        "x-ms-request-charge",
+                    ))
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
+                    diagnostics_builder.update_request(request_handle, |req| {
+                        req.request_charge = charge;
+                    });
+                }
+
+                // Complete request tracking (makes request info immutable)
+                diagnostics_builder.complete_request(request_handle, status_code);
+
+                // Set operation status
+                diagnostics_builder.set_operation_status(status_code, sub_status);
+
+                // Extract headers and body
+                let cosmos_headers = CosmosHeaders::from_headers(response.headers());
+                let body = response.into_body();
+
+                // Complete diagnostics
+                let diagnostics = Arc::new(diagnostics_builder.complete());
+
+                Ok(CosmosResult::new(body.as_ref().to_vec(), cosmos_headers, diagnostics))
+            }
+            Err(e) => {
+                // Request failed at transport level - no HTTP response received.
+                //
+                // TODO: Determine if request was actually sent on the wire.
+                // Currently we conservatively assume it was sent (request_sent: true)
+                // which prevents automatic retry of non-idempotent writes.
+                //
+                // For proper retry safety, we need transport-level tracking of
+                // whether bytes were written to the socket before the error occurred.
+                // See Java SDK's `isRequestSentOnWire` for reference implementation.
+                diagnostics_builder.fail_request(request_handle, e.to_string(), true);
+
+                // Complete diagnostics with error state
+                diagnostics_builder.set_operation_status(
+                    azure_core::http::StatusCode::ServiceUnavailable,
+                    Some(SubStatusCode::TRANSPORT_GENERATED_503),
+                );
+
+                Err(e)
+            }
+        }
     }
 }
 
@@ -189,7 +324,10 @@ mod tests {
     use super::*;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     #[tokio::test]

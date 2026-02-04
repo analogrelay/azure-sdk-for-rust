@@ -27,9 +27,10 @@ use crate::{
 /// };
 /// use url::Url;
 ///
-/// let account = AccountReference::new(
+/// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-/// ).with_master_key("my-master-key");
+///     "my-master-key",
+/// );
 ///
 /// let runtime = RuntimeOptions::builder()
 ///     .content_response_on_write(ContentResponseOnWrite::DISABLED)
@@ -117,7 +118,10 @@ mod tests {
     use url::Url;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     #[test]

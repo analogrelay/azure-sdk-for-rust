@@ -84,7 +84,10 @@ mod tests {
     use url::Url;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://myaccount.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     fn test_container(db: &str, container: &str) -> ContainerReference {

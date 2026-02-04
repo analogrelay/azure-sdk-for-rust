@@ -18,14 +18,38 @@ mod emulator;
 mod headers_policy;
 mod pipeline;
 
-use crate::{models::{AccountEndpoint, AuthOptions}, options::ConnectionPoolOptions};
+use crate::{
+    models::{AccountEndpoint, AuthOptions, OperationType, ResourceType},
+    options::ConnectionPoolOptions,
+};
 use authorization_policy::AuthorizationPolicy;
 use azure_core::http::{policies::Policy, Transport};
 use headers_policy::CosmosHeadersPolicy;
 use pipeline::CosmosPipeline;
 use std::sync::{Arc, OnceLock};
 
+pub(crate) use authorization_policy::AuthorizationContext;
 pub(crate) use emulator::is_emulator_host;
+
+/// Determines whether the dataplane pipeline should be used for a given operation.
+///
+/// The dataplane pipeline is optimized for document operations and stored procedure
+/// execution. All other operations use the metadata pipeline.
+///
+/// # Returns
+///
+/// Returns `true` for:
+/// - Any operation on `ResourceType::Document`
+/// - `OperationType::Execute` on `ResourceType::StoredProcedure`
+///
+/// Returns `false` for all other combinations.
+pub(crate) fn uses_dataplane_pipeline(resource_type: ResourceType, operation_type: OperationType) -> bool {
+    match resource_type {
+        ResourceType::Document => true,
+        ResourceType::StoredProcedure => matches!(operation_type, OperationType::Execute),
+        _ => false,
+    }
+}
 
 /// HTTP transport manager for Cosmos DB connections.
 ///
@@ -298,5 +322,51 @@ mod tests {
         // Even localhost should not use emulator transport if validation is enabled
         let endpoint = AccountEndpoint::try_from("https://localhost:8081/").unwrap();
         assert!(!transport.should_use_emulator_transport(&endpoint));
+    }
+
+    #[test]
+    fn uses_dataplane_for_document_operations() {
+        // Document operations always use dataplane
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Read));
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Create));
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Replace));
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Delete));
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Patch));
+        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Upsert));
+    }
+
+    #[test]
+    fn uses_dataplane_for_stored_procedure_execute() {
+        // StoredProcedure Execute uses dataplane
+        assert!(uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Execute));
+
+        // Other StoredProcedure operations use metadata
+        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Create));
+        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Delete));
+    }
+
+    #[test]
+    fn uses_metadata_for_other_resources() {
+        // Database operations use metadata
+        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Create));
+        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Delete));
+
+        // Container operations use metadata
+        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Create));
+        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Delete));
+
+        // Account operations use metadata
+        assert!(!uses_dataplane_pipeline(ResourceType::DatabaseAccount, OperationType::Read));
+
+        // Trigger, UDF use metadata for CRUD
+        assert!(!uses_dataplane_pipeline(ResourceType::Trigger, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(ResourceType::UserDefinedFunction, OperationType::Create));
+
+        // Offer uses metadata
+        assert!(!uses_dataplane_pipeline(ResourceType::Offer, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(ResourceType::Offer, OperationType::Replace));
     }
 }

@@ -122,6 +122,26 @@ pub enum OperationType {
 }
 
 impl OperationType {
+    /// Returns the HTTP method for this operation type.
+    pub fn http_method(self) -> azure_core::http::Method {
+        use azure_core::http::Method;
+        match self {
+            OperationType::Create
+            | OperationType::Upsert
+            | OperationType::Query
+            | OperationType::SqlQuery
+            | OperationType::Batch
+            | OperationType::QueryPlan
+            | OperationType::Execute => Method::Post,
+            OperationType::Delete => Method::Delete,
+            OperationType::Read => Method::Get,
+            OperationType::ReadFeed => Method::Get,
+            OperationType::Replace => Method::Put,
+            OperationType::Patch => Method::Patch,
+            OperationType::Head | OperationType::HeadFeed => Method::Head,
+        }
+    }
+
     /// Returns true if the operation does not modify server state.
     pub fn is_read_only(self) -> bool {
         matches!(

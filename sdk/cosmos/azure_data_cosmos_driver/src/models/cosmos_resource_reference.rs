@@ -102,60 +102,88 @@ impl CosmosResourceReference {
     }
 
     /// Creates a reference to a database by name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DatabaseReference` does not have a name set.
     pub fn database_by_name(database: DatabaseReference) -> Self {
+        let name = database
+            .name()
+            .expect("DatabaseReference must have a name for database_by_name")
+            .to_owned();
         let account = database.account().clone();
-        let name = database.name().map(|n| Cow::Owned(n.to_owned()));
         Self {
             resource_type: ResourceType::Database,
             account,
             database: Some(database),
             container: None,
-            name,
+            name: Some(Cow::Owned(name)),
             rid: None,
         }
     }
 
     /// Creates a reference to a database by RID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DatabaseReference` does not have a RID set.
     pub fn database_by_rid(database: DatabaseReference) -> Self {
+        let rid = database
+            .rid()
+            .expect("DatabaseReference must have a RID for database_by_rid")
+            .to_owned();
         let account = database.account().clone();
-        let rid = database.rid().map(|r| Cow::Owned(r.to_owned()));
         Self {
             resource_type: ResourceType::Database,
             account,
             database: Some(database),
             container: None,
             name: None,
-            rid,
+            rid: Some(Cow::Owned(rid)),
         }
     }
 
     /// Creates a reference to a container (document collection) by name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `ContainerReference` does not have a name set.
     pub fn document_collection_by_name(container: ContainerReference) -> Self {
+        let name = container
+            .name()
+            .expect("ContainerReference must have a name for document_collection_by_name")
+            .to_owned();
         let account = container.database().account().clone();
         let database = Some(container.database().clone());
-        let name = container.name().map(|n| Cow::Owned(n.to_owned()));
         Self {
             resource_type: ResourceType::DocumentCollection,
             account,
             database,
             container: Some(container),
-            name,
+            name: Some(Cow::Owned(name)),
             rid: None,
         }
     }
 
     /// Creates a reference to a container (document collection) by RID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `ContainerReference` does not have a RID set.
     pub fn document_collection_by_rid(container: ContainerReference) -> Self {
+        let rid = container
+            .rid()
+            .expect("ContainerReference must have a RID for document_collection_by_rid")
+            .to_owned();
         let account = container.database().account().clone();
         let database = Some(container.database().clone());
-        let rid = container.rid().map(|r| Cow::Owned(r.to_owned()));
         Self {
             resource_type: ResourceType::DocumentCollection,
             account,
             database,
             container: Some(container),
             name: None,
-            rid,
+            rid: Some(Cow::Owned(rid)),
         }
     }
 
@@ -380,6 +408,32 @@ impl CosmosResourceReference {
             }
         }
     }
+
+    /// Returns the resource link for authorization signing.
+    ///
+    /// The resource link is an unencoded path used for generating the
+    /// authorization signature. Prefers name-based paths over RID-based.
+    ///
+    /// This method always returns a valid path because `CosmosResourceReference`
+    /// validates that the required identifiers are present at construction time.
+    pub fn link_for_signing(&self) -> String {
+        self.name_based_path()
+            .or_else(|| self.rid_based_path())
+            .expect("CosmosResourceReference is guaranteed to have a valid path")
+    }
+
+    /// Returns the URL path for this resource.
+    ///
+    /// This path can be appended to the account endpoint to form the
+    /// full request URL. Prefers name-based paths over RID-based.
+    ///
+    /// This method always returns a valid path because `CosmosResourceReference`
+    /// validates that the required identifiers are present at construction time.
+    pub fn request_path(&self) -> String {
+        self.name_based_path()
+            .or_else(|| self.rid_based_path())
+            .expect("CosmosResourceReference is guaranteed to have a valid path")
+    }
 }
 
 // =============================================================================
@@ -596,7 +650,10 @@ mod tests {
     use url::Url;
 
     fn test_account() -> AccountReference {
-        AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com:443/").unwrap(),
+            "test-key",
+        )
     }
 
     fn test_database() -> DatabaseReference {
@@ -692,5 +749,43 @@ mod tests {
         assert_eq!(ref_.resource_type(), ResourceType::Offer);
         assert_eq!(ref_.rid(), Some("offer123"));
         assert_eq!(ref_.name_based_path(), Some("/offers/offer123".to_string()));
+    }
+
+    #[test]
+    fn link_for_signing_prefers_name_based() {
+        // Document with name
+        let ref_ = CosmosResourceReference::document_by_name(test_container(), "doc1");
+        assert_eq!(
+            ref_.link_for_signing(),
+            "/dbs/testdb/colls/testcontainer/docs/doc1"
+        );
+
+        // Database with name
+        let ref_ = CosmosResourceReference::database_by_name(test_database());
+        assert_eq!(ref_.link_for_signing(), "/dbs/testdb");
+
+        // Account resource (empty path)
+        let ref_ = CosmosResourceReference::account_resource(test_account());
+        assert_eq!(ref_.link_for_signing(), "");
+    }
+
+    #[test]
+    fn link_for_signing_falls_back_to_rid() {
+        // Document with RID only
+        let container = ContainerReference::from_rid(test_account(), "dbRid123", "collRid456");
+        let ref_ = CosmosResourceReference::document_by_rid(container, "docRid789");
+        assert_eq!(
+            ref_.link_for_signing(),
+            "/dbs/dbRid123/colls/collRid456/docs/docRid789"
+        );
+    }
+
+    #[test]
+    fn request_path_matches_link_for_signing() {
+        let ref_ = CosmosResourceReference::document_by_name(test_container(), "doc1");
+        assert_eq!(ref_.request_path(), ref_.link_for_signing());
+
+        let ref_ = CosmosResourceReference::database_by_name(test_database());
+        assert_eq!(ref_.request_path(), ref_.link_for_signing());
     }
 }
