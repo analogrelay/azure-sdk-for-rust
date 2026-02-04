@@ -15,8 +15,8 @@ use crate::{
         UserAgent,
     },
     options::{
-        ConnectionPoolOptions, CorrelationId, SharedRuntimeOptions, ThroughputControlGroupOptions,
-        ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
+        ConnectionPoolOptions, CorrelationId, DiagnosticsOptions, SharedRuntimeOptions,
+        ThroughputControlGroupOptions, ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
     },
     system::{AzureVmMetadata, CpuMemoryHistory, CpuMemoryMonitor, VmMetadataService},
 };
@@ -76,6 +76,9 @@ pub struct CosmosDriverRuntime {
 
     /// Connection pool configuration for managing TCP connections.
     pub(crate) connection_pool: ConnectionPoolOptions,
+
+    /// Diagnostics configuration for output verbosity and size limits.
+    pub(crate) diagnostics_options: Arc<DiagnosticsOptions>,
 
     /// Thread-safe runtime options for operation options.
     pub(crate) runtime_options: SharedRuntimeOptions,
@@ -152,6 +155,13 @@ impl CosmosDriverRuntime {
     /// Returns the connection pool options.
     pub fn connection_pool(&self) -> &ConnectionPoolOptions {
         &self.connection_pool
+    }
+
+    /// Returns the diagnostics options.
+    ///
+    /// Use this to access verbosity and size settings for diagnostic output.
+    pub fn diagnostics_options(&self) -> &Arc<DiagnosticsOptions> {
+        &self.diagnostics_options
     }
 
     /// Returns the thread-safe runtime options.

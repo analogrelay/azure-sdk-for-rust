@@ -12,9 +12,10 @@ use std::{
 use crate::{
     models::{AccountReference, UserAgent},
     options::{
-        ConnectionPoolOptions, CorrelationId, DriverOptions, RuntimeOptions, SharedRuntimeOptions,
-        ThroughputControlGroupOptions, ThroughputControlGroupRegistrationError,
-        ThroughputControlGroupRegistry, UserAgentSuffix, WorkloadId,
+        ConnectionPoolOptions, CorrelationId, DiagnosticsOptions, DriverOptions, RuntimeOptions,
+        SharedRuntimeOptions, ThroughputControlGroupOptions,
+        ThroughputControlGroupRegistrationError, ThroughputControlGroupRegistry, UserAgentSuffix,
+        WorkloadId,
     },
     system::{CpuMemoryMonitor, VmMetadataService},
 };
@@ -44,6 +45,7 @@ use super::{CosmosDriver, CosmosDriverRuntime};
 pub struct CosmosDriverRuntimeBuilder {
     client_options: Option<ClientOptions>,
     connection_pool: Option<ConnectionPoolOptions>,
+    diagnostics_options: Option<DiagnosticsOptions>,
     runtime_options: Option<RuntimeOptions>,
     workload_id: Option<WorkloadId>,
     correlation_id: Option<CorrelationId>,
@@ -68,6 +70,15 @@ impl CosmosDriverRuntimeBuilder {
     #[must_use]
     pub fn connection_pool(mut self, options: ConnectionPoolOptions) -> Self {
         self.connection_pool = Some(options);
+        self
+    }
+
+    /// Sets the diagnostics options.
+    ///
+    /// Controls verbosity and size limits for diagnostic output.
+    #[must_use]
+    pub fn diagnostics_options(mut self, options: DiagnosticsOptions) -> Self {
+        self.diagnostics_options = Some(options);
         self
     }
 
@@ -206,6 +217,7 @@ impl CosmosDriverRuntimeBuilder {
         CosmosDriverRuntime {
             client_options: self.client_options.unwrap_or_default(),
             connection_pool: self.connection_pool.unwrap_or_default(),
+            diagnostics_options: Arc::new(self.diagnostics_options.unwrap_or_default()),
             runtime_options: SharedRuntimeOptions::from_options(
                 self.runtime_options.unwrap_or_default(),
             ),

@@ -10,21 +10,26 @@
 //! The driver is schema-agnostic - data plane operations work with raw bytes (`&[u8]`).
 
 mod account_reference;
+mod activity_id;
 mod cosmos_operation;
 mod cosmos_resource_reference;
+mod cosmos_result;
 mod etag;
 mod partition_key;
 mod resource_id;
 mod resource_reference;
 mod resource_types;
 mod session;
+mod sub_status_code;
 mod throughput_control;
 mod triggers;
 mod user_agent;
 
 pub use account_reference::{AccountReference, AuthOptions, MasterKey};
+pub use activity_id::ActivityId;
 pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;
+pub use cosmos_result::{CosmosHeaders, CosmosResult};
 pub use etag::{ETag, ETagCondition};
 pub use partition_key::{PartitionKey, PartitionKeyValue};
 pub use resource_id::{ResourceName, ResourceRid};
@@ -34,6 +39,7 @@ pub use resource_reference::{
 };
 pub use resource_types::{OperationType, ResourceType};
 pub use session::SessionToken;
+pub use sub_status_code::SubStatusCode;
 pub use throughput_control::ThroughputControlGroupName;
 pub use triggers::TriggerInvocation;
 pub use user_agent::UserAgent;
