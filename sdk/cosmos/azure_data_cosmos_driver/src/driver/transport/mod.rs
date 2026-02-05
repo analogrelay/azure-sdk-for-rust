@@ -17,6 +17,7 @@ mod authorization_policy;
 mod emulator;
 mod headers_policy;
 mod pipeline;
+mod tracked_transport;
 
 use crate::{
     models::{AccountEndpoint, AuthOptions, OperationType, ResourceType},
@@ -30,6 +31,7 @@ use std::sync::{Arc, OnceLock};
 
 pub(crate) use authorization_policy::AuthorizationContext;
 pub(crate) use emulator::is_emulator_host;
+pub(crate) use tracked_transport::{event_channel, EventEmitter, TrackedRequestState};
 
 /// Determines whether the dataplane pipeline should be used for a given operation.
 ///

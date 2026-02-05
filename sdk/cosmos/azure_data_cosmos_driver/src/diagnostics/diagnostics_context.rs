@@ -19,7 +19,7 @@ use super::{
         DeduplicatedGroup, DetailedDiagnosticsOutput, RegionSummary, RequestSummary,
         SummaryDiagnosticsOutput, TruncatedOutput,
     },
-    ExecutionContext, RequestDiagnostics, RequestEvent, RequestHandle,
+    ExecutionContext, RequestDiagnostics, RequestEvent, RequestHandle, RequestSentStatus,
 };
 
 /// Internal mutable builder for constructing a [`DiagnosticsContext`].
@@ -130,7 +130,7 @@ impl DiagnosticsContextBuilder {
         &mut self,
         handle: RequestHandle,
         error: impl Into<String>,
-        request_sent: bool,
+        request_sent: RequestSentStatus,
     ) {
         if let Some(request) = self.requests.get_mut(handle.0) {
             request.fail(error, request_sent);

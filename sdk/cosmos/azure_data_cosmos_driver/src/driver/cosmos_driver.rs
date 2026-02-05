@@ -15,7 +15,7 @@ use azure_core::http::{Context, Request};
 use std::sync::Arc;
 
 use super::{
-    transport::{uses_dataplane_pipeline, AuthorizationContext},
+    transport::{uses_dataplane_pipeline, AuthorizationContext, EventEmitter, TrackedRequestState, event_channel},
     CosmosDriverRuntime,
 };
 
@@ -227,9 +227,13 @@ impl CosmosDriver {
             transport.create_metadata_pipeline(&endpoint, auth)
         };
 
-        // Step 12: Build context with authorization info
+        // Step 12: Build context with authorization info and event emitter
         let mut ctx = Context::default();
         ctx.insert(auth_context);
+
+        // Set up event channel for transport tracking
+        let (event_sender, event_receiver) = event_channel();
+        ctx.insert(EventEmitter::new(event_sender));
 
         // Step 13: Start request tracking in diagnostics
         // For now, use a placeholder region - proper region routing will come later
@@ -243,7 +247,10 @@ impl CosmosDriver {
         // Step 14: Execute request
         let result = pipeline.send(&ctx, &mut request).await;
 
-        // Step 15: Handle response or error
+        // Step 15: Collect events from transport tracking
+        let tracked_state = TrackedRequestState::collect(event_receiver);
+
+        // Step 16: Handle response or error
         match result {
             Ok(response) => {
                 let status_code = response.status();
@@ -270,6 +277,11 @@ impl CosmosDriver {
                     });
                 }
 
+                // Add all transport events to diagnostics
+                for event in tracked_state.into_events() {
+                    diagnostics_builder.add_event(request_handle, event);
+                }
+
                 // Complete request tracking (makes request info immutable)
                 diagnostics_builder.complete_request(request_handle, status_code);
 
@@ -288,14 +300,18 @@ impl CosmosDriver {
             Err(e) => {
                 // Request failed at transport level - no HTTP response received.
                 //
-                // TODO: Determine if request was actually sent on the wire.
-                // Currently we conservatively assume it was sent (request_sent: true)
-                // which prevents automatic retry of non-idempotent writes.
-                //
-                // For proper retry safety, we need transport-level tracking of
-                // whether bytes were written to the socket before the error occurred.
-                // See Java SDK's `isRequestSentOnWire` for reference implementation.
-                diagnostics_builder.fail_request(request_handle, e.to_string(), true);
+                // Determine request sent status using both events and error analysis:
+                // - Sent: If we received ResponseHeadersReceived (definitive)
+                // - NotSent: If error indicates pre-send failure (DNS, connect refused)
+                // - Unknown: Otherwise (can't determine)
+                let request_sent = tracked_state.request_sent_status_with_error(&e);
+
+                // Add all transport events to diagnostics
+                for event in tracked_state.into_events() {
+                    diagnostics_builder.add_event(request_handle, event);
+                }
+
+                diagnostics_builder.fail_request(request_handle, e.to_string(), request_sent);
 
                 // Complete diagnostics with error state
                 diagnostics_builder.set_operation_status(

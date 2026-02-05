@@ -13,6 +13,53 @@ use std::time::Instant;
 
 use super::{ExecutionContext, RequestEvent};
 
+/// Tri-state indicating whether a request was sent on the wire.
+///
+/// This is critical for retry decisions:
+/// - `Sent`: The request was definitely transmitted; non-idempotent operations
+///   should not be retried without additional safeguards (etag checks).
+/// - `NotSent`: The request definitely was NOT transmitted; safe to retry.
+/// - `Unknown`: Cannot determine if request was sent; treat as potentially sent
+///   for safety (don't retry non-idempotent operations).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestSentStatus {
+    /// Request was definitely sent on the wire.
+    /// This is confirmed when we receive response headers or the transport
+    /// completes successfully.
+    Sent,
+
+    /// Request was definitely NOT sent on the wire.
+    /// This is confirmed for errors that occur before transmission
+    /// (e.g., DNS resolution failure, connection refused).
+    NotSent,
+
+    /// Cannot determine if request was sent.
+    /// Treat as potentially sent for retry safety.
+    #[default]
+    Unknown,
+}
+
+impl RequestSentStatus {
+    /// Returns `true` if the request may have been sent.
+    ///
+    /// This is conservative: returns `true` for both `Sent` and `Unknown`,
+    /// since we must assume `Unknown` might have been sent for retry safety.
+    pub fn may_have_been_sent(&self) -> bool {
+        !matches!(self, RequestSentStatus::NotSent)
+    }
+
+    /// Returns `true` if we know for certain the request was sent.
+    pub fn definitely_sent(&self) -> bool {
+        matches!(self, RequestSentStatus::Sent)
+    }
+
+    /// Returns `true` if we know for certain the request was NOT sent.
+    pub fn definitely_not_sent(&self) -> bool {
+        matches!(self, RequestSentStatus::NotSent)
+    }
+}
+
 /// Diagnostics for a single HTTP request/response pair.
 ///
 /// Each retry, hedged request, or failover produces a separate `RequestDiagnostics`
@@ -66,11 +113,14 @@ pub struct RequestDiagnostics {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
 
-    /// Whether the request was sent on the wire before failure.
-    /// This is critical for retry decisions - if true, non-idempotent
-    /// operations should not be retried without additional safeguards.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub request_sent: bool,
+    /// Whether the request was sent on the wire.
+    ///
+    /// This is critical for retry decisions:
+    /// - `Sent`: Request was transmitted; don't retry non-idempotent operations.
+    /// - `NotSent`: Safe to retry any operation.
+    /// - `Unknown`: Treat as potentially sent for safety.
+    #[serde(skip_serializing_if = "RequestSentStatus::definitely_not_sent")]
+    pub request_sent: RequestSentStatus,
 
     /// Error message if the request failed.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,15 +157,18 @@ impl RequestDiagnostics {
             duration_ms: 0,
             events: Vec::new(),
             timed_out: false,
-            request_sent: false,
+            request_sent: RequestSentStatus::Unknown,
             error: None,
         }
     }
 
     /// Records completion of this request.
+    ///
+    /// Since we received a response, the request was definitely sent.
     pub(crate) fn complete(&mut self, status_code: StatusCode) {
         self.completed_at = Some(Instant::now());
         self.status_code = status_code;
+        self.request_sent = RequestSentStatus::Sent;
         self.duration_ms = self
             .completed_at
             .unwrap()
@@ -143,9 +196,10 @@ impl RequestDiagnostics {
     ///
     /// The `request_sent` parameter indicates whether the request bytes were
     /// written to the network. This is critical for determining retry safety:
-    /// - `false`: Safe to retry any operation
-    /// - `true`: Only safe to retry idempotent operations (reads, or writes with etag conditions)
-    pub(crate) fn fail(&mut self, error: impl Into<String>, request_sent: bool) {
+    /// - `NotSent`: Safe to retry any operation
+    /// - `Sent`: Only safe to retry idempotent operations
+    /// - `Unknown`: Treat as potentially sent (conservative)
+    pub(crate) fn fail(&mut self, error: impl Into<String>, request_sent: RequestSentStatus) {
         self.completed_at = Some(Instant::now());
         self.error = Some(error.into());
         self.request_sent = request_sent;
@@ -195,6 +249,7 @@ impl RequestDiagnostics {
     pub(crate) fn is_completed(&self) -> bool {
         self.completed_at.is_some()
     }
+
 }
 
 /// Handle for tracking a request within [`DiagnosticsContext`](super::DiagnosticsContext).
