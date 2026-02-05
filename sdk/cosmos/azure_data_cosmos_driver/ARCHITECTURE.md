@@ -851,7 +851,7 @@ tokio::spawn(async move {
 
 ## See Also
 
-- [README.md](README.md) - Quick start and basic usage
-- [CHANGELOG.md](CHANGELOG.md) - Version history
-- [azure_data_cosmos](https://docs.rs/azure_data_cosmos) - High-level Rust SDK
-- [Azure Cosmos DB Documentation](https://docs.microsoft.com/azure/cosmos-db/)
+<!-- TODO: Add links once files exist in main branch -->
+- README.md - Quick start and basic usage
+- CHANGELOG.md - Version history
+- [Azure Cosmos DB Documentation](https://learn.microsoft.com/azure/cosmos-db/)
