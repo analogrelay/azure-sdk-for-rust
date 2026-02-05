@@ -261,6 +261,337 @@ Each level can selectively override settings from the level above.
 
 ---
 
+## Diagnostics Context
+
+The `DiagnosticsContext` provides comprehensive visibility into operation execution for debugging, monitoring, and troubleshooting.
+
+### Type Structure
+
+```text
+DiagnosticsContext                       (Immutable, per-operation)
+    │
+    ├── activity_id: ActivityId          (Unique identifier for the operation)
+    ├── duration: Duration               (Total operation time)
+    ├── status_code: StatusCode          (Final HTTP status after retries)
+    ├── sub_status_code: SubStatusCode   (Cosmos-specific error classification)
+    │
+    └── requests: Arc<Vec<RequestDiagnostics>>
+                    │
+                    └── RequestDiagnostics   (Per-HTTP-request details)
+                            │
+                            ├── execution_context: ExecutionContext
+                            │       ├── Initial        (First attempt)
+                            │       ├── Retry          (Retry after 429/503/etc.)
+                            │       ├── Hedging        (Speculative request)
+                            │       ├── RegionFailover (Cross-region retry)
+                            │       └── CircuitBreakerProbe (Recovery check)
+                            │
+                            ├── region: Region
+                            ├── endpoint: String
+                            ├── status_code: StatusCode
+                            ├── sub_status_code: Option<SubStatusCode>
+                            ├── request_charge: f64
+                            ├── duration_ms: u64
+                            ├── request_sent: RequestSentStatus
+                            │       ├── Sent     (Definitely transmitted)
+                            │       ├── NotSent  (Definitely NOT transmitted)
+                            │       └── Unknown  (Cannot determine)
+                            │
+                            └── events: Vec<RequestEvent>
+                                    │
+                                    └── RequestEvent
+                                            ├── event_type: RequestEventType
+                                            │       ├── TransportStart
+                                            │       ├── ResponseHeadersReceived
+                                            │       ├── TransportComplete
+                                            │       └── TransportFailed
+                                            ├── timestamp: Instant
+                                            ├── duration_ms: Option<u64>
+                                            └── details: Option<String>
+```
+
+### Pipeline Events & Reqwest Limitations
+
+> ⚠️ **Team Discussion Point**: The driver uses `reqwest` as the HTTP transport. Unlike Reactor Netty (used in the Java SDK), reqwest does **not** expose fine-grained connection lifecycle callbacks.
+
+#### What We **Cannot** Track (reqwest limitation)
+
+| Metric | Java SDK (Reactor Netty) | Rust SDK (reqwest) |
+|--------|--------------------------|---------------------|
+| DNS resolution time | ✅ Separate event | ❌ Bundled in transport |
+| Connection pool acquisition | ✅ Separate event | ❌ Not exposed |
+| New connection vs reused | ✅ Separate event | ❌ Not exposed |
+| TLS handshake time | ✅ Separate event | ❌ Not exposed |
+| Time to first byte | ✅ Separate event | ❌ Not exposed |
+| Request body sent | ✅ Separate event | ❌ Not exposed |
+
+#### What We **Can** Track
+
+| Event | Description |
+|-------|-------------|
+| `TransportStart` | Request handed to reqwest - DNS/connect/TLS/send all happen opaquely |
+| `ResponseHeadersReceived` | Response headers received (confirms request was sent) |
+| `TransportComplete` | Headers + body fully received |
+| `TransportFailed` | Error occurred (analyze error type for retry safety) |
+
+---
+
+### Verbosity Levels
+
+The diagnostics output can be formatted at two verbosity levels:
+
+| Level | Description | Use Case |
+|-------|-------------|----------|
+| `Detailed` | Full output with every request | Deep debugging, local development |
+| `Summary` | Compacted output with deduplication | Production logging, size-constrained environments |
+
+```rust
+use azure_data_cosmos_driver::options::DiagnosticsVerbosity;
+
+// Get JSON output at different verbosity levels
+let detailed_json = result.diagnostics().to_json_string(DiagnosticsVerbosity::Detailed);
+let summary_json = result.diagnostics().to_json_string(DiagnosticsVerbosity::Summary);
+```
+
+### Size Limits (Summary Mode)
+
+Summary mode respects a configurable maximum size to fit log constraints:
+
+```rust
+use azure_data_cosmos_driver::options::DiagnosticsOptions;
+
+let options = DiagnosticsOptions::builder()
+    .max_summary_size_bytes(8 * 1024)  // 8 KB limit (default)
+    .default_verbosity(DiagnosticsVerbosity::Summary)
+    .build()?;
+```
+
+- **Default**: 8 KB
+- **Minimum**: 4 KB
+- **Environment Variable**: `AZURE_COSMOS_DIAGNOSTICS_MAX_SUMMARY_SIZE_BYTES`
+
+If output exceeds the limit, it's truncated with an indicator.
+
+### Compaction & Deduplication (Summary Mode)
+
+Summary mode applies intelligent compaction:
+
+1. **Group by region** - Requests are organized by target region
+2. **Keep first and last** - Full details preserved for boundary requests
+3. **Deduplicate middle** - Similar requests grouped by `(endpoint, status, sub_status, execution_context)`
+4. **Statistics** - Count, total RU, min/max/P50 duration for each group
+
+```text
+Region: West US 2
+├── First Request (full details)
+├── Deduplicated Groups:
+│   └── [429/3200 Retry × 8] → min: 45ms, max: 890ms, P50: 120ms, total: 8.0 RU
+└── Last Request (full details)
+```
+
+---
+
+### Example: Successful Read Item (Detailed)
+
+Simple successful read with a single request:
+
+```json
+{
+  "activity_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "total_duration_ms": 23,
+  "total_request_charge": 1.0,
+  "request_count": 1,
+  "requests": [
+    {
+      "execution_context": "initial",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 200,
+      "request_charge": 1.0,
+      "activity_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "duration_ms": 23
+    }
+  ]
+}
+```
+
+---
+
+### Example: 10 × 429/3200 Retries Then Success
+
+Scenario: Request throttled 10 times (429/3200) before succeeding on the 11th attempt.
+
+#### Detailed Verbosity (Full Output)
+
+```json
+{
+  "activity_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "total_duration_ms": 4523,
+  "total_request_charge": 11.0,
+  "request_count": 11,
+  "requests": [
+    {
+      "execution_context": "initial",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 45
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 52
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 78
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 120
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 189
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 312
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 456
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 623
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 780
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 429,
+      "sub_status_code": 3200,
+      "request_charge": 1.0,
+      "duration_ms": 890
+    },
+    {
+      "execution_context": "retry",
+      "region": "West US 2",
+      "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+      "status_code": 200,
+      "request_charge": 1.0,
+      "activity_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "duration_ms": 28
+    }
+  ]
+}
+```
+
+#### Summary Verbosity (Compacted Output)
+
+Same operation with deduplication applied:
+
+```json
+{
+  "activity_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "total_duration_ms": 4523,
+  "total_request_charge": 11.0,
+  "request_count": 11,
+  "regions": [
+    {
+      "region": "West US 2",
+      "request_count": 11,
+      "total_request_charge": 11.0,
+      "first": {
+        "execution_context": "initial",
+        "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+        "status_code": 429,
+        "sub_status_code": 3200,
+        "request_charge": 1.0,
+        "duration_ms": 45
+      },
+      "last": {
+        "execution_context": "retry",
+        "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+        "status_code": 200,
+        "request_charge": 1.0,
+        "duration_ms": 28
+      },
+      "deduplicated_groups": [
+        {
+          "endpoint": "https://myaccount-westus2.documents.azure.com:443/dbs/myDatabase/colls/myContainer/docs/doc_001",
+          "status_code": 429,
+          "sub_status_code": 3200,
+          "execution_context": "retry",
+          "count": 9,
+          "total_request_charge": 9.0,
+          "min_duration_ms": 52,
+          "max_duration_ms": 890,
+          "p50_duration_ms": 312
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Differences:**
+
+| Aspect | Detailed | Summary |
+|--------|----------|---------|
+| Size | ~2.8 KB | ~0.8 KB |
+| Individual requests | All 11 shown | First + Last only |
+| Middle requests | Full details each | Grouped as 1 entry with stats |
+| Debugging value | Maximum | Sufficient for most cases |
+
+---
+
 ## Public API Reference
 
 ### Root Module (`azure_data_cosmos_driver`)
