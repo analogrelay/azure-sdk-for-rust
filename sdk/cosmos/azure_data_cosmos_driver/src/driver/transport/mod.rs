@@ -45,7 +45,10 @@ pub(crate) use tracked_transport::{event_channel, EventEmitter, TrackedRequestSt
 /// - `OperationType::Execute` on `ResourceType::StoredProcedure`
 ///
 /// Returns `false` for all other combinations.
-pub(crate) fn uses_dataplane_pipeline(resource_type: ResourceType, operation_type: OperationType) -> bool {
+pub(crate) fn uses_dataplane_pipeline(
+    resource_type: ResourceType,
+    operation_type: OperationType,
+) -> bool {
     match resource_type {
         ResourceType::Document => true,
         ResourceType::StoredProcedure => matches!(operation_type, OperationType::Execute),
@@ -165,9 +168,8 @@ impl CosmosTransport {
         if self.should_use_emulator_transport(endpoint) {
             self.emulator_metadata_transport
                 .get_or_init(|| {
-                    let client =
-                        Self::create_reqwest_client(&self.connection_pool, true, true)
-                            .expect("failed to create emulator metadata client");
+                    let client = Self::create_reqwest_client(&self.connection_pool, true, true)
+                        .expect("failed to create emulator metadata client");
                     Transport::new(Arc::new(client))
                 })
                 .clone()
@@ -181,9 +183,8 @@ impl CosmosTransport {
         if self.should_use_emulator_transport(endpoint) {
             self.emulator_dataplane_transport
                 .get_or_init(|| {
-                    let client =
-                        Self::create_reqwest_client(&self.connection_pool, false, true)
-                            .expect("failed to create emulator dataplane client");
+                    let client = Self::create_reqwest_client(&self.connection_pool, false, true)
+                        .expect("failed to create emulator dataplane client");
                     Transport::new(Arc::new(client))
                 })
                 .clone()
@@ -193,7 +194,11 @@ impl CosmosTransport {
     }
 
     /// Creates an authenticated pipeline with headers and authorization policies.
-    fn create_authenticated_pipeline(&self, transport: Transport, auth: &AuthOptions) -> CosmosPipeline {
+    fn create_authenticated_pipeline(
+        &self,
+        transport: Transport,
+        auth: &AuthOptions,
+    ) -> CosmosPipeline {
         let auth_policy = Arc::new(AuthorizationPolicy::new(auth));
 
         let policies: Vec<Arc<dyn Policy>> = vec![
@@ -329,46 +334,109 @@ mod tests {
     #[test]
     fn uses_dataplane_for_document_operations() {
         // Document operations always use dataplane
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Read));
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Create));
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Replace));
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Delete));
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Patch));
-        assert!(uses_dataplane_pipeline(ResourceType::Document, OperationType::Upsert));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Read
+        ));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Create
+        ));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Replace
+        ));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Delete
+        ));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Patch
+        ));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::Document,
+            OperationType::Upsert
+        ));
     }
 
     #[test]
     fn uses_dataplane_for_stored_procedure_execute() {
         // StoredProcedure Execute uses dataplane
-        assert!(uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Execute));
+        assert!(uses_dataplane_pipeline(
+            ResourceType::StoredProcedure,
+            OperationType::Execute
+        ));
 
         // Other StoredProcedure operations use metadata
-        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Read));
-        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Create));
-        assert!(!uses_dataplane_pipeline(ResourceType::StoredProcedure, OperationType::Delete));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::StoredProcedure,
+            OperationType::Read
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::StoredProcedure,
+            OperationType::Create
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::StoredProcedure,
+            OperationType::Delete
+        ));
     }
 
     #[test]
     fn uses_metadata_for_other_resources() {
         // Database operations use metadata
-        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Read));
-        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Create));
-        assert!(!uses_dataplane_pipeline(ResourceType::Database, OperationType::Delete));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Database,
+            OperationType::Read
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Database,
+            OperationType::Create
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Database,
+            OperationType::Delete
+        ));
 
         // Container operations use metadata
-        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Read));
-        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Create));
-        assert!(!uses_dataplane_pipeline(ResourceType::DocumentCollection, OperationType::Delete));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::DocumentCollection,
+            OperationType::Read
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::DocumentCollection,
+            OperationType::Create
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::DocumentCollection,
+            OperationType::Delete
+        ));
 
         // Account operations use metadata
-        assert!(!uses_dataplane_pipeline(ResourceType::DatabaseAccount, OperationType::Read));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::DatabaseAccount,
+            OperationType::Read
+        ));
 
         // Trigger, UDF use metadata for CRUD
-        assert!(!uses_dataplane_pipeline(ResourceType::Trigger, OperationType::Read));
-        assert!(!uses_dataplane_pipeline(ResourceType::UserDefinedFunction, OperationType::Create));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Trigger,
+            OperationType::Read
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::UserDefinedFunction,
+            OperationType::Create
+        ));
 
         // Offer uses metadata
-        assert!(!uses_dataplane_pipeline(ResourceType::Offer, OperationType::Read));
-        assert!(!uses_dataplane_pipeline(ResourceType::Offer, OperationType::Replace));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Offer,
+            OperationType::Read
+        ));
+        assert!(!uses_dataplane_pipeline(
+            ResourceType::Offer,
+            OperationType::Replace
+        ));
     }
 }

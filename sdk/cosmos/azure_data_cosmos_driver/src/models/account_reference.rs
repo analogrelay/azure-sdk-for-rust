@@ -253,7 +253,10 @@ impl AccountReference {
 
     // Deprecated: Keep for backwards compatibility during migration
     #[doc(hidden)]
-    #[deprecated(since = "0.2.0", note = "Use AccountReference::builder() or with_master_key() instead")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use AccountReference::builder() or with_master_key() instead"
+    )]
     #[allow(deprecated)] // Allow constructing deprecated type
     #[allow(clippy::new_ret_no_self)] // Intentionally returns LegacyAccountReference for migration
     pub fn new(endpoint: Url) -> LegacyAccountReference {
@@ -385,7 +388,8 @@ mod tests {
 
     #[test]
     fn account_endpoint_join_path_with_leading_slash() {
-        let endpoint = AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
+        let endpoint =
+            AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
         let url = endpoint.join_path("/dbs/mydb/colls/mycoll");
         assert_eq!(url.path(), "/dbs/mydb/colls/mycoll");
         assert_eq!(url.host_str(), Some("myaccount.documents.azure.com"));
@@ -393,14 +397,16 @@ mod tests {
 
     #[test]
     fn account_endpoint_join_path_without_leading_slash() {
-        let endpoint = AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
+        let endpoint =
+            AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
         let url = endpoint.join_path("dbs/mydb/colls/mycoll");
         assert_eq!(url.path(), "/dbs/mydb/colls/mycoll");
     }
 
     #[test]
     fn account_endpoint_join_path_empty() {
-        let endpoint = AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
+        let endpoint =
+            AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
         let url = endpoint.join_path("");
         // Empty path is normalized to "/" by the URL library
         assert_eq!(url.path(), "/");
@@ -408,18 +414,18 @@ mod tests {
 
     #[test]
     fn account_endpoint_host() {
-        let endpoint = AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
+        let endpoint =
+            AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
         assert_eq!(endpoint.host(), "myaccount.documents.azure.com");
     }
 
     #[test]
     fn builder_with_master_key() {
-        let account = AccountReference::builder(
-            Url::parse("https://test.documents.azure.com:443/").unwrap()
-        )
-        .master_key("my-secret-key")
-        .build()
-        .unwrap();
+        let account =
+            AccountReference::builder(Url::parse("https://test.documents.azure.com:443/").unwrap())
+                .master_key("my-secret-key")
+                .build()
+                .unwrap();
 
         match account.auth() {
             AuthOptions::MasterKey(key) => assert_eq!(key.secret(), "my-secret-key"),
@@ -429,9 +435,9 @@ mod tests {
 
     #[test]
     fn builder_requires_auth() {
-        let result = AccountReference::builder(
-            Url::parse("https://test.documents.azure.com:443/").unwrap()
-        ).build();
+        let result =
+            AccountReference::builder(Url::parse("https://test.documents.azure.com:443/").unwrap())
+                .build();
 
         assert!(result.is_err());
     }
@@ -469,9 +475,9 @@ mod tests {
     #[allow(deprecated)]
     fn legacy_new_with_master_key() {
         // Test deprecated API still works
-        let account = AccountReference::new(
-            Url::parse("https://test.documents.azure.com:443/").unwrap()
-        ).with_master_key("my-secret-key");
+        let account =
+            AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
+                .with_master_key("my-secret-key");
 
         match account.auth() {
             AuthOptions::MasterKey(key) => assert_eq!(key.secret(), "my-secret-key"),

@@ -108,7 +108,11 @@ impl TrackedRequestState {
     /// [`request_sent_status_with_error`](Self::request_sent_status_with_error).
     pub fn request_sent_status(&self) -> RequestSentStatus {
         // If any event indicates request was sent, it was definitely sent
-        if self.events.iter().any(|e| e.event_type.indicates_request_sent()) {
+        if self
+            .events
+            .iter()
+            .any(|e| e.event_type.indicates_request_sent())
+        {
             return RequestSentStatus::Sent;
         }
 
@@ -128,7 +132,11 @@ impl TrackedRequestState {
     /// - `Unknown`: Cannot determine from available information
     pub fn request_sent_status_with_error(&self, error: &azure_core::Error) -> RequestSentStatus {
         // If any event indicates request was sent, it was definitely sent
-        if self.events.iter().any(|e| e.event_type.indicates_request_sent()) {
+        if self
+            .events
+            .iter()
+            .any(|e| e.event_type.indicates_request_sent())
+        {
             return RequestSentStatus::Sent;
         }
 

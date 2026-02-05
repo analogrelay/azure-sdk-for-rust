@@ -249,7 +249,6 @@ impl RequestDiagnostics {
     pub(crate) fn is_completed(&self) -> bool {
         self.completed_at.is_some()
     }
-
 }
 
 /// Handle for tracking a request within [`DiagnosticsContext`](super::DiagnosticsContext).

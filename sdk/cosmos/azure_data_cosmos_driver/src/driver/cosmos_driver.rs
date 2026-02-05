@@ -9,13 +9,18 @@ use crate::{
         AccountEndpoint, AccountReference, ActivityId, ContainerReference, CosmosHeaders,
         CosmosOperation, CosmosResult, SubStatusCode,
     },
-    options::{DriverOptions, OperationOptions, Region, RuntimeOptions, ThroughputControlGroupSnapshot},
+    options::{
+        DriverOptions, OperationOptions, Region, RuntimeOptions, ThroughputControlGroupSnapshot,
+    },
 };
 use azure_core::http::{Context, Request};
 use std::sync::Arc;
 
 use super::{
-    transport::{uses_dataplane_pipeline, AuthorizationContext, EventEmitter, TrackedRequestState, event_channel},
+    transport::{
+        event_channel, uses_dataplane_pipeline, AuthorizationContext, EventEmitter,
+        TrackedRequestState,
+    },
     CosmosDriverRuntime,
 };
 
@@ -295,7 +300,11 @@ impl CosmosDriver {
                 // Complete diagnostics
                 let diagnostics = Arc::new(diagnostics_builder.complete());
 
-                Ok(CosmosResult::new(body.as_ref().to_vec(), cosmos_headers, diagnostics))
+                Ok(CosmosResult::new(
+                    body.as_ref().to_vec(),
+                    cosmos_headers,
+                    diagnostics,
+                ))
             }
             Err(e) => {
                 // Request failed at transport level - no HTTP response received.

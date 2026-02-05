@@ -74,7 +74,10 @@ impl RequestEventType {
     /// - `TransportFailed` = depends on error analysis (handled separately)
     /// - `TransportStart` = not yet sent (in progress)
     pub fn indicates_request_sent(&self) -> bool {
-        matches!(self, Self::ResponseHeadersReceived | Self::TransportComplete)
+        matches!(
+            self,
+            Self::ResponseHeadersReceived | Self::TransportComplete
+        )
     }
 }
 

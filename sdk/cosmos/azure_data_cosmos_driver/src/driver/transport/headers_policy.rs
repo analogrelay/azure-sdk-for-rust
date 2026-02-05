@@ -154,10 +154,7 @@ mod tests {
         let headers = request.headers();
 
         // Verify all required headers are set
-        assert_eq!(
-            headers.get_optional_str(&VERSION),
-            Some(COSMOS_API_VERSION)
-        );
+        assert_eq!(headers.get_optional_str(&VERSION), Some(COSMOS_API_VERSION));
         assert_eq!(
             headers.get_optional_str(&SDK_SUPPORTED_CAPABILITIES),
             Some(SUPPORTED_CAPABILITIES_VALUE)

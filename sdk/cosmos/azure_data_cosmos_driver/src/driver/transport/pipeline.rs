@@ -222,7 +222,9 @@ mod tests {
     #[tokio::test]
     async fn pipeline_executes_policies_in_order() {
         let policy: Arc<dyn Policy> = Arc::new(RecordingPolicy { name: "test" });
-        let transport = Transport::with_policy(Arc::new(MockTransport { response_status: 200 }));
+        let transport = Transport::with_policy(Arc::new(MockTransport {
+            response_status: 200,
+        }));
 
         let pipeline = CosmosPipeline::new(vec![policy], transport);
 
@@ -235,18 +237,18 @@ mod tests {
 
         // Verify our policy ran
         assert_eq!(
-            request
-                .headers()
-                .get_optional_str(&azure_core::http::headers::HeaderName::from_static(
-                    "x-test-policy"
-                )),
+            request.headers().get_optional_str(
+                &azure_core::http::headers::HeaderName::from_static("x-test-policy")
+            ),
             Some("test")
         );
     }
 
     #[tokio::test]
     async fn pipeline_with_no_extra_policies() {
-        let transport = Transport::with_policy(Arc::new(MockTransport { response_status: 200 }));
+        let transport = Transport::with_policy(Arc::new(MockTransport {
+            response_status: 200,
+        }));
 
         // Create pipeline with only the transport (no extra policies)
         let pipeline = CosmosPipeline::new(vec![], transport);

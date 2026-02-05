@@ -371,6 +371,24 @@ let driver = Driver::builder()
 
 ## Code Quality and Validation
 
+### Automatic Formatting (CRITICAL)
+
+**ALWAYS run `cargo fmt` FIRST before any other validation steps**. The CI pipeline will fail if code is not properly formatted:
+
+```bash
+# Format the modified crate
+cargo fmt -p <crate-name>
+
+# Check if formatting is correct without modifying files
+cargo fmt -p <crate-name> -- --check
+```
+
+**This is the most common CI failure** - always run `cargo fmt` after making ANY code changes, including:
+- Adding new code
+- Modifying existing code
+- Moving code between files
+- Refactoring
+
 ### Automatic Clippy Validation
 
 **ALWAYS run `cargo clippy` after making code changes** to catch common issues and ensure code quality:
@@ -402,17 +420,20 @@ Always add a comment explaining **why** the warning is allowed.
 
 - Always run `cargo fmt` on generated or modified Rust code before considering the task complete.
 - When editing existing files, ensure the changes conform to `rustfmt` standards.
+- **The CI pipeline will reject any code that is not properly formatted.**
 
-### Pre-Completion Validation
+### Pre-Completion Validation Checklist
 
-Before considering any task complete, run the following checks on all modified crates:
+Before considering any task complete, run the following checks **in order** on all modified crates:
 
-1. **Build check**: `cargo build -p <crate-name>`
-2. **Clippy lint check**: `cargo clippy -p <crate-name>`
-3. **Documentation check**: `cargo doc -p <crate-name> --no-deps --all-features`
+1. **Format check (MUST BE FIRST)**: `cargo fmt -p <crate-name>`
+   - This is the #1 cause of CI failures - always run this first!
+2. **Build check**: `cargo build -p <crate-name>`
+3. **Clippy lint check**: `cargo clippy -p <crate-name> --all-features --all-targets`
+4. **Documentation check**: `cargo doc -p <crate-name> --no-deps --all-features`
    - This catches broken intra-doc links (e.g., referencing non-existent methods in `[`backtick links`]`)
    - All documentation warnings must be resolved before completing the task
-4. **Test check** (if tests exist): `cargo test -p <crate-name> --all-features`
+5. **Test check** (if tests exist): `cargo test -p <crate-name> --all-features`
 
 **Common documentation link errors to avoid**:
 - When documenting factory methods or APIs, ensure the linked method names match the actual implementation
