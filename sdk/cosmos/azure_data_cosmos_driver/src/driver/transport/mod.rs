@@ -258,20 +258,24 @@ impl CosmosTransport {
         // For now, we let reqwest negotiate (ALPN) which prefers HTTP/2 when available.
         // If we need strict HTTP/2-only, we'd use http2_prior_knowledge().
 
-        // Proxy settings
-        if !pool.is_proxy_allowed() {
-            builder = builder.no_proxy();
-        }
-        // When proxy is allowed, reqwest automatically respects HTTP_PROXY/HTTPS_PROXY env vars
+        // Native-only settings (not available on WASM)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // Proxy settings
+            if !pool.is_proxy_allowed() {
+                builder = builder.no_proxy();
+            }
+            // When proxy is allowed, reqwest automatically respects HTTP_PROXY/HTTPS_PROXY env vars
 
-        // Local address binding
-        if let Some(local_addr) = pool.local_address() {
-            builder = builder.local_address(local_addr);
-        }
+            // Local address binding
+            if let Some(local_addr) = pool.local_address() {
+                builder = builder.local_address(local_addr);
+            }
 
-        // Emulator settings - disable TLS validation
-        if for_emulator {
-            builder = builder.danger_accept_invalid_certs(true);
+            // Emulator settings - disable TLS validation
+            if for_emulator {
+                builder = builder.danger_accept_invalid_certs(true);
+            }
         }
 
         builder.build().map_err(|e| {
