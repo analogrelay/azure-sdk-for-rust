@@ -233,34 +233,32 @@ impl CosmosTransport {
         is_metadata: bool,
         for_emulator: bool,
     ) -> azure_core::Result<reqwest::Client> {
+        #[allow(unused_mut)]
         let mut builder = reqwest::ClientBuilder::new();
 
-        // Connection pool settings
-        builder = builder.pool_max_idle_per_host(pool.max_idle_connections_per_endpoint());
-
-        if let Some(idle_timeout) = pool.idle_connection_timeout() {
-            builder = builder.pool_idle_timeout(idle_timeout);
-        }
-
-        // Connect timeout
-        builder = builder.connect_timeout(pool.max_connect_timeout());
-
-        // Request timeout (different for metadata vs data plane)
-        let request_timeout = if is_metadata {
-            pool.max_metadata_request_timeout()
-        } else {
-            pool.max_dataplane_request_timeout()
-        };
-        builder = builder.timeout(request_timeout);
-
-        // HTTP/2 settings
-        // Note: reqwest's http2_prior_knowledge() forces HTTP/2 only.
-        // For now, we let reqwest negotiate (ALPN) which prefers HTTP/2 when available.
-        // If we need strict HTTP/2-only, we'd use http2_prior_knowledge().
-
         // Native-only settings (not available on WASM)
+        // WASM uses browser's fetch API which handles connection pooling,
+        // timeouts, and TLS internally.
         #[cfg(not(target_arch = "wasm32"))]
         {
+            // Connection pool settings
+            builder = builder.pool_max_idle_per_host(pool.max_idle_connections_per_endpoint());
+
+            if let Some(idle_timeout) = pool.idle_connection_timeout() {
+                builder = builder.pool_idle_timeout(idle_timeout);
+            }
+
+            // Connect timeout
+            builder = builder.connect_timeout(pool.max_connect_timeout());
+
+            // Request timeout (different for metadata vs data plane)
+            let request_timeout = if is_metadata {
+                pool.max_metadata_request_timeout()
+            } else {
+                pool.max_dataplane_request_timeout()
+            };
+            builder = builder.timeout(request_timeout);
+
             // Proxy settings
             if !pool.is_proxy_allowed() {
                 builder = builder.no_proxy();
@@ -277,6 +275,10 @@ impl CosmosTransport {
                 builder = builder.danger_accept_invalid_certs(true);
             }
         }
+
+        // Suppress unused variable warnings on WASM
+        #[cfg(target_arch = "wasm32")]
+        let _ = (pool, is_metadata, for_emulator);
 
         builder.build().map_err(|e| {
             azure_core::Error::with_message(
