@@ -202,6 +202,7 @@ impl RequestSentExt for azure_core::Error {
 /// Reqwest errors can occur at various stages:
 /// - Before sending: DNS failure, connection refused, TLS error
 /// - After sending: Timeout waiting for response, connection reset
+#[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub(crate) fn reqwest_request_sent_status(error: &reqwest::Error) -> RequestSentStatus {
     // Connection errors happen before sending
@@ -242,6 +243,27 @@ pub(crate) fn reqwest_request_sent_status(error: &reqwest::Error) -> RequestSent
     // Body errors during sending - can't determine
     if error.is_body() {
         return RequestSentStatus::Unknown;
+    }
+
+    // Default: can't determine
+    RequestSentStatus::Unknown
+}
+
+/// WASM fallback: reqwest doesn't expose error type inspection methods on WASM.
+/// We fall back to string analysis which is less reliable.
+#[cfg(target_arch = "wasm32")]
+#[allow(dead_code)]
+pub(crate) fn reqwest_request_sent_status(error: &reqwest::Error) -> RequestSentStatus {
+    let msg = error.to_string().to_lowercase();
+
+    // Connection-related errors (before sending)
+    if msg.contains("dns") || msg.contains("connection refused") || msg.contains("connect") {
+        return RequestSentStatus::NotSent;
+    }
+
+    // Response-related errors (after sending)
+    if msg.contains("status") || msg.contains("redirect") || msg.contains("decode") {
+        return RequestSentStatus::Sent;
     }
 
     // Default: can't determine
