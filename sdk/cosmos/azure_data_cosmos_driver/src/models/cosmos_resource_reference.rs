@@ -359,16 +359,95 @@ impl CosmosResourceReference {
         }
     }
 
+    // ===== Collection-Level Factory Methods (for Create/List operations) =====
+
+    /// Creates a reference to the databases collection for an account.
+    ///
+    /// Used for operations that target the collection of databases (create, list, query).
+    /// The resulting resource type is `Database` with no specific name, which signals
+    /// that the operation targets the collection rather than a specific database.
+    pub fn databases_collection(account: AccountReference) -> Self {
+        Self {
+            resource_type: ResourceType::Database,
+            account,
+            database: None,
+            container: None,
+            name: None,
+            rid: None,
+        }
+    }
+
+    /// Creates a reference to the containers collection for a database.
+    ///
+    /// Used for operations that target the collection of containers (create, list, query).
+    /// The resulting resource type is `DocumentCollection` with no specific name, which signals
+    /// that the operation targets the collection rather than a specific container.
+    pub fn containers_collection(database: DatabaseReference) -> Self {
+        let account = database.account().clone();
+        Self {
+            resource_type: ResourceType::DocumentCollection,
+            account,
+            database: Some(database),
+            container: None,
+            name: None,
+            rid: None,
+        }
+    }
+
+    /// Creates a reference to the documents collection for a container.
+    ///
+    /// Used for operations that target the collection of documents (create, list, query).
+    /// The resulting resource type is `Document` with no specific name, which signals
+    /// that the operation targets the collection rather than a specific document.
+    pub fn documents_collection(container: ContainerReference) -> Self {
+        let account = container.database().account().clone();
+        let database = Some(container.database().clone());
+        Self {
+            resource_type: ResourceType::Document,
+            account,
+            database,
+            container: Some(container),
+            name: None,
+            rid: None,
+        }
+    }
+
     /// Returns the name-based relative path for this resource.
     ///
     /// Returns `None` if the required names are not set for this resource type.
     pub fn name_based_path(&self) -> Option<String> {
         match self.resource_type {
             ResourceType::DatabaseAccount => Some(String::new()),
-            ResourceType::Database => self.database.as_ref()?.name_based_path(),
-            ResourceType::DocumentCollection => self.container.as_ref()?.name_based_path(),
-            ResourceType::Document
-            | ResourceType::StoredProcedure
+            ResourceType::Database => {
+                // If we have a database reference, return its path
+                // Otherwise, return the databases collection path
+                if let Some(db) = self.database.as_ref() {
+                    db.name_based_path()
+                } else {
+                    Some("/dbs".to_string())
+                }
+            }
+            ResourceType::DocumentCollection => {
+                // If we have a container reference, return its path
+                // Otherwise, return the containers collection path within the database
+                if let Some(container) = self.container.as_ref() {
+                    container.name_based_path()
+                } else {
+                    let db_path = self.database.as_ref()?.name_based_path()?;
+                    Some(format!("{}/colls", db_path))
+                }
+            }
+            ResourceType::Document => {
+                // If we have a specific document name, return the full path
+                // Otherwise, return the documents collection path
+                let container_path = self.container.as_ref()?.name_based_path()?;
+                if let Some(name) = self.name.as_ref() {
+                    Some(format!("{}/docs/{}", container_path, name))
+                } else {
+                    Some(format!("{}/docs", container_path))
+                }
+            }
+            ResourceType::StoredProcedure
             | ResourceType::Trigger
             | ResourceType::UserDefinedFunction
             | ResourceType::PartitionKeyRange => {
@@ -390,10 +469,36 @@ impl CosmosResourceReference {
     pub fn rid_based_path(&self) -> Option<String> {
         match self.resource_type {
             ResourceType::DatabaseAccount => Some(String::new()),
-            ResourceType::Database => self.database.as_ref()?.rid_based_path(),
-            ResourceType::DocumentCollection => self.container.as_ref()?.rid_based_path(),
-            ResourceType::Document
-            | ResourceType::StoredProcedure
+            ResourceType::Database => {
+                // If we have a database reference, return its path
+                // Otherwise, return the databases collection path
+                if let Some(db) = self.database.as_ref() {
+                    db.rid_based_path()
+                } else {
+                    Some("/dbs".to_string())
+                }
+            }
+            ResourceType::DocumentCollection => {
+                // If we have a container reference, return its path
+                // Otherwise, return the containers collection path within the database
+                if let Some(container) = self.container.as_ref() {
+                    container.rid_based_path()
+                } else {
+                    let db_path = self.database.as_ref()?.rid_based_path()?;
+                    Some(format!("{}/colls", db_path))
+                }
+            }
+            ResourceType::Document => {
+                // If we have a specific document RID, return the full path
+                // Otherwise, return the documents collection path
+                let container_path = self.container.as_ref()?.rid_based_path()?;
+                if let Some(rid) = self.rid.as_ref() {
+                    Some(format!("{}/docs/{}", container_path, rid))
+                } else {
+                    Some(format!("{}/docs", container_path))
+                }
+            }
+            ResourceType::StoredProcedure
             | ResourceType::Trigger
             | ResourceType::UserDefinedFunction
             | ResourceType::PartitionKeyRange => {

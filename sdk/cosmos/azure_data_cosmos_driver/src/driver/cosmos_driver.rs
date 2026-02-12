@@ -4,7 +4,7 @@
 //! Cosmos DB driver instance.
 
 use crate::{
-    diagnostics::{DiagnosticsContextBuilder, ExecutionContext},
+    diagnostics::{DiagnosticsContextBuilder, ExecutionContext, PipelineType, TransportSecurity},
     models::{
         AccountEndpoint, AccountReference, ActivityId, ContainerReference, CosmosHeaders,
         CosmosOperation, CosmosResult, SubStatusCode,
@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use super::{
     transport::{
-        event_channel, uses_dataplane_pipeline, AuthorizationContext, EventEmitter,
-        TrackedRequestState,
+        event_channel, is_emulator_host, uses_dataplane_pipeline, AuthorizationContext,
+        EventEmitter, TrackedRequestState,
     },
     CosmosDriverRuntime,
 };
@@ -226,10 +226,23 @@ impl CosmosDriver {
 
         // Step 11: Select and create appropriate pipeline
         let transport = self.runtime.transport();
-        let pipeline = if uses_dataplane_pipeline(resource_type, operation_type) {
+        let is_dataplane = uses_dataplane_pipeline(resource_type, operation_type);
+        let pipeline = if is_dataplane {
             transport.create_dataplane_pipeline(&endpoint, auth)
         } else {
             transport.create_metadata_pipeline(&endpoint, auth)
+        };
+
+        // Determine pipeline type and transport security for diagnostics
+        let pipeline_type = if is_dataplane {
+            PipelineType::DataPlane
+        } else {
+            PipelineType::Metadata
+        };
+        let transport_security = if is_emulator_host(&endpoint) {
+            TransportSecurity::EmulatorWithInsecureCertificates
+        } else {
+            TransportSecurity::Secure
         };
 
         // Step 12: Build context with authorization info and event emitter
@@ -245,6 +258,8 @@ impl CosmosDriver {
         let region = Region::new("Unknown");
         let request_handle = diagnostics_builder.start_request(
             ExecutionContext::Initial,
+            pipeline_type,
+            transport_security,
             region,
             endpoint.host().to_owned(),
         );

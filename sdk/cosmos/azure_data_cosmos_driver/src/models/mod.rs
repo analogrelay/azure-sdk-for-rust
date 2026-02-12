@@ -11,6 +11,7 @@
 
 mod account_reference;
 mod activity_id;
+mod connection_string;
 mod cosmos_operation;
 mod cosmos_resource_reference;
 mod cosmos_result;
@@ -27,6 +28,7 @@ mod user_agent;
 
 pub use account_reference::{AccountReference, AccountReferenceBuilder, AuthOptions, MasterKey};
 pub use activity_id::ActivityId;
+pub use connection_string::ConnectionString;
 pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;
 pub use cosmos_result::{CosmosHeaders, CosmosResult};

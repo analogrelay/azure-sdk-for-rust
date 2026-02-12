@@ -13,6 +13,80 @@ use std::time::Instant;
 
 use super::{ExecutionContext, RequestEvent};
 
+// =============================================================================
+// Pipeline Classification Types
+// =============================================================================
+
+/// The type of pipeline used to execute a request.
+///
+/// Cosmos DB operations are routed through different pipelines based on their
+/// resource type and operation type. This enum captures which pipeline was used,
+/// which is useful for debugging and understanding request behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineType {
+    /// Metadata pipeline for control plane operations.
+    ///
+    /// Used for database, container, throughput, and other management operations.
+    /// Has a higher timeout (65 seconds) to accommodate operations that may take
+    /// longer to complete.
+    Metadata,
+
+    /// Data plane pipeline for document operations.
+    ///
+    /// Used for CRUD operations on items/documents and queries.
+    /// Has a lower timeout (6 seconds) optimized for high-throughput scenarios.
+    DataPlane,
+}
+
+impl PipelineType {
+    /// Returns true if this is a metadata (control plane) pipeline.
+    pub fn is_metadata(self) -> bool {
+        matches!(self, PipelineType::Metadata)
+    }
+
+    /// Returns true if this is a data plane pipeline.
+    pub fn is_data_plane(self) -> bool {
+        matches!(self, PipelineType::DataPlane)
+    }
+}
+
+/// The transport security mode used for a request.
+///
+/// This captures whether the request was made with full TLS certificate
+/// validation or with relaxed validation for emulator scenarios.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportSecurity {
+    /// Standard secure transport with full certificate validation.
+    ///
+    /// Used for production endpoints with valid TLS certificates.
+    #[default]
+    Secure,
+
+    /// Emulator transport with insecure certificate acceptance.
+    ///
+    /// Used when connecting to the local Cosmos DB emulator, which uses
+    /// self-signed certificates that would fail standard validation.
+    EmulatorWithInsecureCertificates,
+}
+
+impl TransportSecurity {
+    /// Returns true if this is a secure transport.
+    pub fn is_secure(self) -> bool {
+        matches!(self, TransportSecurity::Secure)
+    }
+
+    /// Returns true if this is an emulator transport with insecure certificates.
+    pub fn is_emulator(self) -> bool {
+        matches!(self, TransportSecurity::EmulatorWithInsecureCertificates)
+    }
+}
+
+// =============================================================================
+// Request Sent Status
+// =============================================================================
+
 /// Tri-state indicating whether a request was sent on the wire.
 ///
 /// This is critical for retry decisions:
@@ -68,6 +142,12 @@ impl RequestSentStatus {
 pub struct RequestDiagnostics {
     /// Context describing why this request was made.
     pub execution_context: ExecutionContext,
+
+    /// The pipeline type used for this request.
+    pub pipeline_type: PipelineType,
+
+    /// The transport security mode used for this request.
+    pub transport_security: TransportSecurity,
 
     /// Region this request was sent to.
     pub region: Region,
@@ -138,11 +218,15 @@ impl RequestDiagnostics {
     /// Creates a new request diagnostics entry for a request being started.
     pub(crate) fn new(
         execution_context: ExecutionContext,
+        pipeline_type: PipelineType,
+        transport_security: TransportSecurity,
         region: Region,
         endpoint: String,
     ) -> Self {
         Self {
             execution_context,
+            pipeline_type,
+            transport_security,
             region,
             endpoint,
             // Status code is set when the request completes via `complete()`.
@@ -257,3 +341,53 @@ impl RequestDiagnostics {
 /// for updates during request execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestHandle(pub(crate) usize);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipeline_type_classification() {
+        assert!(PipelineType::Metadata.is_metadata());
+        assert!(!PipelineType::Metadata.is_data_plane());
+        assert!(PipelineType::DataPlane.is_data_plane());
+        assert!(!PipelineType::DataPlane.is_metadata());
+    }
+
+    #[test]
+    fn transport_security_classification() {
+        assert!(TransportSecurity::Secure.is_secure());
+        assert!(!TransportSecurity::Secure.is_emulator());
+        assert!(TransportSecurity::EmulatorWithInsecureCertificates.is_emulator());
+        assert!(!TransportSecurity::EmulatorWithInsecureCertificates.is_secure());
+    }
+
+    #[test]
+    fn transport_security_default() {
+        assert_eq!(TransportSecurity::default(), TransportSecurity::Secure);
+    }
+
+    #[test]
+    fn pipeline_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&PipelineType::Metadata).unwrap(),
+            "\"metadata\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PipelineType::DataPlane).unwrap(),
+            "\"data_plane\""
+        );
+    }
+
+    #[test]
+    fn transport_security_serialization() {
+        assert_eq!(
+            serde_json::to_string(&TransportSecurity::Secure).unwrap(),
+            "\"secure\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TransportSecurity::EmulatorWithInsecureCertificates).unwrap(),
+            "\"emulator_with_insecure_certificates\""
+        );
+    }
+}

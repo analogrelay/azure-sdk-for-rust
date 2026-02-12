@@ -19,7 +19,8 @@ use super::{
         DeduplicatedGroup, DetailedDiagnosticsOutput, RegionSummary, RequestSummary,
         SummaryDiagnosticsOutput, TruncatedOutput,
     },
-    ExecutionContext, RequestDiagnostics, RequestEvent, RequestHandle, RequestSentStatus,
+    ExecutionContext, PipelineType, RequestDiagnostics, RequestEvent, RequestHandle,
+    RequestSentStatus, TransportSecurity,
 };
 
 /// Internal mutable builder for constructing a [`DiagnosticsContext`].
@@ -88,10 +89,13 @@ impl DiagnosticsContextBuilder {
     pub(crate) fn start_request(
         &mut self,
         execution_context: ExecutionContext,
+        pipeline_type: PipelineType,
+        transport_security: TransportSecurity,
         region: Region,
         endpoint: String,
     ) -> RequestHandle {
-        let request = RequestDiagnostics::new(execution_context, region, endpoint);
+        let request =
+            RequestDiagnostics::new(execution_context, pipeline_type, transport_security, region, endpoint);
         let handle = RequestHandle(self.requests.len());
         self.requests.push(request);
         handle
@@ -512,6 +516,33 @@ mod tests {
         builder.complete()
     }
 
+    /// Helper extension trait for test-friendly start_request.
+    trait TestBuilderExt {
+        fn start_test_request(
+            &mut self,
+            execution_context: ExecutionContext,
+            region: Region,
+            endpoint: String,
+        ) -> RequestHandle;
+    }
+
+    impl TestBuilderExt for DiagnosticsContextBuilder {
+        fn start_test_request(
+            &mut self,
+            execution_context: ExecutionContext,
+            region: Region,
+            endpoint: String,
+        ) -> RequestHandle {
+            self.start_request(
+                execution_context,
+                PipelineType::DataPlane,
+                TransportSecurity::Secure,
+                region,
+                endpoint,
+            )
+        }
+    }
+
     #[test]
     fn builder_new_context_has_activity_id() {
         let activity_id = ActivityId::new_uuid();
@@ -522,7 +553,7 @@ mod tests {
     #[test]
     fn builder_start_and_complete_request() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            let handle = builder.start_request(
+            let handle = builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -542,7 +573,7 @@ mod tests {
     #[test]
     fn builder_timeout_request() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            let handle = builder.start_request(
+            let handle = builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -557,7 +588,7 @@ mod tests {
     #[test]
     fn builder_update_request_with_charge() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            let handle = builder.start_request(
+            let handle = builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -573,14 +604,14 @@ mod tests {
     #[test]
     fn total_charge_sums_all_requests() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            let h1 = builder.start_request(
+            let h1 = builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
             );
             builder.update_request(h1, |req| req.request_charge = 3.0);
 
-            let h2 = builder.start_request(
+            let h2 = builder.start_test_request(
                 ExecutionContext::Retry,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -594,17 +625,17 @@ mod tests {
     #[test]
     fn regions_contacted_deduplicates() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            builder.start_request(
+            builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.westus2.documents.azure.com".to_string(),
             );
-            builder.start_request(
+            builder.start_test_request(
                 ExecutionContext::Retry,
                 Region::WEST_US_2,
                 "https://test.westus2.documents.azure.com".to_string(),
             );
-            builder.start_request(
+            builder.start_test_request(
                 ExecutionContext::RegionFailover,
                 Region::EAST_US_2,
                 "https://test.eastus2.documents.azure.com".to_string(),
@@ -618,7 +649,7 @@ mod tests {
     #[test]
     fn to_json_detailed() {
         let ctx = make_context_with(ActivityId::from_string("test-id".to_string()), |builder| {
-            let handle = builder.start_request(
+            let handle = builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -637,7 +668,7 @@ mod tests {
         let ctx = make_context_with(ActivityId::from_string("test-id".to_string()), |builder| {
             // Add several requests to trigger deduplication
             for i in 0..5 {
-                let handle = builder.start_request(
+                let handle = builder.start_test_request(
                     ExecutionContext::Retry,
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
@@ -657,7 +688,7 @@ mod tests {
         let ctx = make_context_with(
             ActivityId::from_string("cache-test".to_string()),
             |builder| {
-                let handle = builder.start_request(
+                let handle = builder.start_test_request(
                     ExecutionContext::Initial,
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
@@ -679,7 +710,7 @@ mod tests {
     #[test]
     fn requests_returns_arc() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
-            builder.start_request(
+            builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -697,7 +728,7 @@ mod tests {
     fn duration_is_captured() {
         let ctx = make_context_with(ActivityId::new_uuid(), |builder| {
             std::thread::sleep(std::time::Duration::from_millis(10));
-            builder.start_request(
+            builder.start_test_request(
                 ExecutionContext::Initial,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
@@ -735,7 +766,7 @@ mod tests {
     #[test]
     fn update_before_complete_succeeds() {
         let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
-        let handle = builder.start_request(
+        let handle = builder.start_test_request(
             ExecutionContext::Initial,
             Region::WEST_US_2,
             "https://test.documents.azure.com".to_string(),
@@ -757,7 +788,7 @@ mod tests {
     #[test]
     fn update_after_complete_is_ignored_in_release() {
         let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
-        let handle = builder.start_request(
+        let handle = builder.start_test_request(
             ExecutionContext::Initial,
             Region::WEST_US_2,
             "https://test.documents.azure.com".to_string(),

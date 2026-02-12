@@ -4,7 +4,8 @@
 //! Cosmos DB operation representation.
 
 use crate::models::{
-    ContainerReference, CosmosResourceReference, OperationType, PartitionKey, ResourceType,
+    AccountReference, ContainerReference, CosmosResourceReference, DatabaseReference,
+    OperationType, PartitionKey, ResourceType,
 };
 use azure_core::http::headers::Headers;
 
@@ -231,6 +232,221 @@ impl CosmosOperation {
     /// including typed references like `ItemReference`, `ContainerReference`, etc.
     pub fn head(resource_reference: impl Into<CosmosResourceReference>) -> Self {
         Self::new(OperationType::Head, resource_reference)
+    }
+
+    // ===== Control Plane Factory Methods =====
+
+    /// Creates a database in the account.
+    ///
+    /// Use `with_body()` to provide the database properties JSON:
+    /// ```json
+    /// {"id": "my-database"}
+    /// ```
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{AccountReference, CosmosOperation};
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let operation = CosmosOperation::create_database(account)
+    ///     .with_body(br#"{"id": "my-database"}"#.to_vec());
+    /// ```
+    pub fn create_database(account: AccountReference) -> Self {
+        let resource_ref = CosmosResourceReference::databases_collection(account);
+        Self::new(OperationType::Create, resource_ref)
+    }
+
+    /// Reads (lists) all databases in the account.
+    ///
+    /// Returns a feed of database resources.
+    pub fn read_all_databases(account: AccountReference) -> Self {
+        let resource_ref = CosmosResourceReference::databases_collection(account);
+        Self::new(OperationType::ReadFeed, resource_ref)
+    }
+
+    /// Queries databases in the account.
+    ///
+    /// Use `with_body()` to provide the query JSON.
+    pub fn query_databases(account: AccountReference) -> Self {
+        let resource_ref = CosmosResourceReference::databases_collection(account);
+        Self::new(OperationType::Query, resource_ref)
+    }
+
+    /// Deletes a database.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, CosmosOperation, DatabaseReference,
+    /// };
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let database = DatabaseReference::from_name(account, "my-database");
+    /// let operation = CosmosOperation::delete_database(database);
+    /// ```
+    pub fn delete_database(database: DatabaseReference) -> Self {
+        let resource_ref = CosmosResourceReference::database_by_name(database);
+        Self::new(OperationType::Delete, resource_ref)
+    }
+
+    /// Creates a container in a database.
+    ///
+    /// Use `with_body()` to provide the container properties JSON:
+    /// ```json
+    /// {"id": "my-container", "partitionKey": {"paths": ["/pk"], "kind": "Hash"}}
+    /// ```
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, CosmosOperation, DatabaseReference,
+    /// };
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let database = DatabaseReference::from_name(account, "my-database");
+    /// let operation = CosmosOperation::create_container(database)
+    ///     .with_body(br#"{"id": "my-container", "partitionKey": {"paths": ["/pk"], "kind": "Hash"}}"#.to_vec());
+    /// ```
+    pub fn create_container(database: DatabaseReference) -> Self {
+        let resource_ref = CosmosResourceReference::containers_collection(database);
+        Self::new(OperationType::Create, resource_ref)
+    }
+
+    /// Reads (lists) all containers in a database.
+    ///
+    /// Returns a feed of container resources.
+    pub fn read_all_containers(database: DatabaseReference) -> Self {
+        let resource_ref = CosmosResourceReference::containers_collection(database);
+        Self::new(OperationType::ReadFeed, resource_ref)
+    }
+
+    /// Queries containers in a database.
+    ///
+    /// Use `with_body()` to provide the query JSON.
+    pub fn query_containers(database: DatabaseReference) -> Self {
+        let resource_ref = CosmosResourceReference::containers_collection(database);
+        Self::new(OperationType::Query, resource_ref)
+    }
+
+    /// Deletes a container.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, ContainerReference, CosmosOperation,
+    /// };
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
+    /// let operation = CosmosOperation::delete_container(container);
+    /// ```
+    pub fn delete_container(container: ContainerReference) -> Self {
+        let resource_ref = CosmosResourceReference::document_collection_by_name(container);
+        Self::new(OperationType::Delete, resource_ref)
+    }
+
+    // ===== Data Plane Factory Methods =====
+
+    /// Creates an item (document) in a container.
+    ///
+    /// Use `with_partition_key()` to set the partition key and `with_body()` to provide
+    /// the document JSON.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, ContainerReference, CosmosOperation, PartitionKey,
+    /// };
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
+    /// let operation = CosmosOperation::create_item(container)
+    ///     .with_partition_key(PartitionKey::from("pk-value"))
+    ///     .with_body(br#"{"id": "doc1", "pk": "pk-value", "data": "hello"}"#.to_vec());
+    /// ```
+    pub fn create_item(container: ContainerReference) -> Self {
+        let resource_ref = CosmosResourceReference::documents_collection(container);
+        Self::new(OperationType::Create, resource_ref)
+    }
+
+    /// Reads an item (document) from a container.
+    ///
+    /// Use `with_partition_key()` to set the partition key.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, ContainerReference, CosmosOperation, CosmosResourceReference, PartitionKey,
+    /// };
+    /// use url::Url;
+    ///
+    /// let account = AccountReference::with_master_key(
+    ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
+    ///     "my-key",
+    /// );
+    ///
+    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
+    /// let item_ref = CosmosResourceReference::document_by_name(container, "doc1");
+    /// let operation = CosmosOperation::read_item(item_ref)
+    ///     .with_partition_key(PartitionKey::from("pk-value"));
+    /// ```
+    pub fn read_item(item_reference: impl Into<CosmosResourceReference>) -> Self {
+        Self::new(OperationType::Read, item_reference)
+    }
+
+    /// Deletes an item (document) from a container.
+    ///
+    /// Use `with_partition_key()` to set the partition key.
+    pub fn delete_item(item_reference: impl Into<CosmosResourceReference>) -> Self {
+        Self::new(OperationType::Delete, item_reference)
+    }
+
+    /// Reads (lists) all items in a container.
+    ///
+    /// Returns a feed of document resources.
+    pub fn read_all_items(container: ContainerReference) -> Self {
+        let resource_ref = CosmosResourceReference::documents_collection(container);
+        Self::new(OperationType::ReadFeed, resource_ref)
+    }
+
+    /// Queries items in a container.
+    ///
+    /// Use `with_partition_key()` to scope the query to a partition and
+    /// `with_body()` to provide the query JSON.
+    pub fn query_items(container: ContainerReference) -> Self {
+        let resource_ref = CosmosResourceReference::documents_collection(container);
+        Self::new(OperationType::Query, resource_ref)
     }
 
     /// Returns true if this is a read-only operation.

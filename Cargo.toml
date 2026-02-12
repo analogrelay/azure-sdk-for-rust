@@ -159,7 +159,10 @@ large_futures = "deny"
 uninlined_format_args = "allow"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(docsrs)',
+  'cfg(test_category, values("emulator"))',
+] }
 
 [workspace.lints.rustdoc]
 bare_urls = "allow"

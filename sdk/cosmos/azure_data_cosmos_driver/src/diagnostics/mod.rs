@@ -27,5 +27,7 @@ mod serialization;
 pub use diagnostics_context::DiagnosticsContext;
 pub(crate) use diagnostics_context::DiagnosticsContextBuilder;
 pub use execution_context::ExecutionContext;
-pub use request_diagnostics::{RequestDiagnostics, RequestHandle, RequestSentStatus};
+pub use request_diagnostics::{
+    PipelineType, RequestDiagnostics, RequestHandle, RequestSentStatus, TransportSecurity,
+};
 pub use request_event::{RequestEvent, RequestEventType};
