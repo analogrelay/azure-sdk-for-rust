@@ -152,6 +152,21 @@ cargo clippy --fix -p <crate-name>
 cargo fmt -p <crate-name>
 ```
 
+### Spell Checking
+
+Run cspell to check for spelling errors in changed files (requires Node.js):
+
+```bash
+# Check spelling in files changed compared to upstream/main
+pwsh eng/common/scripts/check-spelling-in-changed-files.ps1 -TargetCommittish "upstream/main"
+```
+
+To fix spelling errors, either correct typos in source code or add legitimate terms to dictionary files:
+
+- **Crate names**: `eng/dict/crates.txt`
+- **Service-specific terms**: `sdk/<service>/.dict.txt` (e.g., `sdk/cosmos/.dict.txt`)
+- **Global dictionary**: `.vscode/cspell.json`
+
 ### Code Generation
 
 For crates with TypeSpec specifications:
