@@ -157,10 +157,7 @@ pub async fn diagnostics_contain_expected_fields() -> Result<(), Box<dyn Error>>
 
         // Verify activity ID is a valid UUID format
         let activity_id = diagnostics.activity_id().as_str();
-        assert!(
-            !activity_id.is_empty(),
-            "Activity ID should not be empty"
-        );
+        assert!(!activity_id.is_empty(), "Activity ID should not be empty");
 
         // Verify duration is captured
         let duration = diagnostics.duration();
@@ -171,15 +168,16 @@ pub async fn diagnostics_contain_expected_fields() -> Result<(), Box<dyn Error>>
 
         // Verify request details
         let requests = diagnostics.requests();
-        assert_eq!(requests.len(), 1, "Should have exactly one request for simple create");
+        assert_eq!(
+            requests.len(),
+            1,
+            "Should have exactly one request for simple create"
+        );
 
         let request = &requests[0];
 
         // Verify endpoint is captured
-        assert!(
-            !request.endpoint.is_empty(),
-            "Endpoint should be captured"
-        );
+        assert!(!request.endpoint.is_empty(), "Endpoint should be captured");
 
         // For emulator, verify transport security
         if request.endpoint.contains("localhost") || request.endpoint.contains("127.0.0.1") {

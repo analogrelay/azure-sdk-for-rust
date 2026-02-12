@@ -7,7 +7,8 @@ use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
 use std::borrow::Cow;
 
 /// Header name for partition key.
-pub(crate) const PARTITION_KEY: HeaderName = HeaderName::from_static("x-ms-documentdb-partitionkey");
+pub(crate) const PARTITION_KEY: HeaderName =
+    HeaderName::from_static("x-ms-documentdb-partitionkey");
 
 /// Header name to enable cross-partition queries.
 pub(crate) const QUERY_ENABLE_CROSS_PARTITION: HeaderName =

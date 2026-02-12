@@ -94,8 +94,13 @@ impl DiagnosticsContextBuilder {
         region: Region,
         endpoint: String,
     ) -> RequestHandle {
-        let request =
-            RequestDiagnostics::new(execution_context, pipeline_type, transport_security, region, endpoint);
+        let request = RequestDiagnostics::new(
+            execution_context,
+            pipeline_type,
+            transport_security,
+            region,
+            endpoint,
+        );
         let handle = RequestHandle(self.requests.len());
         self.requests.push(request);
         handle

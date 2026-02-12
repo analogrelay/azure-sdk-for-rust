@@ -294,10 +294,7 @@ impl DriverTestRunContext {
     ) {
         // Check status code
         let status = diagnostics.status_code();
-        assert!(
-            status.is_some(),
-            "Diagnostics should have a status code"
-        );
+        assert!(status.is_some(), "Diagnostics should have a status code");
         assert_eq!(
             u16::from(status.unwrap()),
             expected_status,
@@ -318,10 +315,7 @@ impl DriverTestRunContext {
 
         // Check requests
         let requests = diagnostics.requests();
-        assert!(
-            !requests.is_empty(),
-            "Should have at least one request"
-        );
+        assert!(!requests.is_empty(), "Should have at least one request");
 
         // Check first request has correct pipeline type
         let first_request = &requests[0];
@@ -355,10 +349,7 @@ impl DriverTestRunContext {
     ) {
         // Check status code
         let status = diagnostics.status_code();
-        assert!(
-            status.is_some(),
-            "Diagnostics should have a status code"
-        );
+        assert!(status.is_some(), "Diagnostics should have a status code");
         assert_eq!(
             u16::from(status.unwrap()),
             expected_status,
@@ -367,10 +358,7 @@ impl DriverTestRunContext {
 
         // Check requests
         let requests = diagnostics.requests();
-        assert!(
-            !requests.is_empty(),
-            "Should have at least one request"
-        );
+        assert!(!requests.is_empty(), "Should have at least one request");
 
         // Check first request has correct pipeline type
         let first_request = &requests[0];
