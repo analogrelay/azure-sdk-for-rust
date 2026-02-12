@@ -21,7 +21,7 @@ pub const TEST_MODE_ENV_VAR: &str = "AZURE_COSMOS_TEST_MODE";
 ///
 /// This uses the default localhost endpoint and the well-known development key
 /// that is used by all Cosmos DB emulator installations.
-pub const EMULATOR_CONNECTION_STRING: &str = "AccountEndpoint=https://localhost:8081;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;";
+pub const EMULATOR_CONNECTION_STRING: &str = "AccountEndpoint=https://localhost:8888;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==;";
 
 /// Test mode for Cosmos DB tests.
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Default)]

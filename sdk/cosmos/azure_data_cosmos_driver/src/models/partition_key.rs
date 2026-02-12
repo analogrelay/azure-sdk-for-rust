@@ -3,7 +3,15 @@
 
 //! Partition key types for Cosmos DB operations.
 
+use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
 use std::borrow::Cow;
+
+/// Header name for partition key.
+pub(crate) const PARTITION_KEY: HeaderName = HeaderName::from_static("x-ms-documentdb-partitionkey");
+
+/// Header name to enable cross-partition queries.
+pub(crate) const QUERY_ENABLE_CROSS_PARTITION: HeaderName =
+    HeaderName::from_static("x-ms-documentdb-query-enablecrosspartition");
 
 /// Represents a value for a single partition key.
 ///
@@ -156,6 +164,80 @@ impl PartitionKey {
     /// Returns the partition key values as a slice.
     pub fn values(&self) -> &[PartitionKeyValue] {
         &self.0
+    }
+}
+
+impl AsHeaders for PartitionKey {
+    type Error = azure_core::Error;
+    type Iter = std::iter::Once<(HeaderName, HeaderValue)>;
+
+    fn as_headers(&self) -> Result<Self::Iter, Self::Error> {
+        // We have to do some manual JSON serialization here.
+        // The partition key is sent in an HTTP header, when used to set the partition key for a query.
+        // It's not safe to use non-ASCII characters in HTTP headers, and serde_json will not escape non-ASCII characters if they are otherwise valid as UTF-8.
+        // So, we do some conversion by hand, with the help of Rust's own `encode_utf16` method which gives us the necessary code points for non-ASCII values, and produces surrogate pairs as needed.
+
+        // Quick shortcut for empty partition keys list, which also prevents a bug when we pop the trailing comma for an empty list.
+        if self.0.is_empty() {
+            // An empty partition key means a cross partition query
+            return Ok(std::iter::once((
+                QUERY_ENABLE_CROSS_PARTITION,
+                HeaderValue::from_static("True"),
+            )));
+        }
+
+        let mut json = String::new();
+        let mut utf_buf = [0; 2]; // A buffer for encoding UTF-16 characters.
+        json.push('[');
+        for key in &self.0 {
+            match &key.0 {
+                InnerPartitionKeyValue::Null => json.push_str("null"),
+                InnerPartitionKeyValue::String(ref string_key) => {
+                    json.push('"');
+                    for char in string_key.chars() {
+                        match char {
+                            '\x08' => json.push_str(r#"\b"#),
+                            '\x0c' => json.push_str(r#"\f"#),
+                            '\n' => json.push_str(r#"\n"#),
+                            '\r' => json.push_str(r#"\r"#),
+                            '\t' => json.push_str(r#"\t"#),
+                            '"' => json.push_str(r#"\""#),
+                            '\\' => json.push('\\'),
+                            c if c.is_ascii() => json.push(c),
+                            c => {
+                                let encoded = c.encode_utf16(&mut utf_buf);
+                                for code_unit in encoded {
+                                    json.push_str(&format!(r#"\u{:04x}"#, code_unit));
+                                }
+                            }
+                        }
+                    }
+                    json.push('"');
+                }
+                InnerPartitionKeyValue::Number(num) => {
+                    // Format number - integers without decimal, floats with decimal
+                    if num.fract() == 0.0 && num.abs() < (i64::MAX as f64) {
+                        json.push_str(&format!("{}", *num as i64));
+                    } else {
+                        json.push_str(&format!("{}", num));
+                    }
+                }
+                InnerPartitionKeyValue::Bool(b) => {
+                    json.push_str(if *b { "true" } else { "false" });
+                }
+            }
+
+            json.push(',');
+        }
+
+        // Pop the trailing ','
+        json.pop();
+        json.push(']');
+
+        Ok(std::iter::once((
+            PARTITION_KEY,
+            HeaderValue::from_cow(json),
+        )))
     }
 }
 

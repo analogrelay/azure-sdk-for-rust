@@ -519,12 +519,86 @@ impl CosmosResourceReference {
     /// The resource link is an unencoded path used for generating the
     /// authorization signature. Prefers name-based paths over RID-based.
     ///
+    /// **Important**: For feed operations (create, list, query) where no specific
+    /// item is targeted, this returns the **parent's** path, not the collection path.
+    /// This matches the Cosmos DB signature algorithm requirements.
+    ///
+    /// Examples:
+    /// - Creating a database: signing link = "" (empty, account has no parent)
+    /// - Creating a container in "mydb": signing link = "dbs/mydb"
+    /// - Creating a document: signing link = "dbs/mydb/colls/mycoll"
+    /// - Reading a specific database "mydb": signing link = "dbs/mydb"
+    /// - Reading a specific document: signing link = "dbs/mydb/colls/mycoll/docs/mydoc"
+    ///
     /// This method always returns a valid path because `CosmosResourceReference`
     /// validates that the required identifiers are present at construction time.
     pub fn link_for_signing(&self) -> String {
-        self.name_based_path()
-            .or_else(|| self.rid_based_path())
-            .expect("CosmosResourceReference is guaranteed to have a valid path")
+        // Check if this is a feed operation (no specific item targeted)
+        let is_feed = self.is_feed_reference();
+
+        if is_feed {
+            // For feed operations, return parent's path
+            self.parent_signing_link()
+        } else {
+            // For item operations, return the full path
+            self.name_based_path()
+                .or_else(|| self.rid_based_path())
+                .expect("CosmosResourceReference is guaranteed to have a valid path")
+        }
+    }
+
+    /// Returns true if this reference targets a feed (collection) rather than a specific item.
+    fn is_feed_reference(&self) -> bool {
+        match self.resource_type {
+            ResourceType::DatabaseAccount => false,
+            ResourceType::Database => self.database.is_none(),
+            ResourceType::DocumentCollection => self.container.is_none(),
+            ResourceType::Document => self.name.is_none() && self.rid.is_none(),
+            ResourceType::StoredProcedure
+            | ResourceType::Trigger
+            | ResourceType::UserDefinedFunction
+            | ResourceType::PartitionKeyRange => self.name.is_none() && self.rid.is_none(),
+            ResourceType::Offer => self.rid.is_none(),
+        }
+    }
+
+    /// Returns the parent's path for signing feed operations.
+    fn parent_signing_link(&self) -> String {
+        match self.resource_type {
+            ResourceType::DatabaseAccount => String::new(),
+            ResourceType::Database => {
+                // Parent is account, which has no path
+                String::new()
+            }
+            ResourceType::DocumentCollection => {
+                // Parent is database
+                self.database
+                    .as_ref()
+                    .and_then(|db| db.name_based_path().or_else(|| db.rid_based_path()))
+                    .map(|p| p.trim_start_matches('/').to_string())
+                    .unwrap_or_default()
+            }
+            ResourceType::Document => {
+                // Parent is container
+                self.container
+                    .as_ref()
+                    .and_then(|c| c.name_based_path().or_else(|| c.rid_based_path()))
+                    .map(|p| p.trim_start_matches('/').to_string())
+                    .unwrap_or_default()
+            }
+            ResourceType::StoredProcedure
+            | ResourceType::Trigger
+            | ResourceType::UserDefinedFunction
+            | ResourceType::PartitionKeyRange => {
+                // Parent is container
+                self.container
+                    .as_ref()
+                    .and_then(|c| c.name_based_path().or_else(|| c.rid_based_path()))
+                    .map(|p| p.trim_start_matches('/').to_string())
+                    .unwrap_or_default()
+            }
+            ResourceType::Offer => String::new(),
+        }
     }
 
     /// Returns the URL path for this resource.

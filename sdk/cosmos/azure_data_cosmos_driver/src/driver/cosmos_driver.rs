@@ -219,6 +219,14 @@ impl CosmosDriver {
             request.insert_header(name.clone(), value.clone());
         }
 
+        // Step 9b: Add partition key header if set
+        if let Some(pk) = operation.partition_key() {
+            use azure_core::http::headers::AsHeaders;
+            for (name, value) in pk.as_headers()? {
+                request.insert_header(name, value);
+            }
+        }
+
         // Step 10: Create authorization context
         // Strip leading slash from resource link for signing
         let signing_link = resource_link.trim_start_matches('/');

@@ -10,18 +10,14 @@ use azure_data_cosmos_driver::{
         AccountReference, ConnectionString, ContainerReference, CosmosOperation,
         CosmosResourceReference, CosmosResult, DatabaseReference, PartitionKey,
     },
-    options::{OperationOptions, RuntimeOptions},
+    options::{ConnectionPoolOptions, OperationOptions},
 };
-use std::{
-    error::Error,
-    future::Future,
-    sync::{Arc, OnceLock},
-};
+use std::{error::Error, future::Future, sync::Arc};
 use uuid::Uuid;
 
 use super::env::{
     get_test_mode, is_azure_pipelines, CosmosTestMode, CONNECTION_STRING_ENV_VAR,
-    DATABASE_NAME_ENV_VAR, EMULATOR_CONNECTION_STRING,
+    EMULATOR_CONNECTION_STRING,
 };
 
 /// A test client that provides access to a Cosmos DB driver for testing.
@@ -63,15 +59,16 @@ impl DriverTestClient {
 
         let conn_str: ConnectionString = connection_string.parse()?;
         let endpoint = conn_str.account_endpoint().parse()?;
-        let account = AccountReference::with_master_key(endpoint, conn_str.account_key().secret());
+        let key = conn_str.account_key().secret().to_string();
+        let account = AccountReference::with_master_key(endpoint, key);
 
         // Build runtime with emulator certificate handling
-        let runtime_options = RuntimeOptions::builder()
-            .allow_invalid_certificates(true)
-            .build();
+        let connection_pool = ConnectionPoolOptions::builder()
+            .dangerous_emulator_server_cert_validation_disabled(true)
+            .build()?;
 
         let runtime = CosmosDriverRuntime::builder()
-            .with_runtime_options(runtime_options)
+            .connection_pool(connection_pool)
             .build()
             .await?;
 
@@ -144,7 +141,8 @@ impl DriverTestRunContext {
 
     /// Generates a unique container name for this test run.
     pub fn unique_container_name(&self) -> String {
-        format!("test-container-{}", Uuid::new_v4().to_string()[..8])
+        let uuid_str = Uuid::new_v4().to_string();
+        format!("test-container-{}", &uuid_str[..8])
     }
 
     /// Creates a database using the driver.
@@ -174,7 +172,7 @@ impl DriverTestRunContext {
 
         Ok(DatabaseReference::from_name(
             self.client.account.clone(),
-            db_name,
+            db_name.to_string(),
         ))
     }
 
@@ -234,7 +232,10 @@ impl DriverTestRunContext {
             return Err(format!("Failed to create container, status: {:?}", status).into());
         }
 
-        Ok(ContainerReference::from_database(database, container_name))
+        Ok(ContainerReference::from_database(
+            database,
+            container_name.to_string(),
+        ))
     }
 
     /// Creates an item using the driver.
@@ -274,9 +275,9 @@ impl DriverTestRunContext {
             .get_or_create_driver(self.client.account.clone(), None)
             .await?;
 
-        let item_ref = CosmosResourceReference::document_by_name(container.clone(), item_id);
-        let operation =
-            CosmosOperation::read_item(item_ref).with_partition_key(partition_key);
+        let item_ref =
+            CosmosResourceReference::document_by_name(container.clone(), item_id.to_string());
+        let operation = CosmosOperation::read_item(item_ref).with_partition_key(partition_key);
 
         let result = driver
             .execute_operation(operation, OperationOptions::new())
