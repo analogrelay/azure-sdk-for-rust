@@ -12,6 +12,7 @@
 mod account_reference;
 mod activity_id;
 mod connection_string;
+mod container_properties;
 mod cosmos_operation;
 mod cosmos_resource_reference;
 mod cosmos_result;
@@ -29,6 +30,11 @@ mod user_agent;
 pub use account_reference::{AccountReference, AccountReferenceBuilder, AuthOptions};
 pub use activity_id::ActivityId;
 pub use connection_string::ConnectionString;
+pub use container_properties::{
+    ChangeFeedPolicy, ComputedProperty, ConflictResolutionMode, ConflictResolutionPolicy,
+    FullTextPath, FullTextPolicy, TimeToLive, UniqueKey, UniqueKeyPolicy, VectorDataType,
+    VectorDistanceFunction, VectorEmbedding, VectorEmbeddingPolicy,
+};
 pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;
 pub use cosmos_result::{CosmosHeaders, CosmosResult};
@@ -114,6 +120,38 @@ pub struct ContainerProperties {
     /// Optional indexing policy controlling how items are indexed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indexing_policy: Option<IndexingPolicy>,
+
+    /// Unique key policy for enforcing uniqueness constraints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unique_key_policy: Option<UniqueKeyPolicy>,
+
+    /// Conflict resolution policy for multi-region writes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_resolution_policy: Option<ConflictResolutionPolicy>,
+
+    /// Default time-to-live for items in this container.
+    #[serde(rename = "defaultTtl", skip_serializing_if = "Option::is_none")]
+    pub default_time_to_live: Option<TimeToLive>,
+
+    /// Analytical store TTL in seconds (`-1` for no TTL, `None` for disabled).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analytical_storage_ttl: Option<i32>,
+
+    /// Computed properties derived from item data via SQL expressions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub computed_properties: Option<Vec<ComputedProperty>>,
+
+    /// Change feed policy controlling change tracking behavior.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_feed_policy: Option<ChangeFeedPolicy>,
+
+    /// Vector embedding policy for vector search.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_embedding_policy: Option<VectorEmbeddingPolicy>,
+
+    /// Full-text search policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_text_policy: Option<FullTextPolicy>,
 
     /// System-managed properties (e.g., _rid, _ts, _etag).
     #[serde(flatten)]

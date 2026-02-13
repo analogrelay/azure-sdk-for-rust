@@ -77,9 +77,7 @@ impl Default for ContainerCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{
-        AccountReference, ContainerReference, PartitionKeyDefinition, SystemProperties,
-    };
+    use crate::models::{AccountReference, ContainerReference, PartitionKeyDefinition};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use url::Url;
 
@@ -101,8 +99,7 @@ mod tests {
                 paths: vec!["/pk".into()],
                 ..Default::default()
             },
-            indexing_policy: None,
-            system_properties: SystemProperties::default(),
+            ..Default::default()
         }
     }
 
