@@ -74,79 +74,79 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct CosmosDriverRuntime {
     /// Core HTTP client options from azure_core.
-    pub(crate) client_options: ClientOptions,
+    pub(super) client_options: ClientOptions,
 
     /// Connection pool configuration for managing TCP connections.
-    pub(crate) connection_pool: ConnectionPoolOptions,
+    pub(super) connection_pool: ConnectionPoolOptions,
 
     /// HTTP transport manager with connection pools.
     ///
     /// Manages separate pools for metadata and data plane operations,
     /// with lazy initialization of emulator-specific pools.
-    pub(crate) transport: Arc<CosmosTransport>,
+    pub(super) transport: Arc<CosmosTransport>,
 
     /// Diagnostics configuration for output verbosity and size limits.
-    pub(crate) diagnostics_options: Arc<DiagnosticsOptions>,
+    pub(super) diagnostics_options: Arc<DiagnosticsOptions>,
 
     /// Thread-safe runtime options for operation options.
-    pub(crate) runtime_options: SharedRuntimeOptions,
+    pub(super) runtime_options: SharedRuntimeOptions,
 
     /// Computed user agent string for HTTP requests.
     ///
     /// This is automatically computed from the SDK version, platform info,
     /// and optional suffix (from user_agent_suffix, workload_id, or correlation_id).
-    pub(crate) user_agent: UserAgent,
+    pub(super) user_agent: UserAgent,
 
     /// Workload identifier for resource governance (1-50 if set).
-    pub(crate) workload_id: Option<WorkloadId>,
+    pub(super) workload_id: Option<WorkloadId>,
 
     /// Correlation ID for client-side metrics.
     ///
     /// Used as a dimension for client-side metrics. If cardinality is too high,
     /// this may be ignored by metrics aggregation.
-    pub(crate) correlation_id: Option<CorrelationId>,
+    pub(super) correlation_id: Option<CorrelationId>,
 
     /// User agent suffix appended to identify request source.
     ///
     /// If `correlation_id` is not set, this suffix is used as the correlation
     /// dimension for client-side metrics. Server-side cardinality enforcement
     /// is more strict for this field.
-    pub(crate) user_agent_suffix: Option<UserAgentSuffix>,
+    pub(super) user_agent_suffix: Option<UserAgentSuffix>,
 
     /// Process-wide CPU and memory monitor singleton.
     ///
     /// Provides access to historical CPU/memory snapshots for client telemetry.
     /// The monitor runs in a background thread and samples every 5 seconds.
-    pub(crate) cpu_memory_monitor: CpuMemoryMonitor,
+    pub(super) cpu_memory_monitor: CpuMemoryMonitor,
 
     /// Process-wide Azure VM metadata service singleton.
     ///
     /// Provides access to VM metadata from the Instance Metadata Service (IMDS).
     /// Metadata is fetched once on first access and cached for the process lifetime.
-    pub(crate) vm_metadata_service: VmMetadataService,
+    pub(super) vm_metadata_service: VmMetadataService,
 
     /// Registry of throughput control groups.
     ///
     /// Groups are registered during builder construction and are immutable after
     /// runtime creation (except for mutable target values within each group).
-    pub(crate) throughput_control_groups: ThroughputControlGroupRegistry,
+    pub(super) throughput_control_groups: ThroughputControlGroupRegistry,
 
     /// Registry of driver instances keyed by account endpoint.
     ///
     /// Ensures singleton driver per account reference.
-    pub(crate) driver_registry: Arc<RwLock<HashMap<String, Arc<CosmosDriver>>>>,
+    pub(super) driver_registry: Arc<RwLock<HashMap<String, Arc<CosmosDriver>>>>,
 
     /// Cache for account metadata (regions, capabilities).
     ///
     /// Entries are populated on first access to an account and used for routing.
     /// Wrapped in `Arc` for cheap cloning.
-    pub(crate) account_metadata_cache: Arc<AccountMetadataCache>,
+    pub(super) account_metadata_cache: Arc<AccountMetadataCache>,
 
     /// Cache for container metadata (partition key definition, indexing policy).
     ///
     /// Entries are populated on first access to a container and used for
     /// partition key extraction and routing. Wrapped in `Arc` for cheap cloning.
-    pub(crate) container_cache: Arc<ContainerCache>,
+    pub(super) container_cache: Arc<ContainerCache>,
 }
 
 impl CosmosDriverRuntime {
@@ -169,7 +169,7 @@ impl CosmosDriverRuntime {
     ///
     /// The transport provides access to connection pools configured for
     /// metadata and data plane operations, with automatic emulator detection.
-    pub(crate) fn transport(&self) -> &Arc<CosmosTransport> {
+    pub(super) fn transport(&self) -> &Arc<CosmosTransport> {
         &self.transport
     }
 
@@ -324,8 +324,9 @@ impl CosmosDriverRuntime {
     /// Returns cached container properties if available.
     ///
     /// Returns `None` if the container hasn't been cached yet.
-    /// Use [`get_or_fetch_container_properties`] to fetch and cache if needed.
-    pub(crate) async fn get_cached_container_properties(
+    /// Use [`get_or_fetch_container_properties`](Self::get_or_fetch_container_properties) to fetch and cache if needed.
+    #[allow(dead_code)]
+    async fn get_cached_container_properties(
         &self,
         container: &ContainerReference,
     ) -> Option<Arc<ContainerProperties>> {
@@ -336,7 +337,8 @@ impl CosmosDriverRuntime {
     ///
     /// The `fetch_fn` is only called if the container is not in the cache.
     /// Concurrent requests for the same container share the same fetch operation.
-    pub(crate) async fn get_or_fetch_container_properties<F, Fut>(
+    #[allow(dead_code)]
+    async fn get_or_fetch_container_properties<F, Fut>(
         &self,
         container: ContainerReference,
         fetch_fn: F,
@@ -352,7 +354,8 @@ impl CosmosDriverRuntime {
     ///
     /// Call this when container properties may have changed (e.g., after
     /// updating indexing policy).
-    pub(crate) async fn invalidate_container_cache(&self, container: &ContainerReference) {
+    #[allow(dead_code)]
+    async fn invalidate_container_cache(&self, container: &ContainerReference) {
         self.container_cache.invalidate(container).await;
     }
 
@@ -360,7 +363,8 @@ impl CosmosDriverRuntime {
     ///
     /// Call this when account configuration may have changed (e.g., after
     /// adding/removing regions).
-    pub(crate) async fn invalidate_account_cache(&self, endpoint: &AccountEndpoint) {
+    #[allow(dead_code)]
+    async fn invalidate_account_cache(&self, endpoint: &AccountEndpoint) {
         self.account_metadata_cache.invalidate(endpoint).await;
     }
 
@@ -368,7 +372,8 @@ impl CosmosDriverRuntime {
     ///
     /// This is primarily useful for testing or when the connection needs
     /// to be fully refreshed.
-    pub(crate) async fn clear_all_caches(&self) {
+    #[allow(dead_code)]
+    async fn clear_all_caches(&self) {
         self.account_metadata_cache.clear().await;
         self.container_cache.clear().await;
     }

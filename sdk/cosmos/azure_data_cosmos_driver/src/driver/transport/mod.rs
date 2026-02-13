@@ -98,10 +98,12 @@ pub(crate) struct CosmosTransport {
     dataplane_transport: Transport,
 
     /// Lazily-initialized transport for emulator metadata operations.
-    emulator_metadata_transport: OnceLock<Transport>,
+    /// Uses insecure TLS that accepts invalid/self-signed certificates.
+    insecure_emulator_metadata_transport: OnceLock<Transport>,
 
     /// Lazily-initialized transport for emulator data plane operations.
-    emulator_dataplane_transport: OnceLock<Transport>,
+    /// Uses insecure TLS that accepts invalid/self-signed certificates.
+    insecure_emulator_dataplane_transport: OnceLock<Transport>,
 }
 
 impl CosmosTransport {
@@ -128,8 +130,8 @@ impl CosmosTransport {
             headers_policy,
             metadata_transport,
             dataplane_transport,
-            emulator_metadata_transport: OnceLock::new(),
-            emulator_dataplane_transport: OnceLock::new(),
+            insecure_emulator_metadata_transport: OnceLock::new(),
+            insecure_emulator_dataplane_transport: OnceLock::new(),
         })
     }
 
@@ -165,8 +167,8 @@ impl CosmosTransport {
 
     /// Gets the transport for metadata operations.
     fn get_metadata_transport(&self, endpoint: &AccountEndpoint) -> Transport {
-        if self.should_use_emulator_transport(endpoint) {
-            self.emulator_metadata_transport
+        if self.should_use_insecure_emulator_transport(endpoint) {
+            self.insecure_emulator_metadata_transport
                 .get_or_init(|| {
                     let client = Self::create_reqwest_client(&self.connection_pool, true, true)
                         .expect("failed to create emulator metadata client");
@@ -180,8 +182,8 @@ impl CosmosTransport {
 
     /// Gets the transport for data plane operations.
     fn get_dataplane_transport(&self, endpoint: &AccountEndpoint) -> Transport {
-        if self.should_use_emulator_transport(endpoint) {
-            self.emulator_dataplane_transport
+        if self.should_use_insecure_emulator_transport(endpoint) {
+            self.insecure_emulator_dataplane_transport
                 .get_or_init(|| {
                     let client = Self::create_reqwest_client(&self.connection_pool, false, true)
                         .expect("failed to create emulator dataplane client");
@@ -214,8 +216,12 @@ impl CosmosTransport {
         &self.connection_pool
     }
 
-    /// Determines if emulator transport should be used for the given endpoint.
-    fn should_use_emulator_transport(&self, endpoint: &AccountEndpoint) -> bool {
+    /// Determines if insecure emulator transport should be used for the given endpoint.
+    ///
+    /// Returns `true` when both conditions are met:
+    /// - Emulator server certificate validation is disabled
+    /// - The endpoint is a known emulator host (localhost, 127.0.0.1)
+    fn should_use_insecure_emulator_transport(&self, endpoint: &AccountEndpoint) -> bool {
         self.connection_pool
             .is_emulator_server_cert_validation_disabled()
             && is_emulator_host(endpoint)
@@ -302,7 +308,7 @@ mod tests {
         // Should not be using emulator transport for regular endpoints
         let endpoint =
             AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
-        assert!(!transport.should_use_emulator_transport(&endpoint));
+        assert!(!transport.should_use_insecure_emulator_transport(&endpoint));
     }
 
     #[test]
@@ -315,16 +321,16 @@ mod tests {
 
         // localhost is an emulator host
         let endpoint = AccountEndpoint::try_from("https://localhost:8081/").unwrap();
-        assert!(transport.should_use_emulator_transport(&endpoint));
+        assert!(transport.should_use_insecure_emulator_transport(&endpoint));
 
         // 127.0.0.1 is an emulator host
         let endpoint = AccountEndpoint::try_from("https://127.0.0.1:8081/").unwrap();
-        assert!(transport.should_use_emulator_transport(&endpoint));
+        assert!(transport.should_use_insecure_emulator_transport(&endpoint));
 
         // Production endpoint is not an emulator host
         let endpoint =
             AccountEndpoint::try_from("https://myaccount.documents.azure.com:443/").unwrap();
-        assert!(!transport.should_use_emulator_transport(&endpoint));
+        assert!(!transport.should_use_insecure_emulator_transport(&endpoint));
     }
 
     #[test]
@@ -334,7 +340,7 @@ mod tests {
 
         // Even localhost should not use emulator transport if validation is enabled
         let endpoint = AccountEndpoint::try_from("https://localhost:8081/").unwrap();
-        assert!(!transport.should_use_emulator_transport(&endpoint));
+        assert!(!transport.should_use_insecure_emulator_transport(&endpoint));
     }
 
     #[test]

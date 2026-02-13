@@ -595,7 +595,7 @@ impl CosmosDriver {
     ///
     /// - `effective_options`: The merged runtime options (use `effective_runtime_options()`)
     /// - `container`: The container reference for the operation
-    pub(crate) fn effective_throughput_control_group(
+    fn effective_throughput_control_group(
         &self,
         effective_options: &RuntimeOptions,
         container: &ContainerReference,
