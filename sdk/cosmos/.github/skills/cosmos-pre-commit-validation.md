@@ -1,7 +1,7 @@
 ---
 name: cosmos-pre-commit-validation
 description: >
-  Run pre-commit checks for specific set of crates. Use this when validating changes under sdk/cosmos before committing or during code review.
+  Run pre-commit checks for a specific set of crates. Use this when validating changes under sdk/cosmos before committing or during code review.
 disable-model-invocation: true
 arguments:
   scope:
@@ -9,7 +9,7 @@ arguments:
     required: false
     default: all
     description: >
-      Crate to run Cosmos SDK pre-commit checks against. `All` means all crates under sdk/cosmos.
+      Crate to run Cosmos SDK pre-commit checks against. `all` means all crates under sdk/cosmos.
   changed-only:
     type: boolean
     required: false
@@ -21,13 +21,11 @@ arguments:
     required: false
     default: true
     description: >
-      If true, auto-fix any error found.
+      If true, auto-fix any errors found.
 argument-hints:
   scope:
     - azure_data_cosmos
-    - azure_data_cosmos_driver
     - azure_data_cosmos_native
-    - sdk/cosmos/tests
 
   changed-only:
     - true
@@ -52,18 +50,20 @@ Use this skill when:
 Follow these steps strictly:
 
 1. Determine the target path:
-   - If the `scope` argument is defined is specified and not equal to `all` (case-insensitive) or `*` use `sdk/cosmos/` plus the `scope` argument as target path (so, if `scope` arguemnt is `helloworld` use `sdk/cosmos/helloworld` as target path)
-   - Otherwise default to `sdk/cosmos`
+   - If the `scope` argument is specified and is not equal (case-insensitive) to `all` or `*`, set the target path to `sdk/cosmos/<scope>` (for example, if `scope` is `azure_data_cosmos`, use `sdk/cosmos/azure_data_cosmos` as the target path).
+   - Otherwise, set the target path to `sdk/cosmos`.
 
 2. Determine file scope:
-   - If `changed-only` is true, restrict checks to `git diff --name-only`
-   - Otherwise, scan the entire path
+   - Always include `sdk/cosmos/tests` in the validation scope (if it exists)
+   - If `changed-only` is true, restrict checks to files under the target path and `sdk/cosmos/tests` (for example, using `git diff --name-only -- <target path> sdk/cosmos/tests` or by filtering `git diff --name-only` results to those paths)
+   - Otherwise, scan the entire target path and `sdk/cosmos/tests`
 
-3. Validate using Key Workflows in AGENTS.md
+3. Validate using the Pre-Completion Validation Checklist in `sdk/cosmos/AGENTS.md`:
    - Formatting checks
-   - Linting
-   - Unit tests relevant to the touched modules
-   - Emulator tests relevant to touched crates
+   - Build succeeds for affected crates
+   - Clippy lints pass for affected crates
+   - Documentation builds successfully where applicable
+   - Unit and emulator tests relevant to the touched modules and crates
 
 4. Report results:
    - Summarize failures concisely
