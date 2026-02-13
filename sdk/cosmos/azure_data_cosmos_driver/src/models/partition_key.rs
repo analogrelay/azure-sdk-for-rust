@@ -4,7 +4,10 @@
 //! Partition key types for Cosmos DB operations.
 
 use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    hash::{Hash, Hasher},
+};
 
 /// Header name for partition key.
 pub(crate) const PARTITION_KEY: HeaderName =
@@ -14,20 +17,77 @@ pub(crate) const PARTITION_KEY: HeaderName =
 pub(crate) const QUERY_ENABLE_CROSS_PARTITION: HeaderName =
     HeaderName::from_static("x-ms-documentdb-query-enablecrosspartition");
 
+// =============================================================================
+// FiniteF64
+// =============================================================================
+
+/// A finite f64 value that can be used in hashed collections.
+///
+/// Guarantees:
+/// - No NaN values (construction panics for NaN)
+/// - -0.0 and +0.0 are normalized to +0.0 for consistent hashing
+///
+/// This allows `PartitionKey` to implement `Hash` and `Eq`, which is required
+/// for `ItemReference` to be usable in hashed collections.
+#[derive(Clone, Copy, Debug)]
+struct FiniteF64(f64);
+
+impl FiniteF64 {
+    /// Creates a new FiniteF64 from a value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is NaN.
+    fn new(value: f64) -> Self {
+        assert!(
+            !value.is_nan(),
+            "NaN is not allowed in partition key values"
+        );
+        // Normalize -0.0 to +0.0 for consistent hashing
+        let normalized = if value == 0.0 { 0.0 } else { value };
+        Self(normalized)
+    }
+
+    /// Returns the underlying f64 value.
+    fn value(&self) -> f64 {
+        self.0
+    }
+}
+
+impl PartialEq for FiniteF64 {
+    fn eq(&self, other: &Self) -> bool {
+        // Safe: no NaN means reflexivity holds
+        self.0 == other.0
+    }
+}
+
+impl Eq for FiniteF64 {}
+
+impl Hash for FiniteF64 {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Safe: zeros normalized, no NaN → equal values have equal bits
+        self.0.to_bits().hash(state)
+    }
+}
+
+// =============================================================================
+// PartitionKeyValue
+// =============================================================================
+
 /// Represents a value for a single partition key.
 ///
 /// You shouldn't need to construct this type directly. The various implementations
 /// of [`Into<PartitionKey>`] will handle it for you.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PartitionKeyValue(InnerPartitionKeyValue);
 
 // We don't want to expose the implementation details of PartitionKeyValue, so we use
 // this inner private enum to store the data.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum InnerPartitionKeyValue {
     Null,
     String(Cow<'static, str>),
-    Number(f64),
+    Number(FiniteF64),
     Bool(bool),
 }
 
@@ -65,7 +125,7 @@ macro_rules! impl_from_number {
     ($source_type:ty) => {
         impl From<$source_type> for PartitionKeyValue {
             fn from(value: $source_type) -> Self {
-                InnerPartitionKeyValue::Number(value as f64).into()
+                InnerPartitionKeyValue::Number(FiniteF64::new(value as f64)).into()
             }
         }
     };
@@ -120,7 +180,7 @@ impl<T: Into<PartitionKeyValue>> From<Option<T>> for PartitionKeyValue {
 /// let pk = PartitionKey::from(("tenant-1", "user-123"));
 /// let pk3 = PartitionKey::from(("region", "tenant", 42));
 /// ```
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PartitionKey(Vec<PartitionKeyValue>);
 
 impl Default for PartitionKey {
@@ -217,10 +277,11 @@ impl AsHeaders for PartitionKey {
                 }
                 InnerPartitionKeyValue::Number(num) => {
                     // Format number - integers without decimal, floats with decimal
-                    if num.fract() == 0.0 && num.abs() < (i64::MAX as f64) {
-                        json.push_str(&format!("{}", *num as i64));
+                    let val = num.value();
+                    if val.fract() == 0.0 && val.abs() < (i64::MAX as f64) {
+                        json.push_str(&format!("{}", val as i64));
                     } else {
-                        json.push_str(&format!("{}", num));
+                        json.push_str(&format!("{}", val));
                     }
                 }
                 InnerPartitionKeyValue::Bool(b) => {

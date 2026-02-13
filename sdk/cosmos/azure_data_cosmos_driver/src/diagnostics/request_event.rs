@@ -72,7 +72,8 @@ impl RequestEventType {
     ///
     /// For retry safety:
     /// - `ResponseHeadersReceived`, `TransportComplete` = definitely sent
-    /// - `TransportFailed` = depends on error analysis (handled separately)
+    /// - `TransportFailed` = depends on error analysis (see `RequestSentExt` in
+    ///   `tracked_transport.rs` which inspects the error type)
     /// - `TransportStart` = not yet sent (in progress)
     pub fn indicates_request_sent(&self) -> bool {
         matches!(

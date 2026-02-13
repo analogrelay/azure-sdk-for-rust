@@ -7,8 +7,8 @@ use azure_data_cosmos_driver::{
     diagnostics::{DiagnosticsContext, PipelineType, TransportSecurity},
     driver::CosmosDriverRuntime,
     models::{
-        AccountReference, ConnectionString, ContainerReference, CosmosOperation,
-        CosmosResourceReference, CosmosResult, DatabaseReference, PartitionKey,
+        AccountReference, ConnectionString, ContainerReference, CosmosOperation, CosmosResult,
+        DatabaseReference, ItemReference, PartitionKey,
     },
     options::{ConnectionPoolOptions, OperationOptions},
 };
@@ -242,6 +242,7 @@ impl DriverTestRunContext {
     pub async fn create_item(
         &self,
         container: &ContainerReference,
+        item_id: &str,
         partition_key: impl Into<PartitionKey>,
         body: &[u8],
     ) -> Result<CosmosResult, Box<dyn Error>> {
@@ -251,9 +252,9 @@ impl DriverTestRunContext {
             .get_or_create_driver(self.client.account.clone(), None)
             .await?;
 
-        let operation = CosmosOperation::create_item(container.clone())
-            .with_partition_key(partition_key)
-            .with_body(body.to_vec());
+        let pk = partition_key.into();
+        let item = ItemReference::from_name(container, pk, item_id.to_owned());
+        let operation = CosmosOperation::create_item(item).with_body(body.to_vec());
 
         let result = driver
             .execute_operation(operation, OperationOptions::new())
@@ -275,9 +276,9 @@ impl DriverTestRunContext {
             .get_or_create_driver(self.client.account.clone(), None)
             .await?;
 
-        let item_ref =
-            CosmosResourceReference::document_by_name(container.clone(), item_id.to_string());
-        let operation = CosmosOperation::read_item(item_ref).with_partition_key(partition_key);
+        let pk = partition_key.into();
+        let item_ref = ItemReference::from_name(container, pk, item_id.to_owned());
+        let operation = CosmosOperation::read_item(item_ref);
 
         let result = driver
             .execute_operation(operation, OperationOptions::new())

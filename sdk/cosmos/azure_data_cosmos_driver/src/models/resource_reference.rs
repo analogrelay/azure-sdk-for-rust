@@ -9,10 +9,10 @@
 
 use crate::models::{
     resource_id::{
-        ContainerId, DatabaseId, ItemId, PartitionKeyRangeId, ResourceName, ResourceRid,
+        ContainerId, DatabaseId, ItemIdentifier, PartitionKeyRangeId, ResourceName, ResourceRid,
         StoredProcedureId, TriggerId, UdfId,
     },
-    AccountReference,
+    AccountReference, PartitionKey,
 };
 
 // =============================================================================
@@ -272,165 +272,127 @@ impl ContainerReference {
 
 /// A reference to a Cosmos DB item (document).
 ///
-/// Contains either the name (document ID) or resource identifier (RID) of the item,
-/// along with references to its parent container, database, and account.
+/// Contains the container reference, partition key, and item identifier (name or RID).
+/// The partition key is required because all item operations in Cosmos DB require it.
+///
+/// The resource link is pre-computed for efficiency.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ItemReference {
-    /// Reference to the parent account.
-    account: AccountReference,
-    /// The item identifier (includes container identifier for name-based).
-    id: ItemId,
+    /// Reference to the parent container.
+    container: ContainerReference,
+    /// The partition key for the item.
+    partition_key: PartitionKey,
+    /// The item identifier (name or RID).
+    item_identifier: ItemIdentifier,
+    /// Pre-computed resource link.
+    resource_link: String,
 }
 
 impl ItemReference {
     /// Creates a new item reference by name.
     ///
-    /// Database, container, and item are all identified by their user-provided names.
-    pub fn from_name(
-        account: AccountReference,
-        db_name: impl Into<ResourceName>,
-        container_name: impl Into<ResourceName>,
-        item_name: impl Into<ResourceName>,
-    ) -> Self {
-        Self {
-            account,
-            id: ItemId::ByName {
-                container: ContainerId::ByName {
-                    db_name: db_name.into(),
-                    name: container_name.into(),
-                },
-                name: item_name.into(),
-            },
-        }
-    }
-
-    /// Creates a new item reference by name from a parent container reference.
+    /// # Arguments
     ///
-    /// This is a convenience method that extracts the account, database name, and
-    /// container name from the parent `ContainerReference`.
+    /// * `container` - Reference to the parent container.
+    /// * `partition_key` - The partition key for the item.
+    /// * `item_name` - The document ID (name) of the item.
     ///
     /// # Panics
     ///
     /// Panics if the container reference is RID-based (not name-based).
-    pub fn from_container(
+    pub fn from_name(
         container: &ContainerReference,
+        partition_key: PartitionKey,
         item_name: impl Into<ResourceName>,
     ) -> Self {
-        let container_id = container.id().clone();
-        if !container.is_by_name() {
-            panic!("ContainerReference must be name-based to create ItemReference by name");
-        }
+        let name = item_name.into();
+        let resource_link = container
+            .name_based_path()
+            .map(|path| format!("{}/docs/{}", path, name))
+            .expect("ContainerReference must be name-based to create ItemReference by name");
         Self {
-            account: container.account().clone(),
-            id: ItemId::ByName {
-                container: container_id,
-                name: item_name.into(),
-            },
+            container: container.clone(),
+            partition_key,
+            item_identifier: ItemIdentifier::ByName(name),
+            resource_link,
         }
     }
 
     /// Creates a new item reference by RID.
     ///
-    /// Container and item are identified by their internal RIDs.
-    pub fn from_rid(
-        account: AccountReference,
-        container_rid: impl Into<ResourceRid>,
-        item_rid: impl Into<ResourceRid>,
-    ) -> Self {
-        Self {
-            account,
-            id: ItemId::ByRid {
-                container_rid: container_rid.into(),
-                rid: item_rid.into(),
-            },
-        }
-    }
-
-    /// Creates a new item reference by RID from a parent container reference.
+    /// # Arguments
     ///
-    /// This is a convenience method that extracts the container RID from the
-    /// parent `ContainerReference`.
+    /// * `container` - Reference to the parent container.
+    /// * `partition_key` - The partition key for the item.
+    /// * `item_rid` - The internal RID of the item.
     ///
     /// # Panics
     ///
     /// Panics if the container reference is name-based (not RID-based).
-    pub fn from_container_rid(
+    pub fn from_rid(
         container: &ContainerReference,
+        partition_key: PartitionKey,
         item_rid: impl Into<ResourceRid>,
     ) -> Self {
-        let container_rid = container
-            .rid()
+        let rid = item_rid.into();
+        let resource_link = container
+            .rid_based_path()
+            .map(|path| format!("{}/docs/{}", path, rid))
             .expect("ContainerReference must be RID-based to create ItemReference by RID");
         Self {
-            account: container.account().clone(),
-            id: ItemId::ByRid {
-                container_rid: ResourceRid::new(container_rid.to_owned()),
-                rid: item_rid.into(),
-            },
+            container: container.clone(),
+            partition_key,
+            item_identifier: ItemIdentifier::ByRid(rid),
+            resource_link,
         }
+    }
+
+    /// Returns a reference to the parent container.
+    pub fn container(&self) -> &ContainerReference {
+        &self.container
     }
 
     /// Returns a reference to the parent account.
     pub fn account(&self) -> &AccountReference {
-        &self.account
+        self.container.account()
+    }
+
+    /// Returns a reference to the partition key.
+    pub fn partition_key(&self) -> &PartitionKey {
+        &self.partition_key
+    }
+
+    /// Returns a reference to the item identifier.
+    pub(crate) fn item_identifier(&self) -> &ItemIdentifier {
+        &self.item_identifier
     }
 
     /// Returns the item name (document ID), if this is a name-based reference.
     pub fn name(&self) -> Option<&str> {
-        self.id.name()
+        self.item_identifier.name()
     }
 
     /// Returns the item RID, if this is a RID-based reference.
     pub fn rid(&self) -> Option<&str> {
-        self.id.rid()
-    }
-
-    /// Returns the internal item ID.
-    pub(crate) fn id(&self) -> &ItemId {
-        &self.id
+        self.item_identifier.rid()
     }
 
     /// Returns `true` if this is a name-based reference.
     pub fn is_by_name(&self) -> bool {
-        matches!(self.id, ItemId::ByName { .. })
+        self.item_identifier.is_by_name()
     }
 
     /// Returns `true` if this is a RID-based reference.
     pub fn is_by_rid(&self) -> bool {
-        matches!(self.id, ItemId::ByRid { .. })
+        self.item_identifier.is_by_rid()
     }
 
-    /// Returns the name-based relative path: `/dbs/{db}/colls/{coll}/docs/{item}`
+    /// Returns the pre-computed resource link for this item.
     ///
-    /// Returns `None` if this is a RID-based reference.
-    pub fn name_based_path(&self) -> Option<String> {
-        match &self.id {
-            ItemId::ByName { container, name } => match container {
-                ContainerId::ByName {
-                    db_name,
-                    name: container_name,
-                } => Some(format!(
-                    "/dbs/{}/colls/{}/docs/{}",
-                    db_name, container_name, name
-                )),
-                ContainerId::ByRid { .. } => None,
-            },
-            ItemId::ByRid { .. } => None,
-        }
-    }
-
-    /// Returns the RID-based relative path: `/dbs/{db_rid}/colls/{coll_rid}/docs/{item_rid}`
-    ///
-    /// Returns `None` if this is a name-based reference.
-    pub fn rid_based_path(&self) -> Option<String> {
-        match &self.id {
-            ItemId::ByName { .. } => None,
-            ItemId::ByRid { container_rid, rid } => {
-                // For RID-based paths, we only have container_rid and item_rid
-                // The database RID is embedded in the container RID
-                Some(format!("/colls/{}/docs/{}", container_rid, rid))
-            }
-        }
+    /// For name-based references: `/dbs/{db}/colls/{coll}/docs/{item}`
+    /// For RID-based references: `/dbs/{db_rid}/colls/{coll_rid}/docs/{item_rid}`
+    pub fn resource_link(&self) -> &str {
+        &self.resource_link
     }
 }
 

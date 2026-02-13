@@ -208,6 +208,55 @@ impl ContainerId {
     }
 }
 
+/// Simple item (document) identifier - just name or RID.
+///
+/// Used in [`crate::models::ItemReference`] where the container is stored separately.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ItemIdentifier {
+    /// Reference by user-provided document ID (name).
+    ByName(ResourceName),
+    /// Reference by internal RID.
+    ByRid(ResourceRid),
+}
+
+impl ItemIdentifier {
+    /// Creates an item identifier by name.
+    pub(crate) fn by_name(name: impl Into<ResourceName>) -> Self {
+        Self::ByName(name.into())
+    }
+
+    /// Creates an item identifier by RID.
+    pub(crate) fn by_rid(rid: impl Into<ResourceRid>) -> Self {
+        Self::ByRid(rid.into())
+    }
+
+    /// Returns the item name if this is a name-based identifier.
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            Self::ByName(name) => Some(name.as_str()),
+            Self::ByRid(_) => None,
+        }
+    }
+
+    /// Returns the item RID if this is a RID-based identifier.
+    pub(crate) fn rid(&self) -> Option<&str> {
+        match self {
+            Self::ByName(_) => None,
+            Self::ByRid(rid) => Some(rid.as_str()),
+        }
+    }
+
+    /// Returns `true` if this is a name-based identifier.
+    pub(crate) fn is_by_name(&self) -> bool {
+        matches!(self, Self::ByName(_))
+    }
+
+    /// Returns `true` if this is a RID-based identifier.
+    pub(crate) fn is_by_rid(&self) -> bool {
+        matches!(self, Self::ByRid(_))
+    }
+}
+
 /// Item (document) identifier - either by name or by RID.
 ///
 /// Enforces consistency: if item is by name, container must also be by name.

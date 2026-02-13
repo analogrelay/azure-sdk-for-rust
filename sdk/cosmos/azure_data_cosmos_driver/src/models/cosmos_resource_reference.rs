@@ -653,42 +653,13 @@ impl From<ItemReference> for CosmosResourceReference {
     /// The resulting reference has `ResourceType::Document` and preserves
     /// the name-based or RID-based addressing mode.
     fn from(item: ItemReference) -> Self {
-        let account = item.account().clone();
-        let id = item.id();
+        let container = item.container().clone();
 
         if item.is_by_name() {
-            // For name-based items, we need to reconstruct the container reference
-            if let Some(container_id) = id.container_id() {
-                let db_name = container_id
-                    .database_name()
-                    .expect("name-based item must have database name");
-                let container_name = container_id
-                    .name()
-                    .expect("name-based item must have container name");
-                let container = ContainerReference::from_name(
-                    account.clone(),
-                    db_name.to_owned(),
-                    container_name.to_owned(),
-                );
-                let item_name = item.name().expect("name-based item must have name");
-                Self::document_by_name(container, item_name.to_owned())
-            } else {
-                // This shouldn't happen for a properly constructed name-based item
-                panic!("Invalid name-based ItemReference: missing container ID");
-            }
+            let item_name = item.name().expect("name-based item must have name");
+            Self::document_by_name(container, item_name.to_owned())
         } else {
-            // For RID-based items, we reconstruct with RIDs
-            let container_rid = id
-                .container_rid()
-                .expect("RID-based item must have container RID");
             let item_rid = item.rid().expect("RID-based item must have RID");
-            // For RID-based, we need to get the database RID from somewhere
-            // Since we don't store full hierarchy in RID mode, create a minimal container ref
-            let container = ContainerReference::from_rid(
-                account.clone(),
-                container_rid.to_owned(), // Use container RID as db_rid placeholder
-                container_rid.to_owned(),
-            );
             Self::document_by_rid(container, item_rid.to_owned())
         }
     }

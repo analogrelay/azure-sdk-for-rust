@@ -152,9 +152,9 @@ impl Policy for TrackedTransportPolicy {
                 }
             }
             Err(err) => {
-                // Transport failed - emit failure event with error details
-                // The error analysis for retry safety is done separately
-                // using was_reqwest_request_sent() and error inspection
+                // Transport failed - emit failure event with error details.
+                // Retry safety analysis is done via RequestSentStatus in
+                // request_diagnostics.rs and RequestEventType::indicates_request_sent().
                 if let Some(e) = emitter {
                     e.emit_with_details(RequestEventType::TransportFailed, err.to_string());
                 }

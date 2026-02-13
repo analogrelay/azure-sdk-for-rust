@@ -5,7 +5,7 @@
 
 use crate::models::{
     AccountReference, ContainerReference, CosmosResourceReference, DatabaseReference,
-    OperationType, PartitionKey, ResourceType,
+    ItemReference, OperationType, PartitionKey, ResourceType,
 };
 use azure_core::http::headers::Headers;
 
@@ -36,12 +36,12 @@ use azure_core::http::headers::Headers;
 ///     "my-key",
 /// );
 ///
-/// // Using typed ItemReference (recommended)
-/// let item_ref = ItemReference::from_name(account.clone(), "mydb", "mycontainer", "doc1");
-/// let operation = CosmosOperation::read(item_ref)
-///     .with_partition_key(PartitionKey::from("partition1"));
+/// // Using typed ItemReference (recommended) - partition key is embedded
+/// let container = ContainerReference::from_name(account.clone(), "mydb", "mycontainer");
+/// let item = ItemReference::from_name(&container, PartitionKey::from("partition1"), "doc1");
+/// let operation = CosmosOperation::read_item(item);
 ///
-/// // Or using CosmosResourceReference directly
+/// // Or using CosmosResourceReference directly (requires separate partition key)
 /// let container = ContainerReference::from_name(account, "mydb", "mycontainer");
 /// let operation = CosmosOperation::read(
 ///     CosmosResourceReference::document_by_name(container, "doc1"),
@@ -141,6 +141,24 @@ impl CosmosOperation {
             resource_type,
             resource_reference,
             partition_key: None,
+            headers: Headers::new(),
+            body: None,
+        }
+    }
+
+    /// Creates a new operation with the specified type, resource reference, and partition key.
+    fn new_with_partition_key(
+        operation_type: OperationType,
+        resource_reference: impl Into<CosmosResourceReference>,
+        partition_key: PartitionKey,
+    ) -> Self {
+        let resource_reference = resource_reference.into();
+        let resource_type = resource_reference.resource_type();
+        Self {
+            operation_type,
+            resource_type,
+            resource_reference,
+            partition_key: Some(partition_key),
             headers: Headers::new(),
             body: None,
         }
@@ -373,14 +391,15 @@ impl CosmosOperation {
 
     /// Creates an item (document) in a container.
     ///
-    /// Use `with_partition_key()` to set the partition key and `with_body()` to provide
-    /// the document JSON.
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
+    /// Use `with_body()` to provide the document JSON.
     ///
     /// # Example
     ///
     /// ```
     /// use azure_data_cosmos_driver::models::{
-    ///     AccountReference, ContainerReference, CosmosOperation, PartitionKey,
+    ///     AccountReference, ContainerReference, CosmosOperation, ItemReference, PartitionKey,
     /// };
     /// use url::Url;
     ///
@@ -390,24 +409,25 @@ impl CosmosOperation {
     /// );
     ///
     /// let container = ContainerReference::from_name(account, "my-database", "my-container");
-    /// let operation = CosmosOperation::create_item(container)
-    ///     .with_partition_key(PartitionKey::from("pk-value"))
+    /// let item = ItemReference::from_name(&container, PartitionKey::from("pk-value"), "doc1");
+    /// let operation = CosmosOperation::create_item(item)
     ///     .with_body(br#"{"id": "doc1", "pk": "pk-value", "data": "hello"}"#.to_vec());
     /// ```
-    pub fn create_item(container: ContainerReference) -> Self {
-        let resource_ref = CosmosResourceReference::documents_collection(container);
-        Self::new(OperationType::Create, resource_ref)
+    pub fn create_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Create, item, partition_key)
     }
 
     /// Reads an item (document) from a container.
     ///
-    /// Use `with_partition_key()` to set the partition key.
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
     ///
     /// # Example
     ///
     /// ```
     /// use azure_data_cosmos_driver::models::{
-    ///     AccountReference, ContainerReference, CosmosOperation, CosmosResourceReference, PartitionKey,
+    ///     AccountReference, ContainerReference, CosmosOperation, ItemReference, PartitionKey,
     /// };
     /// use url::Url;
     ///
@@ -417,34 +437,92 @@ impl CosmosOperation {
     /// );
     ///
     /// let container = ContainerReference::from_name(account, "my-database", "my-container");
-    /// let item_ref = CosmosResourceReference::document_by_name(container, "doc1");
-    /// let operation = CosmosOperation::read_item(item_ref)
-    ///     .with_partition_key(PartitionKey::from("pk-value"));
+    /// let item = ItemReference::from_name(&container, PartitionKey::from("pk-value"), "doc1");
+    /// let operation = CosmosOperation::read_item(item);
     /// ```
-    pub fn read_item(item_reference: impl Into<CosmosResourceReference>) -> Self {
-        Self::new(OperationType::Read, item_reference)
+    pub fn read_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Read, item, partition_key)
     }
 
     /// Deletes an item (document) from a container.
     ///
-    /// Use `with_partition_key()` to set the partition key.
-    pub fn delete_item(item_reference: impl Into<CosmosResourceReference>) -> Self {
-        Self::new(OperationType::Delete, item_reference)
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
+    pub fn delete_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Delete, item, partition_key)
     }
 
-    /// Reads (lists) all items in a container.
+    /// Upserts (creates or replaces) an item (document) in a container.
     ///
-    /// Returns a feed of document resources.
-    pub fn read_all_items(container: ContainerReference) -> Self {
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
+    /// Use `with_body()` to provide the document JSON.
+    /// If an item with the same ID exists, it will be replaced; otherwise, a new item is created.
+    pub fn upsert_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Upsert, item, partition_key)
+    }
+
+    /// Replaces an existing item (document) in a container.
+    ///
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
+    /// Use `with_body()` to provide the new document JSON.
+    pub fn replace_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Replace, item, partition_key)
+    }
+
+    /// Patches (partially updates) an existing item (document) in a container.
+    ///
+    /// The `ItemReference` contains the container, partition key, and item identifier,
+    /// providing all the information needed for the operation.
+    /// Use `with_body()` to provide the patch operations JSON.
+    pub fn patch_item(item: ItemReference) -> Self {
+        let partition_key = item.partition_key().clone();
+        Self::new_with_partition_key(OperationType::Patch, item, partition_key)
+    }
+
+    /// Reads (lists) all items within a single partition.
+    ///
+    /// Returns a feed of document resources from the specified partition.
+    /// This is more efficient than cross-partition reads.
+    pub fn read_all_items(container: ContainerReference, partition_key: PartitionKey) -> Self {
+        let resource_ref = CosmosResourceReference::documents_collection(container);
+        Self::new_with_partition_key(OperationType::ReadFeed, resource_ref, partition_key)
+    }
+
+    /// Reads (lists) all items across all partitions.
+    ///
+    /// Returns a feed of document resources from all partitions.
+    ///
+    /// **Warning:** Cross-partition reads are inherently less efficient than
+    /// single-partition reads. Use `read_all_items()` with a partition key
+    /// when possible.
+    pub fn read_all_items_cross_partition(container: ContainerReference) -> Self {
         let resource_ref = CosmosResourceReference::documents_collection(container);
         Self::new(OperationType::ReadFeed, resource_ref)
     }
 
-    /// Queries items in a container.
+    /// Queries items within a single partition.
     ///
-    /// Use `with_partition_key()` to scope the query to a partition and
-    /// `with_body()` to provide the query JSON.
-    pub fn query_items(container: ContainerReference) -> Self {
+    /// Use `with_body()` to provide the query JSON.
+    /// This is more efficient than cross-partition queries.
+    pub fn query_items(container: ContainerReference, partition_key: PartitionKey) -> Self {
+        let resource_ref = CosmosResourceReference::documents_collection(container);
+        Self::new_with_partition_key(OperationType::Query, resource_ref, partition_key)
+    }
+
+    /// Queries items across all partitions.
+    ///
+    /// Use `with_body()` to provide the query JSON.
+    ///
+    /// **Warning:** Cross-partition queries are inherently less efficient than
+    /// single-partition queries. Use `query_items()` with a partition key
+    /// when possible.
+    pub fn query_items_cross_partition(container: ContainerReference) -> Self {
         let resource_ref = CosmosResourceReference::documents_collection(container);
         Self::new(OperationType::Query, resource_ref)
     }
