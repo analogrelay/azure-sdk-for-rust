@@ -58,7 +58,7 @@ pub async fn create_and_read_item() -> Result<(), Box<dyn Error>> {
 
         // Verify pipeline type is DataPlane
         let requests = create_diagnostics.requests();
-        assert_eq!(requests[0].pipeline_type, PipelineType::DataPlane);
+        assert_eq!(requests[0].pipeline_type(), PipelineType::DataPlane);
 
         // Read the item back
         let read_result = context
@@ -80,11 +80,11 @@ pub async fn create_and_read_item() -> Result<(), Box<dyn Error>> {
         // Check request charge is reasonable (typically 1-5 RUs for point read)
         let read_requests = read_diagnostics.requests();
         assert!(
-            read_requests[0].request_charge > 0.0,
+            read_requests[0].request_charge() > 0.0,
             "Request charge should be positive for reads"
         );
         assert!(
-            read_requests[0].request_charge < 100.0,
+            read_requests[0].request_charge() < 100.0,
             "Request charge should be reasonable for point read"
         );
 
@@ -177,12 +177,12 @@ pub async fn diagnostics_contain_expected_fields() -> Result<(), Box<dyn Error>>
         let request = &requests[0];
 
         // Verify endpoint is captured
-        assert!(!request.endpoint.is_empty(), "Endpoint should be captured");
+        assert!(!request.endpoint().is_empty(), "Endpoint should be captured");
 
         // For emulator, verify transport security
-        if request.endpoint.contains("localhost") || request.endpoint.contains("127.0.0.1") {
+        if request.endpoint().contains("localhost") || request.endpoint().contains("127.0.0.1") {
             assert_eq!(
-                request.transport_security,
+                request.transport_security(),
                 TransportSecurity::EmulatorWithInsecureCertificates,
                 "Emulator should use insecure certificates transport"
             );
@@ -190,7 +190,7 @@ pub async fn diagnostics_contain_expected_fields() -> Result<(), Box<dyn Error>>
 
         // Verify pipeline type
         assert_eq!(
-            request.pipeline_type,
+            request.pipeline_type(),
             PipelineType::DataPlane,
             "Item operations should use data plane pipeline"
         );

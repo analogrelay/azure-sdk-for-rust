@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 /// connection events (DNS, TLS handshake) separately. We track what we can observe.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RequestEventType {
     /// Request sent to transport - we're now waiting for the HTTP client.
     /// From here, reqwest handles DNS, connection, TLS, and sending internally.
@@ -85,22 +86,26 @@ impl RequestEventType {
 ///
 /// Events are recorded at key points during request processing to enable
 /// detailed timing analysis and debugging.
+///
+/// This type is non-exhaustive and new fields may be added in future releases.
+/// Use the getter methods to access field values.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct RequestEvent {
     /// Type of the pipeline event.
-    pub event_type: RequestEventType,
+    pub(super) event_type: RequestEventType,
 
     /// When this event occurred.
     #[serde(skip)]
-    pub timestamp: Instant,
+    pub(super) timestamp: Instant,
 
     /// Duration of this stage, if applicable.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub duration_ms: Option<u64>,
+    pub(super) duration_ms: Option<u64>,
 
     /// Additional context for this event.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<String>,
+    pub(super) details: Option<String>,
 }
 
 impl RequestEvent {
@@ -131,9 +136,31 @@ impl RequestEvent {
     }
 
     /// Returns the stage name for backwards compatibility.
-    #[deprecated(note = "Use event_type instead")]
+    #[deprecated(note = "Use event_type() instead")]
     pub fn stage(&self) -> &str {
         self.event_type.as_str()
+    }
+
+    // Public getters for read-only access to fields
+
+    /// Returns the type of the pipeline event.
+    pub fn event_type(&self) -> &RequestEventType {
+        &self.event_type
+    }
+
+    /// Returns when this event occurred.
+    pub fn timestamp(&self) -> Instant {
+        self.timestamp
+    }
+
+    /// Returns the duration of this stage in milliseconds, if applicable.
+    pub fn duration_ms(&self) -> Option<u64> {
+        self.duration_ms
+    }
+
+    /// Returns additional context for this event, if present.
+    pub fn details(&self) -> Option<&str> {
+        self.details.as_deref()
     }
 }
 

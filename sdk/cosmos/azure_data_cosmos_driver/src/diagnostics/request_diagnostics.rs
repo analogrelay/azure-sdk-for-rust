@@ -24,6 +24,7 @@ use super::{ExecutionContext, RequestEvent};
 /// which is useful for debugging and understanding request behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum PipelineType {
     /// Metadata pipeline for control plane operations.
     ///
@@ -57,6 +58,7 @@ impl PipelineType {
 /// validation or with relaxed validation for emulator scenarios.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum TransportSecurity {
     /// Standard secure transport with full certificate validation.
     ///
@@ -97,6 +99,7 @@ impl TransportSecurity {
 ///   for safety (don't retry non-idempotent operations).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RequestSentStatus {
     /// Request was definitely sent on the wire.
     /// This is confirmed when we receive response headers or the transport
@@ -138,60 +141,64 @@ impl RequestSentStatus {
 ///
 /// Each retry, hedged request, or failover produces a separate `RequestDiagnostics`
 /// entry in the [`DiagnosticsContext`](super::DiagnosticsContext).
+///
+/// This type is non-exhaustive and new fields may be added in future releases.
+/// Use the getter methods to access field values.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct RequestDiagnostics {
     /// Context describing why this request was made.
-    pub execution_context: ExecutionContext,
+    pub(super) execution_context: ExecutionContext,
 
     /// The pipeline type used for this request.
-    pub pipeline_type: PipelineType,
+    pub(super) pipeline_type: PipelineType,
 
     /// The transport security mode used for this request.
-    pub transport_security: TransportSecurity,
+    pub(super) transport_security: TransportSecurity,
 
     /// Region this request was sent to.
-    pub region: Region,
+    pub(super) region: Region,
 
     /// Endpoint URI contacted.
-    pub endpoint: String,
+    pub(super) endpoint: String,
 
     /// HTTP status code from response.
     #[serde(serialize_with = "serialize_status_code")]
-    pub status_code: StatusCode,
+    pub(super) status_code: StatusCode,
 
     /// Cosmos sub-status code (for detailed error classification).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub_status_code: Option<SubStatusCode>,
+    pub(super) sub_status_code: Option<SubStatusCode>,
 
     /// Request charge (RU) for this individual request.
-    pub request_charge: f64,
+    pub(crate) request_charge: f64,
 
     /// Activity ID from response headers.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub activity_id: Option<ActivityId>,
+    pub(super) activity_id: Option<ActivityId>,
 
     /// Session token from response (for session consistency).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_token: Option<String>,
+    pub(super) session_token: Option<String>,
 
     /// When this request was started.
     #[serde(skip)]
-    pub started_at: Instant,
+    pub(super) started_at: Instant,
 
     /// When this request completed (response received or error).
     #[serde(skip)]
-    pub completed_at: Option<Instant>,
+    pub(super) completed_at: Option<Instant>,
 
     /// Duration in milliseconds (computed from started_at/completed_at).
-    pub duration_ms: u64,
+    pub(super) duration_ms: u64,
 
     /// Pipeline events during this request.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub events: Vec<RequestEvent>,
+    pub(super) events: Vec<RequestEvent>,
 
     /// Whether this request timed out.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub timed_out: bool,
+    pub(super) timed_out: bool,
 
     /// Whether the request was sent on the wire.
     ///
@@ -200,11 +207,11 @@ pub struct RequestDiagnostics {
     /// - `NotSent`: Safe to retry any operation.
     /// - `Unknown`: Treat as potentially sent for safety.
     #[serde(skip_serializing_if = "RequestSentStatus::definitely_not_sent")]
-    pub request_sent: RequestSentStatus,
+    pub(super) request_sent: RequestSentStatus,
 
     /// Error message if the request failed.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    pub(super) error: Option<String>,
 }
 
 fn serialize_status_code<S>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
@@ -332,6 +339,93 @@ impl RequestDiagnostics {
     /// Returns whether this request has been completed.
     pub(crate) fn is_completed(&self) -> bool {
         self.completed_at.is_some()
+    }
+
+    // Public getters for read-only access to fields
+
+    /// Returns the execution context describing why this request was made.
+    pub fn execution_context(&self) -> ExecutionContext {
+        self.execution_context
+    }
+
+    /// Returns the pipeline type used for this request.
+    pub fn pipeline_type(&self) -> PipelineType {
+        self.pipeline_type
+    }
+
+    /// Returns the transport security mode used for this request.
+    pub fn transport_security(&self) -> TransportSecurity {
+        self.transport_security
+    }
+
+    /// Returns the region this request was sent to.
+    pub fn region(&self) -> &Region {
+        &self.region
+    }
+
+    /// Returns the endpoint URI contacted.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// Returns the HTTP status code from response.
+    pub fn status_code(&self) -> StatusCode {
+        self.status_code
+    }
+
+    /// Returns the Cosmos sub-status code, if present.
+    pub fn sub_status_code(&self) -> Option<SubStatusCode> {
+        self.sub_status_code
+    }
+
+    /// Returns the request charge (RU) for this individual request.
+    pub fn request_charge(&self) -> f64 {
+        self.request_charge
+    }
+
+    /// Returns the activity ID from response headers, if present.
+    pub fn activity_id(&self) -> Option<&ActivityId> {
+        self.activity_id.as_ref()
+    }
+
+    /// Returns the session token from response, if present.
+    pub fn session_token(&self) -> Option<&str> {
+        self.session_token.as_deref()
+    }
+
+    /// Returns when this request was started.
+    pub fn started_at(&self) -> Instant {
+        self.started_at
+    }
+
+    /// Returns when this request completed, if it has completed.
+    pub fn completed_at(&self) -> Option<Instant> {
+        self.completed_at
+    }
+
+    /// Returns the duration in milliseconds.
+    pub fn duration_ms(&self) -> u64 {
+        self.duration_ms
+    }
+
+    /// Returns the pipeline events during this request.
+    pub fn events(&self) -> &[RequestEvent] {
+        &self.events
+    }
+
+    /// Returns whether this request timed out.
+    pub fn timed_out(&self) -> bool {
+        self.timed_out
+    }
+
+    /// Returns whether the request was sent on the wire.
+    pub fn request_sent(&self) -> RequestSentStatus {
+        self.request_sent
+    }
+
+    /// Returns the error message if the request failed.
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
     }
 }
 

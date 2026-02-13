@@ -320,15 +320,15 @@ impl DriverTestRunContext {
         // Check first request has correct pipeline type
         let first_request = &requests[0];
         assert_eq!(
-            first_request.pipeline_type,
+            first_request.pipeline_type(),
             PipelineType::DataPlane,
             "Should use data plane pipeline for item operations"
         );
 
         // Check transport security for emulator
-        if first_request.endpoint.contains("localhost") {
+        if first_request.endpoint().contains("localhost") {
             assert_eq!(
-                first_request.transport_security,
+                first_request.transport_security(),
                 TransportSecurity::EmulatorWithInsecureCertificates,
                 "Should use emulator transport security for localhost"
             );
@@ -336,7 +336,7 @@ impl DriverTestRunContext {
 
         // Check request charge is non-negative
         assert!(
-            first_request.request_charge >= 0.0,
+            first_request.request_charge() >= 0.0,
             "Request charge should be non-negative"
         );
     }
@@ -363,7 +363,7 @@ impl DriverTestRunContext {
         // Check first request has correct pipeline type
         let first_request = &requests[0];
         assert_eq!(
-            first_request.pipeline_type,
+            first_request.pipeline_type(),
             PipelineType::Metadata,
             "Should use metadata pipeline for control plane operations"
         );

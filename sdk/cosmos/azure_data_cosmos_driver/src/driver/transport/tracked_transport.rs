@@ -111,7 +111,7 @@ impl TrackedRequestState {
         if self
             .events
             .iter()
-            .any(|e| e.event_type.indicates_request_sent())
+            .any(|e| e.event_type().indicates_request_sent())
         {
             return RequestSentStatus::Sent;
         }
@@ -135,7 +135,7 @@ impl TrackedRequestState {
         if self
             .events
             .iter()
-            .any(|e| e.event_type.indicates_request_sent())
+            .any(|e| e.event_type().indicates_request_sent())
         {
             return RequestSentStatus::Sent;
         }
@@ -146,7 +146,7 @@ impl TrackedRequestState {
 
     /// Returns the last event type recorded, if any.
     pub fn last_event_type(&self) -> Option<&RequestEventType> {
-        self.events.last().map(|e| &e.event_type)
+        self.events.last().map(|e| e.event_type())
     }
 }
 
