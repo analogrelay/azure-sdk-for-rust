@@ -177,7 +177,10 @@ pub async fn diagnostics_contain_expected_fields() -> Result<(), Box<dyn Error>>
         let request = &requests[0];
 
         // Verify endpoint is captured
-        assert!(!request.endpoint().is_empty(), "Endpoint should be captured");
+        assert!(
+            !request.endpoint().is_empty(),
+            "Endpoint should be captured"
+        );
 
         // For emulator, verify transport security
         if request.endpoint().contains("localhost") || request.endpoint().contains("127.0.0.1") {

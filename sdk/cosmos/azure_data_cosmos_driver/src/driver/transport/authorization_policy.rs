@@ -7,7 +7,7 @@
 //! Unlike standard Azure services that use `Authorization: Bearer`, Cosmos DB
 //! uses a custom format as defined in the [official documentation](https://learn.microsoft.com/rest/api/cosmos-db/access-control-on-cosmosdb-resources).
 
-use crate::models::{AuthOptions, MasterKey, ResourceType};
+use crate::models::{AuthOptions, ResourceType};
 use azure_core::{
     credentials::{Secret, TokenCredential},
     http::{
@@ -110,9 +110,7 @@ impl AuthorizationPolicy {
     /// Creates a new authorization policy from authentication options.
     pub(crate) fn new(auth: &AuthOptions) -> Self {
         let credential = match auth {
-            AuthOptions::MasterKey(key) => {
-                Credential::MasterKey(Secret::new(key.secret().to_owned()))
-            }
+            AuthOptions::MasterKey(key) => Credential::MasterKey(key.clone()),
             AuthOptions::TokenCredential(cred) => Credential::Token(Arc::clone(cred)),
         };
         Self { credential }
@@ -128,10 +126,9 @@ impl AuthorizationPolicy {
 
     /// Creates a new authorization policy from a master key.
     #[allow(dead_code)]
-    pub(crate) fn from_master_key(key: impl Into<MasterKey>) -> Self {
-        let master_key = key.into();
+    pub(crate) fn from_master_key(key: impl Into<Secret>) -> Self {
         Self {
-            credential: Credential::MasterKey(Secret::new(master_key.secret().to_owned())),
+            credential: Credential::MasterKey(key.into()),
         }
     }
 }
@@ -299,7 +296,7 @@ mod tests {
 
     #[tokio::test]
     async fn authorization_policy_adds_headers_for_master_key() {
-        let key = MasterKey::new("8F8xXXOptJxkblM1DBXW7a6NMI5oE8NnwPGYBmwxLCKfejOK7B7yhcCHMGvN3PBrlMLIOeol1Hv9RCdzAZR5sg==");
+        let key = Secret::new("8F8xXXOptJxkblM1DBXW7a6NMI5oE8NnwPGYBmwxLCKfejOK7B7yhcCHMGvN3PBrlMLIOeol1Hv9RCdzAZR5sg==");
         let auth = AuthOptions::MasterKey(key);
         let policy = AuthorizationPolicy::new(&auth);
 

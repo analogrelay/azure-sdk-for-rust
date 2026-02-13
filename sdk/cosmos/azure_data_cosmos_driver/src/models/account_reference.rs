@@ -92,42 +92,6 @@ impl From<&AccountReference> for AccountEndpoint {
     }
 }
 
-/// A master key for authenticating with a Cosmos DB account.
-///
-/// Wraps the account's primary or secondary key as a secret.
-#[derive(Clone, Debug)]
-pub struct MasterKey(Secret);
-
-impl MasterKey {
-    /// Creates a new master key from the provided key string.
-    pub fn new(key: impl Into<Secret>) -> Self {
-        Self(key.into())
-    }
-
-    /// Returns the secret key value.
-    pub fn secret(&self) -> &str {
-        self.0.secret()
-    }
-}
-
-impl From<&'static str> for MasterKey {
-    fn from(key: &'static str) -> Self {
-        Self::new(key)
-    }
-}
-
-impl From<String> for MasterKey {
-    fn from(key: String) -> Self {
-        Self::new(key)
-    }
-}
-
-impl From<Secret> for MasterKey {
-    fn from(secret: Secret) -> Self {
-        Self(secret)
-    }
-}
-
 /// Authentication options for connecting to a Cosmos DB account.
 ///
 /// Either key-based authentication using a master key, or token-based
@@ -135,7 +99,7 @@ impl From<Secret> for MasterKey {
 #[derive(Clone)]
 pub enum AuthOptions {
     /// Key-based authentication using the account's primary or secondary master key.
-    MasterKey(MasterKey),
+    MasterKey(Secret),
     /// Token-based authentication using an Azure credential.
     TokenCredential(Arc<dyn TokenCredential>),
 }
@@ -143,14 +107,14 @@ pub enum AuthOptions {
 impl std::fmt::Debug for AuthOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MasterKey(key) => f.debug_tuple("MasterKey").field(key).finish(),
+            Self::MasterKey(_) => f.debug_tuple("MasterKey").field(&"***").finish(),
             Self::TokenCredential(_) => f.debug_tuple("TokenCredential").field(&"...").finish(),
         }
     }
 }
 
-impl From<MasterKey> for AuthOptions {
-    fn from(key: MasterKey) -> Self {
+impl From<Secret> for AuthOptions {
+    fn from(key: Secret) -> Self {
         Self::MasterKey(key)
     }
 }
@@ -169,7 +133,7 @@ impl From<Arc<dyn TokenCredential>> for AuthOptions {
 /// # Examples
 ///
 /// ```
-/// use azure_data_cosmos_driver::models::{AccountReference, MasterKey};
+/// use azure_data_cosmos_driver::models::AccountReference;
 /// use url::Url;
 ///
 /// // With master key authentication
@@ -222,7 +186,7 @@ impl AccountReference {
     /// Creates a new account reference with master key authentication.
     ///
     /// This is a convenience method for the common case of key-based auth.
-    pub fn with_master_key(endpoint: Url, key: impl Into<MasterKey>) -> Self {
+    pub fn with_master_key(endpoint: Url, key: impl Into<Secret>) -> Self {
         Self {
             endpoint,
             auth: AuthOptions::MasterKey(key.into()),
@@ -301,7 +265,7 @@ impl AccountReferenceBuilder {
 
     /// Sets master key authentication.
     #[must_use]
-    pub fn master_key(mut self, key: impl Into<MasterKey>) -> Self {
+    pub fn master_key(mut self, key: impl Into<Secret>) -> Self {
         self.auth = Some(AuthOptions::MasterKey(key.into()));
         self
     }
@@ -356,7 +320,7 @@ pub struct LegacyAccountReference {
 impl LegacyAccountReference {
     /// Sets master key authentication.
     #[must_use]
-    pub fn with_master_key(self, key: impl Into<MasterKey>) -> AccountReference {
+    pub fn with_master_key(self, key: impl Into<Secret>) -> AccountReference {
         AccountReference {
             endpoint: self.endpoint,
             auth: AuthOptions::MasterKey(key.into()),
