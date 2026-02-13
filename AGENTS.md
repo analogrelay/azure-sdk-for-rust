@@ -212,7 +212,7 @@ For detailed guidance, see:
 - **GitHub Pull Request Standards**: `.github/instructions/github-pullrequest.instructions.md`
 - **PowerShell Scripts**: `.github/instructions/pwsh.instructions.md`
 - **Deprecation Process**: `doc/deprecation-process.md`
-- **Azure SDK Design Guidelines**: <https://azure.github.io/azure-sdk/rust_introduction.html>
+- **Azure SDK Design Guidelines**: https://azure.github.io/azure-sdk/rust_introduction.html
 
 ## Agent-Specific Instructions
 
@@ -224,13 +224,13 @@ Additional specialized instructions for specific workflows can be found in:
 
 ## Getting Help
 
-- **Issues**: <https://github.com/Azure/azure-sdk-for-rust/issues>
+- **Issues**: https://github.com/Azure/azure-sdk-for-rust/issues
 - **Discussions**: Use issue comments or StackOverflow with `azure` + `rust` tags
 - **Code Owners**: See `.github/CODEOWNERS` for service-specific contacts
 
 ## Telemetry and Privacy
 
-The SDK includes telemetry via `User-Agent` headers. Follow Microsoft Privacy Statement: <https://go.microsoft.com/fwlink/?LinkID=824704>
+The SDK includes telemetry via `User-Agent` headers. Follow Microsoft Privacy Statement: https://go.microsoft.com/fwlink/?LinkID=824704
 
 ## License
 
@@ -240,4 +240,4 @@ All contributions are licensed under the MIT License. See `LICENSE.txt`.
 
 **Last Updated**: 2026-01-08
 **Version**: 1.0
-**Canonical Spec**: <https://agents.md>
+**Canonical Spec**: https://agents.md
