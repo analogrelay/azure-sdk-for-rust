@@ -3,7 +3,10 @@
 
 //! Cosmos DB operation result types.
 
-use crate::{diagnostics::DiagnosticsContext, models::{ActivityId, RequestCharge}};
+use crate::{
+    diagnostics::DiagnosticsContext,
+    models::{ActivityId, RequestCharge},
+};
 use azure_core::http::headers::Headers;
 use std::sync::Arc;
 
@@ -304,7 +307,10 @@ mod tests {
         assert!(status.is_success());
         assert!(status.sub_status().is_none());
         assert_eq!(result.body(), b"{\"id\": \"test\"}");
-        assert_eq!(result.headers().request_charge(), Some(RequestCharge::new(5.5)));
+        assert_eq!(
+            result.headers().request_charge(),
+            Some(RequestCharge::new(5.5))
+        );
     }
 
     #[test]
@@ -312,7 +318,10 @@ mod tests {
         let result = CosmosResult::new(
             b"{}".to_vec(),
             CosmosHeaders::new(),
-            make_diagnostics(Some(StatusCode::TooManyRequests), Some(SubStatusCode::new(3200))),
+            make_diagnostics(
+                Some(StatusCode::TooManyRequests),
+                Some(SubStatusCode::new(3200)),
+            ),
         );
 
         let status = result.diagnostics().status().unwrap();
@@ -342,7 +351,10 @@ mod tests {
 
     #[test]
     fn cosmos_result_status_via_diagnostics() {
-        let diagnostics = make_diagnostics(Some(StatusCode::NotFound), Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE));
+        let diagnostics = make_diagnostics(
+            Some(StatusCode::NotFound),
+            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE),
+        );
         let result = CosmosResult::new(b"{}".to_vec(), CosmosHeaders::new(), diagnostics.clone());
 
         // Status codes are only accessible via diagnostics

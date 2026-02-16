@@ -1064,7 +1064,8 @@ mod tests {
 
     #[test]
     fn with_sub_status_unambiguous() {
-        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
+        let status =
+            CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
         assert_eq!(status.status_code(), StatusCode::TooManyRequests);
         assert_eq!(status.sub_status(), Some(SubStatusCode::new(3200)));
         assert!(status.is_throttled());
@@ -1073,7 +1074,8 @@ mod tests {
 
     #[test]
     fn disambiguates_1002_404_vs_410() {
-        let not_found = CosmosStatus::with_sub_status(StatusCode::NotFound, SubStatusCode::new(1002));
+        let not_found =
+            CosmosStatus::with_sub_status(StatusCode::NotFound, SubStatusCode::new(1002));
         assert_eq!(not_found.name(), Some("ReadSessionNotAvailable"));
         assert!(not_found.is_read_session_not_available());
         assert!(!not_found.is_partition_key_range_gone());
@@ -1086,7 +1088,8 @@ mod tests {
 
     #[test]
     fn disambiguates_1008_403_vs_410() {
-        let forbidden = CosmosStatus::with_sub_status(StatusCode::Forbidden, SubStatusCode::new(1008));
+        let forbidden =
+            CosmosStatus::with_sub_status(StatusCode::Forbidden, SubStatusCode::new(1008));
         assert_eq!(forbidden.name(), Some("DatabaseAccountNotFound"));
 
         let gone = CosmosStatus::with_sub_status(StatusCode::Gone, SubStatusCode::new(1008));
@@ -1112,7 +1115,8 @@ mod tests {
 
     #[test]
     fn display_with_name() {
-        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
+        let status =
+            CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
         assert_eq!(format!("{}", status), "429/3200 (RUBudgetExceeded)");
     }
 
@@ -1151,7 +1155,8 @@ mod tests {
 
     #[test]
     fn serialization_roundtrip() {
-        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
+        let status =
+            CosmosStatus::with_sub_status(StatusCode::TooManyRequests, SubStatusCode::new(3200));
         let json = serde_json::to_string(&status).unwrap();
         assert!(json.contains("\"status_code\":429"));
         assert!(json.contains("\"sub_status_code\":3200"));

@@ -18,8 +18,8 @@ mod cosmos_resource_reference;
 mod cosmos_result;
 mod cosmos_status;
 mod etag;
-mod request_charge;
 mod partition_key;
+mod request_charge;
 mod resource_id;
 mod resource_reference;
 mod resource_types;
@@ -41,8 +41,8 @@ pub use cosmos_resource_reference::CosmosResourceReference;
 pub use cosmos_result::{CosmosHeaders, CosmosResult};
 pub use cosmos_status::{CosmosStatus, SubStatusCode};
 pub use etag::{ETag, ETagCondition};
-pub use request_charge::RequestCharge;
 pub use partition_key::{PartitionKey, PartitionKeyValue};
+pub use request_charge::RequestCharge;
 pub use resource_id::{ResourceName, ResourceRid};
 pub use resource_reference::{
     ContainerReference, DatabaseReference, ItemReference, StoredProcedureReference,

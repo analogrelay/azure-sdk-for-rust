@@ -6,7 +6,7 @@
 use crate::models::{ActivityId, CosmosStatus, RequestCharge};
 use serde::Serialize;
 
-use super::{ExecutionContext, RequestDiagnostics};
+use super::diagnostics_context::{ExecutionContext, RequestDiagnostics};
 
 /// Detailed diagnostics output structure.
 #[derive(Serialize)]
@@ -58,12 +58,12 @@ pub(super) struct RequestSummary {
 impl From<&RequestDiagnostics> for RequestSummary {
     fn from(req: &RequestDiagnostics) -> Self {
         Self {
-            execution_context: req.execution_context,
-            endpoint: req.endpoint.clone(),
-            status: req.status,
-            request_charge: req.request_charge,
-            duration_ms: req.duration_ms,
-            timed_out: req.timed_out,
+            execution_context: req.execution_context(),
+            endpoint: req.endpoint().to_string(),
+            status: *req.status(),
+            request_charge: req.request_charge(),
+            duration_ms: req.duration_ms(),
+            timed_out: req.timed_out(),
         }
     }
 }
