@@ -19,12 +19,9 @@
 //! `DiagnosticsContext` which is safe to share via `Arc` without locking.
 
 mod diagnostics_context;
-mod request_event;
-mod serialization;
 
 pub(crate) use diagnostics_context::DiagnosticsContextBuilder;
 pub use diagnostics_context::{
-    DiagnosticsContext, ExecutionContext, PipelineType, RequestDiagnostics, RequestHandle,
-    RequestSentStatus, TransportSecurity,
+    DiagnosticsContext, ExecutionContext, PipelineType, RequestDiagnostics, RequestEvent,
+    RequestEventType, RequestHandle, RequestSentStatus, TransportSecurity,
 };
-pub use request_event::{RequestEvent, RequestEventType};
