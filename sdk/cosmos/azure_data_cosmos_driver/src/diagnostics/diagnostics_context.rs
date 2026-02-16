@@ -416,6 +416,45 @@ impl DiagnosticsContext {
     }
 }
 
+impl Clone for DiagnosticsContext {
+    fn clone(&self) -> Self {
+        Self {
+            activity_id: self.activity_id.clone(),
+            duration: self.duration,
+            requests: Arc::clone(&self.requests),
+            status: self.status,
+            options: Arc::clone(&self.options),
+            // OnceLock does not implement Clone, so we propagate any cached
+            // value into a fresh lock.
+            cached_json_detailed: self
+                .cached_json_detailed
+                .get()
+                .cloned()
+                .map(OnceLock::from)
+                .unwrap_or_default(),
+            cached_json_summary: self
+                .cached_json_summary
+                .get()
+                .cloned()
+                .map(OnceLock::from)
+                .unwrap_or_default(),
+        }
+    }
+}
+
+impl PartialEq for DiagnosticsContext {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare semantic data only; cached JSON is derived and excluded.
+        self.activity_id == other.activity_id
+            && self.duration == other.duration
+            && self.requests == other.requests
+            && self.status == other.status
+            && self.options == other.options
+    }
+}
+
+impl Eq for DiagnosticsContext {}
+
 /// Builds a summary for requests in a single region.
 fn build_region_summary(region: Region, requests: Vec<&RequestDiagnostics>) -> RegionSummary {
     let count = requests.len();
@@ -675,7 +714,9 @@ mod tests {
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
                 );
-                builder.update_request(handle, |req| req.request_charge = RequestCharge::new(i as f64));
+                builder.update_request(handle, |req| {
+                    req.request_charge = RequestCharge::new(i as f64)
+                });
                 builder.complete_request(handle, StatusCode::TooManyRequests, None);
             }
         });
@@ -743,7 +784,10 @@ mod tests {
     #[test]
     fn status_codes_stored() {
         let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
-        builder.set_operation_status(StatusCode::NotFound, Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE));
+        builder.set_operation_status(
+            StatusCode::NotFound,
+            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE),
+        );
         let ctx = builder.complete();
 
         let status = ctx.status().unwrap();

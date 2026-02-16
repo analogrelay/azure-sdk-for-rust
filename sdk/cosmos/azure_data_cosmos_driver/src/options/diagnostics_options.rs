@@ -71,7 +71,7 @@ impl std::str::FromStr for DiagnosticsVerbosity {
 /// Controls how diagnostic information is formatted and truncated.
 /// Use [`DiagnosticsOptionsBuilder`] to construct instances.
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticsOptions {
     /// Maximum size in bytes for summary mode diagnostic output.
     ///

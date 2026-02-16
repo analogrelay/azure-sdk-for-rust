@@ -90,7 +90,7 @@ impl RequestEventType {
 ///
 /// This type is non-exhaustive and new fields may be added in future releases.
 /// Use the getter methods to access field values.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[non_exhaustive]
 pub struct RequestEvent {
     /// Type of the pipeline event.
