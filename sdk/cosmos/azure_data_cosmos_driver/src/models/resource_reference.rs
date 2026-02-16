@@ -25,6 +25,7 @@ use crate::models::{
 /// along with a reference to its parent account. The addressing mode (name vs RID)
 /// is enforced at compile time through internal enums.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct DatabaseReference {
     /// Reference to the parent account.
     account: AccountReference,
@@ -105,6 +106,7 @@ impl DatabaseReference {
 /// (name vs RID) is enforced at compile time - if the container is by name,
 /// the database must also be by name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct ContainerReference {
     /// Reference to the parent account.
     account: AccountReference,
@@ -277,6 +279,7 @@ impl ContainerReference {
 ///
 /// The resource link is pre-computed for efficiency.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct ItemReference {
     /// Reference to the parent container.
     container: ContainerReference,
@@ -405,6 +408,7 @@ impl ItemReference {
 /// Contains either the name or resource identifier (RID) of the stored procedure,
 /// along with references to its parent container, database, and account.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct StoredProcedureReference {
     /// Reference to the parent account.
     account: AccountReference,
@@ -562,6 +566,7 @@ impl StoredProcedureReference {
 /// Note: This is different from `TriggerInvocation` which specifies which trigger
 /// to invoke during an operation. This type is for referencing trigger definitions.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct TriggerReference {
     /// Reference to the parent account.
     account: AccountReference,
@@ -714,6 +719,7 @@ impl TriggerReference {
 /// Contains either the name or resource identifier (RID) of the UDF,
 /// along with references to its parent container, database, and account.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct UdfReference {
     /// Reference to the parent account.
     account: AccountReference,

@@ -12,6 +12,7 @@ use std::borrow::Cow;
 ///
 /// Used for human-readable identifiers like database names, container names, etc.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct ResourceName(Cow<'static, str>);
 
 impl ResourceName {
@@ -60,6 +61,7 @@ impl std::fmt::Display for ResourceName {
 /// RIDs are base64-encoded internal identifiers assigned by Cosmos DB.
 /// They encode the resource hierarchy (account → database → container → document).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct ResourceRid(Cow<'static, str>);
 
 impl ResourceRid {

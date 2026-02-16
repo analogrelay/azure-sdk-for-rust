@@ -55,6 +55,7 @@ mod header_names {
 /// }
 /// ```
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct CosmosResult {
     /// Raw response body (UTF-8 JSON or Cosmos binary encoding).
     body: Vec<u8>,
@@ -122,6 +123,7 @@ impl CosmosResult {
 /// These headers contain important metadata about the operation including
 /// request charges (RU), session tokens, and activity IDs for debugging.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct CosmosHeaders {
     /// Activity ID for request correlation (`x-ms-activity-id`).
     activity_id: Option<ActivityId>,

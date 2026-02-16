@@ -151,6 +151,7 @@ impl From<Arc<dyn TokenCredential>> for AuthOptions {
 /// );
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AccountReference {
     /// The service endpoint URL (required).
     endpoint: Url,
@@ -249,6 +250,7 @@ impl AccountReference {
 /// .unwrap();
 /// ```
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct AccountReferenceBuilder {
     endpoint: Url,
     auth: Option<AuthOptions>,
@@ -311,6 +313,7 @@ impl AccountReferenceBuilder {
 #[doc(hidden)]
 #[deprecated(since = "0.2.0", note = "Use AccountReference instead")]
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct LegacyAccountReference {
     endpoint: Url,
     auth: Option<AuthOptions>,

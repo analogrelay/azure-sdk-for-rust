@@ -35,12 +35,26 @@ pub struct ReplicationPolicy {
     pub max_replica_set_size: i32,
 }
 
-/// User-configured default consistency level for the account.
+/// User-configured consistency policy for the account.
+///
+/// Contains the default consistency level and, when using bounded staleness,
+/// the maximum staleness parameters.
 #[derive(SafeDebug, Clone, Serialize, Deserialize)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsistencyPolicy {
+    /// The default consistency level (e.g., "Session", "Strong", "BoundedStaleness").
     pub default_consistency_level: String,
+
+    /// For bounded staleness: maximum allowed staleness in terms of version (sequence number).
+    /// Only meaningful when `default_consistency_level` is "BoundedStaleness".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_staleness_prefix: Option<i32>,
+
+    /// For bounded staleness: maximum allowed staleness in seconds.
+    /// Only meaningful when `default_consistency_level` is "BoundedStaleness".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_interval_in_seconds: Option<i32>,
 }
 
 /// Read preference coefficients used by the service when selecting regions.
@@ -71,6 +85,10 @@ pub struct AccountProperties {
     /// The resource id of the respective account.
     #[serde(rename = "_rid")]
     pub rid: String,
+
+    /// The entity tag (ETag) for concurrency control.
+    #[serde(rename = "_etag", default, skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
 
     /// The media type of the respective account.
     pub media: String,

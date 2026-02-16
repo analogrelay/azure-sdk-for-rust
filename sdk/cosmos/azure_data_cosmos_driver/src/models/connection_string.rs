@@ -28,6 +28,7 @@ use azure_core::{credentials::Secret, fmt::SafeDebug, Error};
 /// assert_eq!(conn_str.account_endpoint(), "https://myaccount.documents.azure.com:443/");
 /// ```
 #[derive(Clone, PartialEq, Eq, SafeDebug)]
+#[non_exhaustive]
 pub struct ConnectionString {
     account_endpoint: String,
     account_key: Secret,

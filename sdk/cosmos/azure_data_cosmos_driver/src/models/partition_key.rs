@@ -79,6 +79,7 @@ impl Hash for FiniteF64 {
 /// You shouldn't need to construct this type directly. The various implementations
 /// of [`Into<PartitionKey>`] will handle it for you.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct PartitionKeyValue(InnerPartitionKeyValue);
 
 // We don't want to expose the implementation details of PartitionKeyValue, so we use
@@ -180,8 +181,7 @@ impl<T: Into<PartitionKeyValue>> From<Option<T>> for PartitionKeyValue {
 /// let pk = PartitionKey::from(("tenant-1", "user-123"));
 /// let pk3 = PartitionKey::from(("region", "tenant", 42));
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PartitionKey(Vec<PartitionKeyValue>);
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]#[non_exhaustive]pub struct PartitionKey(Vec<PartitionKeyValue>);
 
 impl Default for PartitionKey {
     fn default() -> Self {

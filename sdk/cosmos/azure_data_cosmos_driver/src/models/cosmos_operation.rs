@@ -49,6 +49,7 @@ use azure_core::http::headers::Headers;
 /// .with_partition_key(PartitionKey::from("partition1"));
 /// ```
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct CosmosOperation {
     /// The type of operation (immutable after construction).
     operation_type: OperationType,

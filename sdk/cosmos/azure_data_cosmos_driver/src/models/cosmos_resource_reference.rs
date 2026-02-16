@@ -25,6 +25,7 @@ use std::borrow::Cow;
 /// - [`CosmosResourceReference::partition_key_range`] - Partition key range resources
 /// - [`CosmosResourceReference::offer_by_rid`] - Offer resources
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct CosmosResourceReference {
     /// The type of resource being referenced.
     resource_type: ResourceType,
