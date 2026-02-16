@@ -37,6 +37,7 @@ use crate::{
 ///     .priority_level(PriorityLevel::Low)
 ///     .content_response_on_write(ContentResponseOnWrite::DISABLED);
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct OperationOptions {
     // Shared runtime options (can be set at environment/driver/operation level)

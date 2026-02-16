@@ -34,6 +34,7 @@ const SDK_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// Without suffix: `azsdk-rust-cosmos-driver/0.1.0 windows/x86_64 rustc/1.85.0`
 /// With suffix: `azsdk-rust-cosmos-driver/0.1.0 windows/x86_64 rustc/1.85.0 myapp-westus2`
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UserAgent {
     /// The full computed user agent string.

@@ -18,6 +18,7 @@ use crate::{
 ///
 /// These options follow a hierarchy where operation-level settings override driver-level,
 /// which in turn override environment-level defaults.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct RuntimeOptions {
     /// Throughput control group name for rate limiting.
@@ -114,6 +115,7 @@ impl RuntimeOptions {
 ///     .content_response_on_write(ContentResponseOnWrite::ENABLED)
 ///     .build();
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct RuntimeOptionsBuilder {
     options: RuntimeOptions,

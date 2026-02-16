@@ -43,6 +43,7 @@ use crate::{
 /// // Later, modify defaults at runtime
 /// options.runtime_options().set_content_response_on_write(Some(ContentResponseOnWrite::ENABLED));
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct DriverOptions {
     /// The Cosmos DB account reference (required).
@@ -76,6 +77,7 @@ impl DriverOptions {
 ///
 /// Use [`RuntimeOptions::builder()`] to create runtime options, then pass them
 /// to this builder via [`runtime_options()`](Self::runtime_options).
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct DriverOptionsBuilder {
     account: AccountReference,

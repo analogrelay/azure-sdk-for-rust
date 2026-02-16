@@ -49,16 +49,22 @@ impl From<bool> for NonIdempotentWriteRetries {
 /// Configuration for end-to-end operation latency policy.
 ///
 /// Specifies the maximum time an operation can take, including all retries.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EndToEndOperationLatencyPolicy {
     /// Maximum end-to-end timeout for the operation.
-    pub timeout: Duration,
+    timeout: Duration,
 }
 
 impl EndToEndOperationLatencyPolicy {
     /// Creates a new end-to-end operation latency policy with the given timeout.
     pub fn new(timeout: Duration) -> Self {
         Self { timeout }
+    }
+
+    /// Returns the maximum end-to-end timeout for the operation.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 }
 

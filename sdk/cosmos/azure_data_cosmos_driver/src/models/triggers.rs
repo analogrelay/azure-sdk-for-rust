@@ -12,6 +12,7 @@ use std::borrow::Cow;
 ///
 /// This type is serialized into request headers to specify which trigger to invoke.
 /// For resource references to trigger definitions, see the resource reference types.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TriggerInvocation {
     /// The name/id of the trigger to invoke.

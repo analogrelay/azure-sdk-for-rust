@@ -37,6 +37,7 @@ use std::fmt;
 /// assert_eq!(custom.as_str(), "eastus9");
 /// assert_eq!(custom.display_name(), "eastus9");
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Region {

@@ -70,6 +70,7 @@ impl std::str::FromStr for DiagnosticsVerbosity {
 ///
 /// Controls how diagnostic information is formatted and truncated.
 /// Use [`DiagnosticsOptionsBuilder`] to construct instances.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct DiagnosticsOptions {
     /// Maximum size in bytes for summary mode diagnostic output.
@@ -132,6 +133,7 @@ impl DiagnosticsOptions {
 ///     .build()
 ///     .expect("valid options");
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct DiagnosticsOptionsBuilder {
     max_summary_size_bytes: Option<usize>,

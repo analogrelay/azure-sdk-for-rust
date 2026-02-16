@@ -8,6 +8,7 @@ use std::time::Duration;
 /// Options for requests routed through the Azure Cosmos DB dedicated gateway.
 ///
 /// The dedicated gateway provides integrated caching capabilities.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DedicatedGatewayOptions {
     max_integrated_cache_staleness: Option<Duration>,

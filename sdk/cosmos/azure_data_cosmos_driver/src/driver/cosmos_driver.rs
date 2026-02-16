@@ -32,6 +32,7 @@ use super::{
 ///
 /// The driver handles executing operations against Cosmos DB, merging options from
 /// operation, driver, and runtime levels.
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct CosmosDriver {
     /// Reference to the parent runtime.

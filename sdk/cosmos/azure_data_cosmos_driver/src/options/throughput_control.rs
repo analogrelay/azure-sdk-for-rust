@@ -332,6 +332,7 @@ impl ThroughputControlGroupOptions {
 ///
 /// Groups are uniquely identified by the combination of container and name.
 /// The same group name can be registered for different containers.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ThroughputControlGroupKey {
     /// The container this group applies to.
@@ -353,6 +354,7 @@ impl ThroughputControlGroupKey {
 /// A snapshot of a throughput control group's current state.
 ///
 /// This provides an immutable view of the group's configuration at a point in time.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct ThroughputControlGroupSnapshot {
     /// The group name.
@@ -430,6 +432,7 @@ impl std::error::Error for ThroughputControlGroupRegistrationError {}
 /// Manages the collection of registered groups and provides lookup functionality.
 /// This registry is built during `CosmosDriverRuntimeBuilder::build()` and is
 /// immutable after runtime creation (except for mutable values within groups).
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct ThroughputControlGroupRegistry {
     /// Groups keyed by (container, name) tuple.

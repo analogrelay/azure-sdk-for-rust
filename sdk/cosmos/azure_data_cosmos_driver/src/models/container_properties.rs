@@ -403,10 +403,7 @@ pub struct ComputedProperty {
 
 impl ComputedProperty {
     /// Creates a new computed property.
-    pub fn new(
-        name: impl Into<Cow<'static, str>>,
-        query: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn new(name: impl Into<Cow<'static, str>>, query: impl Into<Cow<'static, str>>) -> Self {
         Self {
             name: name.into(),
             query: query.into(),
@@ -579,10 +576,7 @@ pub struct FullTextPath {
 
 impl FullTextPath {
     /// Creates a new full-text path.
-    pub fn new(
-        path: impl Into<Cow<'static, str>>,
-        language: impl Into<Cow<'static, str>>,
-    ) -> Self {
+    pub fn new(path: impl Into<Cow<'static, str>>, language: impl Into<Cow<'static, str>>) -> Self {
         Self {
             path: path.into(),
             language: language.into(),

@@ -6,6 +6,7 @@
 use crate::models::TriggerInvocation;
 
 /// Collection of triggers to include in a request.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TriggerOptions {
     /// Triggers to execute before the operation.

@@ -267,6 +267,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry_sdk",
+ "reqwest",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -334,6 +335,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "azure_data_cosmos_driver"
+version = "0.1.0"
+dependencies = [
+ "async-lock",
+ "async-trait",
+ "azure_core",
+ "azure_identity",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "azure_data_cosmos_native"
 version = "0.27.0"
 dependencies = [
@@ -377,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "azure_messaging_eventhubs"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "async-lock",
  "async-stream",
@@ -400,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "azure_messaging_eventhubs_checkpointstore_blob"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "azure_core",

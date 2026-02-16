@@ -30,6 +30,7 @@ use super::env_parsing::{
 /// assert_eq!(options.max_idle_connections_per_endpoint(), 5_000);
 /// assert_eq!(options.max_connect_timeout(), Duration::from_secs(3));
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct ConnectionPoolOptions {
     is_proxy_allowed: bool,
@@ -175,6 +176,7 @@ impl ConnectionPoolOptions {
 ///     .build()
 ///     .expect("valid options");
 /// ```
+#[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct ConnectionPoolOptionsBuilder {
     is_proxy_allowed: Option<bool>,

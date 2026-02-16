@@ -50,45 +50,80 @@ impl std::fmt::Display for ETag {
 /// Conditional request options based on ETag values.
 ///
 /// Used for optimistic concurrency control on write operations.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ETagCondition {
-    if_match: Option<ETag>,
-    if_none_match: Option<ETag>,
+/// Exactly one condition must be specified - either `IfMatch` or `IfNoneMatch`.
+///
+/// # Variants
+///
+/// - [`IfMatch`](Self::IfMatch): Operation succeeds only if the resource's current ETag matches.
+///   Used for "update if unchanged" semantics (optimistic concurrency).
+/// - [`IfNoneMatch`](Self::IfNoneMatch): Operation succeeds only if the resource's current ETag
+///   does NOT match. Use `ETag::new("*")` for "create if not exists" semantics.
+///
+/// # Example
+///
+/// ```
+/// use azure_data_cosmos_driver::models::{ETag, ETagCondition};
+///
+/// // Update only if the resource hasn't changed (optimistic concurrency)
+/// let condition = ETagCondition::if_match("\"abc123\"");
+///
+/// // Create only if the resource doesn't exist
+/// let condition = ETagCondition::if_none_match("*");
+/// ```
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ETagCondition {
+    /// Operation succeeds only if the resource's current ETag matches.
+    ///
+    /// Used for "update if unchanged" semantics (optimistic concurrency).
+    IfMatch(ETag),
+
+    /// Operation succeeds only if the resource's current ETag does NOT match.
+    ///
+    /// Use `ETag::new("*")` for "create if not exists" semantics.
+    IfNoneMatch(ETag),
 }
 
 impl ETagCondition {
-    /// Creates a new empty ETag condition.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Gets the If-Match condition.
+    /// Creates an If-Match condition.
     ///
-    /// If set, the operation succeeds only if the resource's current ETag matches.
-    /// Used for "update if unchanged" semantics.
-    pub fn if_match(&self) -> Option<&ETag> {
-        self.if_match.as_ref()
+    /// The operation succeeds only if the resource's current ETag matches the given value.
+    /// Used for "update if unchanged" semantics (optimistic concurrency).
+    pub fn if_match(etag: impl Into<ETag>) -> Self {
+        Self::IfMatch(etag.into())
     }
 
-    /// Gets the If-None-Match condition.
+    /// Creates an If-None-Match condition.
     ///
-    /// If set, the operation succeeds only if the resource's current ETag does NOT match.
-    /// Used for "create if not exists" or conditional reads.
-    pub fn if_none_match(&self) -> Option<&ETag> {
-        self.if_none_match.as_ref()
+    /// The operation succeeds only if the resource's current ETag does NOT match the given value.
+    /// Use `"*"` for "create if not exists" semantics.
+    pub fn if_none_match(etag: impl Into<ETag>) -> Self {
+        Self::IfNoneMatch(etag.into())
     }
 
-    /// Sets the If-Match condition.
-    #[must_use]
-    pub fn with_if_match(mut self, etag: impl Into<ETag>) -> Self {
-        self.if_match = Some(etag.into());
-        self
+    /// Returns the ETag if this is an If-Match condition.
+    pub fn as_if_match(&self) -> Option<&ETag> {
+        match self {
+            Self::IfMatch(etag) => Some(etag),
+            Self::IfNoneMatch(_) => None,
+        }
     }
 
-    /// Sets the If-None-Match condition.
-    #[must_use]
-    pub fn with_if_none_match(mut self, etag: impl Into<ETag>) -> Self {
-        self.if_none_match = Some(etag.into());
-        self
+    /// Returns the ETag if this is an If-None-Match condition.
+    pub fn as_if_none_match(&self) -> Option<&ETag> {
+        match self {
+            Self::IfNoneMatch(etag) => Some(etag),
+            Self::IfMatch(_) => None,
+        }
+    }
+
+    /// Returns `true` if this is an If-Match condition.
+    pub fn is_if_match(&self) -> bool {
+        matches!(self, Self::IfMatch(_))
+    }
+
+    /// Returns `true` if this is an If-None-Match condition.
+    pub fn is_if_none_match(&self) -> bool {
+        matches!(self, Self::IfNoneMatch(_))
     }
 }

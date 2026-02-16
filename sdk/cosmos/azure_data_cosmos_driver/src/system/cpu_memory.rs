@@ -26,12 +26,13 @@ const CPU_OVERLOAD_THRESHOLD: f32 = 90.0;
 static CPU_MEMORY_MONITOR: OnceLock<Arc<CpuMemoryMonitorInner>> = OnceLock::new();
 
 /// A single CPU load measurement at a point in time.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct CpuLoad {
     /// When this measurement was taken.
-    pub timestamp: Instant,
+    timestamp: Instant,
     /// CPU usage percentage (0.0 to 100.0).
-    pub value: f32,
+    value: f32,
 }
 
 impl CpuLoad {
@@ -48,6 +49,16 @@ impl CpuLoad {
         );
         Self { timestamp, value }
     }
+
+    /// Returns when this measurement was taken.
+    pub fn timestamp(&self) -> Instant {
+        self.timestamp
+    }
+
+    /// Returns the CPU usage percentage (0.0 to 100.0).
+    pub fn value(&self) -> f32 {
+        self.value
+    }
 }
 
 impl std::fmt::Display for CpuLoad {
@@ -57,6 +68,7 @@ impl std::fmt::Display for CpuLoad {
 }
 
 /// A single memory measurement at a point in time.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct MemoryUsage {
     /// When this measurement was taken.
@@ -66,6 +78,7 @@ pub struct MemoryUsage {
 }
 
 /// Historical CPU and memory usage data.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct CpuMemoryHistory {
     /// Historical CPU load samples (oldest first).
@@ -154,6 +167,7 @@ impl std::fmt::Display for CpuMemoryHistory {
 ///
 /// This handle keeps the monitor alive. When all handles are dropped,
 /// the background monitoring thread will stop.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct CpuMemoryMonitor {
     inner: Arc<CpuMemoryMonitorInner>,

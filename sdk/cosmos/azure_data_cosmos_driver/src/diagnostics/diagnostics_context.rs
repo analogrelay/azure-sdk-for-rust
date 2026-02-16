@@ -232,6 +232,7 @@ impl DiagnosticsContextBuilder {
 ///
 /// - **Summary**: Optimized for size constraints, deduplicates similar requests
 /// - **Detailed**: Full information about every request
+#[non_exhaustive]
 #[derive(Debug)]
 pub struct DiagnosticsContext {
     /// Operation-level activity ID.

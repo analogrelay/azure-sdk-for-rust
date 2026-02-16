@@ -181,7 +181,9 @@ impl<T: Into<PartitionKeyValue>> From<Option<T>> for PartitionKeyValue {
 /// let pk = PartitionKey::from(("tenant-1", "user-123"));
 /// let pk3 = PartitionKey::from(("region", "tenant", 42));
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]#[non_exhaustive]pub struct PartitionKey(Vec<PartitionKeyValue>);
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct PartitionKey(Vec<PartitionKeyValue>);
 
 impl Default for PartitionKey {
     fn default() -> Self {

@@ -22,6 +22,7 @@ pub const UUID_PREFIX: &str = "uuid_";
 static VM_METADATA: OnceLock<Arc<VmMetadataServiceInner>> = OnceLock::new();
 
 /// Azure VM metadata retrieved from IMDS.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct AzureVmMetadata {
@@ -106,6 +107,7 @@ struct ComputeMetadata {
 /// - Off Azure: Uses a process-wide generated UUID (prefixed with "uuid_")
 ///
 /// This ensures that client telemetry always has a stable machine identifier.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct VmMetadataService {
     /// Cached metadata (None if fetch failed or not on Azure).

@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 /// Thresholds for controlling when diagnostics are captured/logged.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DiagnosticsThresholds {
     point_operation_latency_threshold: Option<Duration>,
