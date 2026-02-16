@@ -3,7 +3,7 @@
 
 //! Internal JSON serialization structures for diagnostics output.
 
-use crate::models::{ActivityId, CosmosStatus};
+use crate::models::{ActivityId, CosmosStatus, RequestCharge};
 use serde::Serialize;
 
 use super::{ExecutionContext, RequestDiagnostics};
@@ -13,7 +13,7 @@ use super::{ExecutionContext, RequestDiagnostics};
 pub(super) struct DetailedDiagnosticsOutput<'a> {
     pub activity_id: &'a ActivityId,
     pub total_duration_ms: u64,
-    pub total_request_charge: f64,
+    pub total_request_charge: RequestCharge,
     pub request_count: usize,
     pub requests: &'a [RequestDiagnostics],
 }
@@ -23,7 +23,7 @@ pub(super) struct DetailedDiagnosticsOutput<'a> {
 pub(super) struct SummaryDiagnosticsOutput<'a> {
     pub activity_id: &'a ActivityId,
     pub total_duration_ms: u64,
-    pub total_request_charge: f64,
+    pub total_request_charge: RequestCharge,
     pub request_count: usize,
     pub regions: Vec<RegionSummary>,
 }
@@ -33,7 +33,7 @@ pub(super) struct SummaryDiagnosticsOutput<'a> {
 pub(super) struct RegionSummary {
     pub region: String,
     pub request_count: usize,
-    pub total_request_charge: f64,
+    pub total_request_charge: RequestCharge,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub first: Option<RequestSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +49,7 @@ pub(super) struct RequestSummary {
     pub endpoint: String,
     #[serde(flatten)]
     pub status: CosmosStatus,
-    pub request_charge: f64,
+    pub request_charge: RequestCharge,
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
@@ -76,7 +76,7 @@ pub(super) struct DeduplicatedGroup {
     pub status: CosmosStatus,
     pub execution_context: ExecutionContext,
     pub count: usize,
-    pub total_request_charge: f64,
+    pub total_request_charge: RequestCharge,
     pub min_duration_ms: u64,
     pub max_duration_ms: u64,
     pub p50_duration_ms: u64,

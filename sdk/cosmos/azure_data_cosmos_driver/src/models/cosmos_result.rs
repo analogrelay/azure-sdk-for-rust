@@ -3,7 +3,7 @@
 
 //! Cosmos DB operation result types.
 
-use crate::{diagnostics::DiagnosticsContext, models::ActivityId};
+use crate::{diagnostics::DiagnosticsContext, models::{ActivityId, RequestCharge}};
 use azure_core::http::headers::Headers;
 use std::sync::Arc;
 
@@ -127,7 +127,7 @@ pub struct CosmosHeaders {
     activity_id: Option<ActivityId>,
 
     /// Request charge in Request Units (`x-ms-request-charge`).
-    request_charge: Option<f64>,
+    request_charge: Option<RequestCharge>,
 
     /// Session token for session consistency (`x-ms-session-token`).
     session_token: Option<String>,
@@ -161,7 +161,8 @@ impl CosmosHeaders {
                 .map(|s| ActivityId::from_string(s.to_owned())),
             request_charge: headers
                 .get_optional_str(&header_names::REQUEST_CHARGE)
-                .and_then(|s| s.parse().ok()),
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(RequestCharge::new),
             session_token: headers
                 .get_optional_str(&header_names::SESSION_TOKEN)
                 .map(|s| s.to_owned()),
@@ -189,7 +190,7 @@ impl CosmosHeaders {
     ///
     /// For the total RU across all requests (including retries),
     /// use [`DiagnosticsContext::total_request_charge`].
-    pub fn request_charge(&self) -> Option<f64> {
+    pub fn request_charge(&self) -> Option<RequestCharge> {
         self.request_charge
     }
 
@@ -231,7 +232,7 @@ impl CosmosHeaders {
     }
 
     /// Sets the request charge.
-    pub(crate) fn with_request_charge(mut self, charge: f64) -> Self {
+    pub(crate) fn with_request_charge(mut self, charge: RequestCharge) -> Self {
         self.request_charge = Some(charge);
         self
     }
@@ -266,14 +267,14 @@ mod tests {
     use super::*;
     use crate::{
         diagnostics::DiagnosticsContextBuilder,
-        models::CosmosStatus,
+        models::{CosmosStatus, RequestCharge, SubStatusCode},
         options::DiagnosticsOptions,
     };
     use azure_core::http::StatusCode;
 
     fn make_diagnostics(
         status_code: Option<StatusCode>,
-        sub_status_code: Option<u32>,
+        sub_status_code: Option<SubStatusCode>,
     ) -> Arc<DiagnosticsContext> {
         let mut builder = DiagnosticsContextBuilder::new(
             ActivityId::new_uuid(),
@@ -288,7 +289,7 @@ mod tests {
     #[test]
     fn cosmos_result_accessors() {
         let headers = CosmosHeaders::new()
-            .with_request_charge(5.5)
+            .with_request_charge(RequestCharge::new(5.5))
             .with_activity_id(ActivityId::from_string("test-activity".to_string()));
 
         let result = CosmosResult::new(
@@ -303,7 +304,7 @@ mod tests {
         assert!(status.is_success());
         assert!(status.sub_status().is_none());
         assert_eq!(result.body(), b"{\"id\": \"test\"}");
-        assert_eq!(result.headers().request_charge(), Some(5.5));
+        assert_eq!(result.headers().request_charge(), Some(RequestCharge::new(5.5)));
     }
 
     #[test]
@@ -311,10 +312,7 @@ mod tests {
         let result = CosmosResult::new(
             b"{}".to_vec(),
             CosmosHeaders::new(),
-            make_diagnostics(
-                Some(StatusCode::TooManyRequests),
-                Some(3200),
-            ),
+            make_diagnostics(Some(StatusCode::TooManyRequests), Some(SubStatusCode::new(3200))),
         );
 
         let status = result.diagnostics().status().unwrap();
@@ -325,7 +323,7 @@ mod tests {
 
     #[test]
     fn cosmos_result_into_parts() {
-        let headers = CosmosHeaders::new().with_request_charge(1.0);
+        let headers = CosmosHeaders::new().with_request_charge(RequestCharge::new(1.0));
         let result = CosmosResult::new(
             b"body".to_vec(),
             headers,
@@ -334,17 +332,17 @@ mod tests {
 
         let (body, headers, diagnostics) = result.into_parts();
         assert_eq!(body, b"body");
-        assert_eq!(diagnostics.status().unwrap().status_code(), StatusCode::Created);
+        assert_eq!(
+            diagnostics.status().unwrap().status_code(),
+            StatusCode::Created
+        );
         assert!(diagnostics.status().unwrap().sub_status().is_none());
-        assert_eq!(headers.request_charge(), Some(1.0));
+        assert_eq!(headers.request_charge(), Some(RequestCharge::new(1.0)));
     }
 
     #[test]
     fn cosmos_result_status_via_diagnostics() {
-        let diagnostics = make_diagnostics(
-            Some(StatusCode::NotFound),
-            Some(1002),
-        );
+        let diagnostics = make_diagnostics(Some(StatusCode::NotFound), Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE));
         let result = CosmosResult::new(b"{}".to_vec(), CosmosHeaders::new(), diagnostics.clone());
 
         // Status codes are only accessible via diagnostics
@@ -373,7 +371,7 @@ mod tests {
             cosmos_headers.activity_id().map(|a| a.as_str()),
             Some("abc-123")
         );
-        assert!((cosmos_headers.request_charge().unwrap() - 5.67).abs() < f64::EPSILON);
+        assert!((cosmos_headers.request_charge().unwrap().value() - 5.67).abs() < f64::EPSILON);
         assert_eq!(cosmos_headers.session_token(), Some("session:456"));
         assert_eq!(cosmos_headers.etag(), Some("\"version-1\""));
         assert_eq!(cosmos_headers.continuation(), Some("next-page-token"));
@@ -384,14 +382,14 @@ mod tests {
     fn cosmos_headers_builder_pattern() {
         let headers = CosmosHeaders::new()
             .with_activity_id(ActivityId::from_string("test".to_string()))
-            .with_request_charge(2.0)
+            .with_request_charge(RequestCharge::new(2.0))
             .with_session_token("token".to_string())
             .with_etag("etag".to_string())
             .with_continuation("cont".to_string())
             .with_item_count(5);
 
         assert_eq!(headers.activity_id().map(|a| a.as_str()), Some("test"));
-        assert_eq!(headers.request_charge(), Some(2.0));
+        assert_eq!(headers.request_charge(), Some(RequestCharge::new(2.0)));
         assert_eq!(headers.session_token(), Some("token"));
         assert_eq!(headers.etag(), Some("etag"));
         assert_eq!(headers.continuation(), Some("cont"));

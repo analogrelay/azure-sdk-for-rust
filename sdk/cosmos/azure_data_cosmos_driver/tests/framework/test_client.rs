@@ -337,7 +337,7 @@ impl DriverTestRunContext {
 
         // Check request charge is non-negative
         assert!(
-            first_request.request_charge() >= 0.0,
+            first_request.request_charge().value() >= 0.0,
             "Request charge should be non-negative"
         );
     }

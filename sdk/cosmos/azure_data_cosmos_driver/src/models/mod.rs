@@ -18,6 +18,7 @@ mod cosmos_resource_reference;
 mod cosmos_result;
 mod cosmos_status;
 mod etag;
+mod request_charge;
 mod partition_key;
 mod resource_id;
 mod resource_reference;
@@ -38,7 +39,9 @@ pub use container_properties::{
 pub use cosmos_operation::CosmosOperation;
 pub use cosmos_resource_reference::CosmosResourceReference;
 pub use cosmos_result::{CosmosHeaders, CosmosResult};
+pub use cosmos_status::{CosmosStatus, SubStatusCode};
 pub use etag::{ETag, ETagCondition};
+pub use request_charge::RequestCharge;
 pub use partition_key::{PartitionKey, PartitionKeyValue};
 pub use resource_id::{ResourceName, ResourceRid};
 pub use resource_reference::{
@@ -46,7 +49,6 @@ pub use resource_reference::{
     TriggerReference, UdfReference,
 };
 pub use resource_types::{OperationType, ResourceType};
-pub use cosmos_status::{CosmosStatus, SubStatusCode};
 pub use session::SessionToken;
 pub use throughput_control::ThroughputControlGroupName;
 pub use triggers::TriggerInvocation;

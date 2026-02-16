@@ -4,7 +4,7 @@
 //! Diagnostics for individual HTTP request/response pairs.
 
 use crate::{
-    models::{ActivityId, CosmosStatus},
+    models::{ActivityId, CosmosStatus, RequestCharge, SubStatusCode},
     options::Region,
 };
 use azure_core::http::StatusCode;
@@ -167,7 +167,7 @@ pub struct RequestDiagnostics {
     pub(super) status: CosmosStatus,
 
     /// Request charge (RU) for this individual request.
-    pub(crate) request_charge: f64,
+    pub(crate) request_charge: RequestCharge,
 
     /// Activity ID from response headers.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -228,7 +228,7 @@ impl RequestDiagnostics {
             // Status is set when the request completes via `complete()`.
             // Using 0 as sentinel value for "not yet completed".
             status: CosmosStatus::default(),
-            request_charge: 0.0,
+            request_charge: RequestCharge::default(),
             activity_id: None,
             session_token: None,
             started_at: Instant::now(),
@@ -244,9 +244,9 @@ impl RequestDiagnostics {
     /// Records completion of this request.
     ///
     /// Since we received a response, the request was definitely sent.
-    pub(crate) fn complete(&mut self, status_code: StatusCode) {
+    pub(crate) fn complete(&mut self, status_code: StatusCode, sub_status: Option<SubStatusCode>) {
         self.completed_at = Some(Instant::now());
-        self.status = CosmosStatus::new(status_code);
+        self.status = CosmosStatus::from_parts(status_code, sub_status);
         self.request_sent = RequestSentStatus::Sent;
         self.duration_ms = self
             .completed_at
@@ -255,10 +255,18 @@ impl RequestDiagnostics {
             .as_millis() as u64;
     }
 
-    /// Records timeout of this request.
+    /// Records end-to-end timeout of this request.
+    ///
+    /// Sets the status to 408 (Request Timeout) with sub-status
+    /// [`SubStatusCode::CLIENT_OPERATION_TIMEOUT`] to indicate an end-to-end
+    /// operation timeout from the client side.
     pub(crate) fn timeout(&mut self) {
         self.completed_at = Some(Instant::now());
         self.timed_out = true;
+        self.status = CosmosStatus::with_sub_status(
+            StatusCode::RequestTimeout,
+            SubStatusCode::CLIENT_OPERATION_TIMEOUT,
+        );
         self.duration_ms = self
             .completed_at
             .unwrap()
@@ -296,16 +304,13 @@ impl RequestDiagnostics {
     }
 
     /// Sets the sub-status code.
-    pub(crate) fn with_sub_status(mut self, sub_status: u32) -> Self {
-        self.status = CosmosStatus::from_parts(
-            self.status.status_code(),
-            Some(sub_status),
-        );
+    pub(crate) fn with_sub_status(mut self, sub_status: SubStatusCode) -> Self {
+        self.status = CosmosStatus::from_parts(self.status.status_code(), Some(sub_status));
         self
     }
 
     /// Sets the request charge.
-    pub(crate) fn with_charge(mut self, charge: f64) -> Self {
+    pub(crate) fn with_charge(mut self, charge: RequestCharge) -> Self {
         self.request_charge = charge;
         self
     }
@@ -365,7 +370,7 @@ impl RequestDiagnostics {
     }
 
     /// Returns the request charge (RU) for this individual request.
-    pub fn request_charge(&self) -> f64 {
+    pub fn request_charge(&self) -> RequestCharge {
         self.request_charge
     }
 

@@ -80,11 +80,11 @@ pub async fn create_and_read_item() -> Result<(), Box<dyn Error>> {
         // Check request charge is reasonable (typically 1-5 RUs for point read)
         let read_requests = read_diagnostics.requests();
         assert!(
-            read_requests[0].request_charge() > 0.0,
+            read_requests[0].request_charge().value() > 0.0,
             "Request charge should be positive for reads"
         );
         assert!(
-            read_requests[0].request_charge() < 100.0,
+            read_requests[0].request_charge().value() < 100.0,
             "Request charge should be reasonable for point read"
         );
 

@@ -3,6 +3,7 @@
 
 //! Diagnostics threshold types.
 
+use crate::models::RequestCharge;
 use std::time::Duration;
 
 /// Thresholds for controlling when diagnostics are captured/logged.
@@ -11,7 +12,7 @@ use std::time::Duration;
 pub struct DiagnosticsThresholds {
     point_operation_latency_threshold: Option<Duration>,
     non_point_operation_latency_threshold: Option<Duration>,
-    request_charge_threshold: Option<f64>,
+    request_charge_threshold: Option<RequestCharge>,
     payload_size_threshold: Option<usize>,
 }
 
@@ -32,7 +33,7 @@ impl DiagnosticsThresholds {
     }
 
     /// Gets the request charge threshold.
-    pub fn request_charge_threshold(&self) -> Option<f64> {
+    pub fn request_charge_threshold(&self) -> Option<RequestCharge> {
         self.request_charge_threshold
     }
 
@@ -57,7 +58,7 @@ impl DiagnosticsThresholds {
 
     /// Sets the request charge threshold.
     #[must_use]
-    pub fn with_request_charge_threshold(mut self, threshold: f64) -> Self {
+    pub fn with_request_charge_threshold(mut self, threshold: RequestCharge) -> Self {
         self.request_charge_threshold = Some(threshold);
         self
     }

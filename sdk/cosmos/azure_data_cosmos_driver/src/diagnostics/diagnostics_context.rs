@@ -4,7 +4,7 @@
 //! The main diagnostics context for tracking operation-level diagnostics.
 
 use crate::{
-    models::{ActivityId, CosmosStatus},
+    models::{ActivityId, CosmosStatus, RequestCharge, SubStatusCode},
     options::{DiagnosticsOptions, DiagnosticsVerbosity, Region},
 };
 use azure_core::http::StatusCode;
@@ -39,6 +39,9 @@ pub(crate) struct DiagnosticsContextBuilder {
     started_at: Instant,
 
     /// All request diagnostics collected during this operation.
+    ///
+    /// `Vec<T>` in Rust guarantees insertion order, so requests are stored in
+    /// the order they were added.
     requests: Vec<RequestDiagnostics>,
 
     /// Operation-level combined HTTP status and sub-status (final status after retries).
@@ -72,7 +75,7 @@ impl DiagnosticsContextBuilder {
     pub(crate) fn set_operation_status(
         &mut self,
         status_code: StatusCode,
-        sub_status_code: Option<u32>,
+        sub_status_code: Option<SubStatusCode>,
     ) {
         self.status = Some(CosmosStatus::from_parts(status_code, sub_status_code));
     }
@@ -104,15 +107,25 @@ impl DiagnosticsContextBuilder {
     /// Records completion of a request.
     ///
     /// Should be called when the HTTP response is received.
-    pub(crate) fn complete_request(&mut self, handle: RequestHandle, status_code: StatusCode) {
+    pub(crate) fn complete_request(
+        &mut self,
+        handle: RequestHandle,
+        status_code: StatusCode,
+        sub_status: Option<SubStatusCode>,
+    ) {
         if let Some(request) = self.requests.get_mut(handle.0) {
-            request.complete(status_code);
+            request.complete(status_code, sub_status);
         }
     }
 
-    /// Records timeout of a request.
+    /// Records end-to-end timeout of a request.
     ///
-    /// Should be called when a request times out before receiving a response.
+    /// Should be called when a request times out before receiving a response
+    /// due to hitting the end-to-end operation timeout. Sets the status to
+    /// 408 (Request Timeout) with sub-status [`SubStatusCode::CLIENT_OPERATION_TIMEOUT`].
+    ///
+    /// For transport-level timeouts (connection timeouts, etc.), use
+    /// [`fail_request`](Self::fail_request) instead with the appropriate error.
     pub(crate) fn timeout_request(&mut self, handle: RequestHandle) {
         if let Some(request) = self.requests.get_mut(handle.0) {
             request.timeout();
@@ -172,7 +185,7 @@ impl DiagnosticsContextBuilder {
     }
 
     /// Returns the total request charge (RU) across all requests.
-    pub(crate) fn total_request_charge(&self) -> f64 {
+    pub(crate) fn total_request_charge(&self) -> RequestCharge {
         self.requests.iter().map(|r| r.request_charge).sum()
     }
 
@@ -235,7 +248,10 @@ pub struct DiagnosticsContext {
     /// Total duration of the operation (from start to completion).
     duration: Duration,
 
-    /// All request diagnostics (shared via Arc for efficient multi-read).
+    /// All request diagnostics (shared via `Arc` for efficient multi-read).
+    ///
+    /// `Vec<T>` in Rust guarantees insertion order, so requests are stored in
+    /// the order they were added.
     requests: Arc<Vec<RequestDiagnostics>>,
 
     /// Operation-level combined HTTP status and sub-status (final status after retries).
@@ -272,7 +288,7 @@ impl DiagnosticsContext {
     }
 
     /// Returns the total request charge (RU) across all requests.
-    pub fn total_request_charge(&self) -> f64 {
+    pub fn total_request_charge(&self) -> RequestCharge {
         self.requests.iter().map(|r| r.request_charge).sum()
     }
 
@@ -403,7 +419,7 @@ impl DiagnosticsContext {
 /// Builds a summary for requests in a single region.
 fn build_region_summary(region: Region, requests: Vec<&RequestDiagnostics>) -> RegionSummary {
     let count = requests.len();
-    let total_charge: f64 = requests.iter().map(|r| r.request_charge).sum();
+    let total_charge: RequestCharge = requests.iter().map(|r| r.request_charge).sum();
 
     // Keep first and last in full detail
     let first = requests.first().map(|r| RequestSummary::from(*r));
@@ -457,7 +473,7 @@ fn deduplicate_requests(requests: Vec<&RequestDiagnostics>) -> Vec<DeduplicatedG
         .into_iter()
         .map(|(key, reqs)| {
             let durations: Vec<u64> = reqs.iter().map(|r| r.duration_ms).collect();
-            let total_charge: f64 = reqs.iter().map(|r| r.request_charge).sum();
+            let total_charge: RequestCharge = reqs.iter().map(|r| r.request_charge).sum();
 
             DeduplicatedGroup {
                 endpoint: key.endpoint,
@@ -546,7 +562,7 @@ mod tests {
             );
 
             std::thread::sleep(std::time::Duration::from_millis(10));
-            builder.complete_request(handle, StatusCode::Ok);
+            builder.complete_request(handle, StatusCode::Ok, None);
         });
 
         let requests = ctx.requests();
@@ -580,11 +596,11 @@ mod tests {
                 "https://test.documents.azure.com".to_string(),
             );
             builder.update_request(handle, |req| {
-                req.request_charge = 5.5;
+                req.request_charge = RequestCharge::new(5.5);
             });
         });
 
-        assert_eq!(ctx.total_request_charge(), 5.5);
+        assert_eq!(ctx.total_request_charge(), RequestCharge::new(5.5));
     }
 
     #[test]
@@ -595,17 +611,17 @@ mod tests {
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
             );
-            builder.update_request(h1, |req| req.request_charge = 3.0);
+            builder.update_request(h1, |req| req.request_charge = RequestCharge::new(3.0));
 
             let h2 = builder.start_test_request(
                 ExecutionContext::Retry,
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
             );
-            builder.update_request(h2, |req| req.request_charge = 2.5);
+            builder.update_request(h2, |req| req.request_charge = RequestCharge::new(2.5));
         });
 
-        assert!((ctx.total_request_charge() - 5.5).abs() < f64::EPSILON);
+        assert!((ctx.total_request_charge().value() - 5.5).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -640,8 +656,8 @@ mod tests {
                 Region::WEST_US_2,
                 "https://test.documents.azure.com".to_string(),
             );
-            builder.update_request(handle, |req| req.request_charge = 1.0);
-            builder.complete_request(handle, StatusCode::Ok);
+            builder.update_request(handle, |req| req.request_charge = RequestCharge::new(1.0));
+            builder.complete_request(handle, StatusCode::Ok, None);
         });
 
         let json = ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed));
@@ -659,8 +675,8 @@ mod tests {
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
                 );
-                builder.update_request(handle, |req| req.request_charge = i as f64);
-                builder.complete_request(handle, StatusCode::TooManyRequests);
+                builder.update_request(handle, |req| req.request_charge = RequestCharge::new(i as f64));
+                builder.complete_request(handle, StatusCode::TooManyRequests, None);
             }
         });
 
@@ -679,7 +695,7 @@ mod tests {
                     Region::WEST_US_2,
                     "https://test.documents.azure.com".to_string(),
                 );
-                builder.complete_request(handle, StatusCode::Ok);
+                builder.complete_request(handle, StatusCode::Ok, None);
             },
         );
 
@@ -727,10 +743,7 @@ mod tests {
     #[test]
     fn status_codes_stored() {
         let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
-        builder.set_operation_status(
-            StatusCode::NotFound,
-            Some(1002),
-        );
+        builder.set_operation_status(StatusCode::NotFound, Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE));
         let ctx = builder.complete();
 
         let status = ctx.status().unwrap();
@@ -758,15 +771,15 @@ mod tests {
 
         // Update before complete - should work
         builder.update_request(handle, |req| {
-            req.request_charge = 5.5;
+            req.request_charge = RequestCharge::new(5.5);
         });
 
         // Now complete
-        builder.complete_request(handle, StatusCode::Ok);
+        builder.complete_request(handle, StatusCode::Ok, None);
 
         let ctx = builder.complete();
         let requests = ctx.requests();
-        assert_eq!(requests[0].request_charge, 5.5);
+        assert_eq!(requests[0].request_charge, RequestCharge::new(5.5));
     }
 
     #[test]
@@ -780,24 +793,24 @@ mod tests {
 
         // Update with initial value
         builder.update_request(handle, |req| {
-            req.request_charge = 5.5;
+            req.request_charge = RequestCharge::new(5.5);
         });
 
         // Complete the request
-        builder.complete_request(handle, StatusCode::Ok);
+        builder.complete_request(handle, StatusCode::Ok, None);
 
         // In release builds, this update should be silently ignored
         // In debug builds, this would panic (tested separately)
         #[cfg(not(debug_assertions))]
         {
             builder.update_request(handle, |req| {
-                req.request_charge = 10.0; // Attempt to change after completion
+                req.request_charge = RequestCharge::new(10.0); // Attempt to change after completion
             });
 
             let ctx = builder.complete();
             let requests = ctx.requests();
             // Value should remain 5.5, not 10.0
-            assert_eq!(requests[0].request_charge, 5.5);
+            assert_eq!(requests[0].request_charge, RequestCharge::new(5.5));
         }
     }
 }

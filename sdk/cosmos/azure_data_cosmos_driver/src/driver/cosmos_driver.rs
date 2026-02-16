@@ -7,7 +7,7 @@ use crate::{
     diagnostics::{DiagnosticsContextBuilder, ExecutionContext, PipelineType, TransportSecurity},
     models::{
         AccountEndpoint, AccountReference, ActivityId, ContainerReference, CosmosHeaders,
-        CosmosOperation, CosmosResult,
+        CosmosOperation, CosmosResult, RequestCharge, SubStatusCode,
     },
     options::{
         DriverOptions, OperationOptions, Region, RuntimeOptions, ThroughputControlGroupSnapshot,
@@ -290,7 +290,7 @@ impl CosmosDriver {
                     .get_optional_str(&azure_core::http::headers::HeaderName::from_static(
                         "x-ms-substatus",
                     ))
-                    .and_then(|s| s.parse::<u32>().ok());
+                    .and_then(SubStatusCode::from_header_value);
 
                 // Update request with response data (before completing to keep it mutable)
                 if let Some(charge) = response
@@ -299,6 +299,7 @@ impl CosmosDriver {
                         "x-ms-request-charge",
                     ))
                     .and_then(|s| s.parse::<f64>().ok())
+                    .map(RequestCharge::new)
                 {
                     diagnostics_builder.update_request(request_handle, |req| {
                         req.request_charge = charge;
@@ -311,7 +312,7 @@ impl CosmosDriver {
                 }
 
                 // Complete request tracking (makes request info immutable)
-                diagnostics_builder.complete_request(request_handle, status_code);
+                diagnostics_builder.complete_request(request_handle, status_code, sub_status);
 
                 // Set operation status
                 diagnostics_builder.set_operation_status(status_code, sub_status);
@@ -348,7 +349,7 @@ impl CosmosDriver {
                 // Complete diagnostics with error state
                 diagnostics_builder.set_operation_status(
                     azure_core::http::StatusCode::ServiceUnavailable,
-                    Some(20003),
+                    Some(SubStatusCode::TRANSPORT_GENERATED_503),
                 );
 
                 Err(e)

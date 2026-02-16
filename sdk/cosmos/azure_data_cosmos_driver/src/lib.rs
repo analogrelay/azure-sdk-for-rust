@@ -31,6 +31,6 @@ pub mod system;
 // Re-export key types at crate root
 pub use diagnostics::{DiagnosticsContext, ExecutionContext, RequestDiagnostics, RequestHandle};
 pub use driver::{CosmosDriver, CosmosDriverRuntime, CosmosDriverRuntimeBuilder};
-pub use models::{ActivityId, CosmosHeaders, CosmosResult, CosmosStatus, SubStatusCode};
+pub use models::{ActivityId, CosmosHeaders, CosmosResult, CosmosStatus, RequestCharge, SubStatusCode};
 pub use options::{DiagnosticsOptions, DiagnosticsVerbosity, DriverOptions};
 pub use system::{CpuMemoryHistory, CpuMemoryMonitor, VmMetadataService};
