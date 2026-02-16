@@ -1,24 +1,35 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Cosmos DB sub-status codes for detailed error classification.
+//! Combined HTTP status and Cosmos DB sub-status code.
 //!
-//! # Reference Sources
+//! Cosmos DB uses sub-status codes (returned in the `x-ms-substatus` header) to provide
+//! additional context for HTTP status codes. Some sub-status code integers have different
+//! meanings depending on the HTTP status code. For example, sub-status `1002` means:
 //!
-//! The sub-status codes in this module are derived from:
-//! - .NET SDK: `Microsoft.Azure.Documents.SubStatusCodes` enum
-//!   - Internal: `https://msdata.visualstudio.com/CosmosDB/_git/CosmosDB?path=/Product/Microsoft.Azure.Documents/SharedFiles/StatusCodes.cs`
-//! - Java SDK: `com.azure.cosmos.implementation.HttpConstants.SubStatusCodes`
-//!   - Public: `https://github.com/Azure/azure-sdk-for-java/blob/main/sdk/cosmos/azure-cosmos/src/main/java/com/azure/cosmos/implementation/HttpConstants.java`
+//! - `ReadSessionNotAvailable` when paired with HTTP 404 (Not Found)
+//! - `PartitionKeyRangeGone` when paired with HTTP 410 (Gone)
 //!
-//! When updating this file, cross-check both sources to ensure consistency.
-//! Note: Some sub-status codes have duplicate numeric values with different meanings
-//! depending on the HTTP status code context (e.g., 1002 means `ReadSessionNotAvailable`
-//! for 404 but `PartitionKeyRangeGone` for 410).
+//! [`CosmosStatus`] encapsulates both values together so the correct interpretation is
+//! always available.
 
 use azure_core::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+
+
+// =========================================================================
+// SubStatusCode — private implementation detail
+// =========================================================================
+//
+// Sub-status codes are derived from:
+// - .NET SDK: `Microsoft.Azure.Documents.SubStatusCodes` enum
+// - Java SDK: `com.azure.cosmos.implementation.HttpConstants.SubStatusCodes`
+//
+// Some sub-status codes have duplicate numeric values with different meanings
+// depending on the HTTP status code context (e.g., 1002 means `ReadSessionNotAvailable`
+// for 404 but `PartitionKeyRangeGone` for 410).
 
 /// A newtype wrapper for Cosmos DB sub-status codes.
 ///
@@ -34,20 +45,8 @@ use std::fmt;
 /// - `PartitionKeyRangeGone` when paired with HTTP 410
 ///
 /// Always interpret sub-status codes in the context of their HTTP status code.
-///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::models::SubStatusCode;
-///
-/// let code = SubStatusCode::new(1002);
-/// assert_eq!(code.value(), 1002);
-///
-/// // Check for specific conditions
-/// if code == SubStatusCode::PARTITION_KEY_RANGE_GONE {
-///     println!("Partition key range is gone, need to refresh routing");
-/// }
-/// ```
+/// Use [`CosmosStatus::name()`] for automatic disambiguation based on the paired
+/// HTTP status code.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SubStatusCode(u32);
@@ -76,24 +75,6 @@ impl SubStatusCode {
     /// When `status_code` is provided, the method uses the (status, sub-status) tuple to
     /// determine the correct name. When `status_code` is `None` and the sub-status code
     /// has multiple meanings, returns `None` to avoid ambiguity.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use azure_core::http::StatusCode;
-    /// use azure_data_cosmos_driver::models::SubStatusCode;
-    ///
-    /// let code = SubStatusCode::new(1002);
-    ///
-    /// // Without status code, ambiguous codes return None
-    /// assert_eq!(code.name(None), None);
-    ///
-    /// // With status code 404, it's ReadSessionNotAvailable
-    /// assert_eq!(code.name(Some(StatusCode::NotFound)), Some("ReadSessionNotAvailable"));
-    ///
-    /// // With status code 410, it's PartitionKeyRangeGone
-    /// assert_eq!(code.name(Some(StatusCode::Gone)), Some("PartitionKeyRangeGone"));
-    /// ```
     ///
     /// For unknown codes, returns `None`. Use `Display` for a string
     /// representation that always works.
@@ -782,9 +763,426 @@ impl From<SubStatusCode> for u32 {
     }
 }
 
+/// Combined HTTP status code and optional Cosmos DB sub-status code.
+///
+/// This type keeps the HTTP status code and Cosmos sub-status code together,
+/// which is essential because the meaning of a sub-status code depends on
+/// the HTTP status code it's paired with.
+///
+/// # Sub-Status Ambiguity
+///
+/// Some sub-status codes have different meanings depending on the HTTP status code:
+///
+/// | Sub-Status | HTTP 404 | HTTP 410 |
+/// |-----------|----------|----------|
+/// | 1002 | ReadSessionNotAvailable | PartitionKeyRangeGone |
+/// | 1007 | — | CompletingSplitOrMerge (410), InsufficientBindablePartitions (503) |
+/// | 1008 | — | CompletingPartitionMigration (410), DatabaseAccountNotFound (403) |
+///
+/// By pairing both codes, `CosmosStatus` can always resolve the correct name.
+///
+/// # Example
+///
+/// ```rust
+/// use azure_core::http::StatusCode;
+/// use azure_data_cosmos_driver::models::CosmosStatus;
+///
+/// // Unambiguous status
+/// let throttled = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, 3200);
+/// assert_eq!(throttled.name(), Some("RUBudgetExceeded"));
+/// assert!(throttled.is_throttled());
+///
+/// // Disambiguated by HTTP status code
+/// let session_not_available = CosmosStatus::with_sub_status(StatusCode::NotFound, 1002);
+/// assert_eq!(session_not_available.name(), Some("ReadSessionNotAvailable"));
+///
+/// let pk_range_gone = CosmosStatus::with_sub_status(StatusCode::Gone, 1002);
+/// assert_eq!(pk_range_gone.name(), Some("PartitionKeyRangeGone"));
+/// ```
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+pub struct CosmosStatus {
+    status_code: StatusCode,
+    sub_status: Option<SubStatusCode>,
+}
+
+impl CosmosStatus {
+    /// Creates a `CosmosStatus` with only an HTTP status code (no sub-status).
+    pub fn new(status_code: StatusCode) -> Self {
+        Self {
+            status_code,
+            sub_status: None,
+        }
+    }
+
+    /// Creates a `CosmosStatus` with both an HTTP status code and a sub-status code.
+    pub fn with_sub_status(status_code: StatusCode, sub_status: u32) -> Self {
+        Self {
+            status_code,
+            sub_status: Some(SubStatusCode::new(sub_status)),
+        }
+    }
+
+    /// Creates a `CosmosStatus` from raw parts.
+    pub(crate) fn from_parts(
+        status_code: StatusCode,
+        sub_status: Option<u32>,
+    ) -> Self {
+        Self {
+            status_code,
+            sub_status: sub_status.map(SubStatusCode::new),
+        }
+    }
+
+    /// Returns the HTTP status code.
+    pub fn status_code(&self) -> StatusCode {
+        self.status_code
+    }
+
+    /// Returns the sub-status code, if present.
+    pub fn sub_status(&self) -> Option<SubStatusCode> {
+        self.sub_status
+    }
+
+    /// Returns `true` if the HTTP status indicates success (2xx).
+    pub fn is_success(&self) -> bool {
+        self.status_code.is_success()
+    }
+
+    /// Returns `true` if this is a throttling response (HTTP 429).
+    pub fn is_throttled(&self) -> bool {
+        u16::from(self.status_code) == 429
+    }
+
+    /// Returns `true` if this is an HTTP 410 Gone response.
+    pub fn is_gone(&self) -> bool {
+        u16::from(self.status_code) == 410
+    }
+
+    /// Returns `true` if this is an HTTP 404 Not Found response.
+    pub fn is_not_found(&self) -> bool {
+        u16::from(self.status_code) == 404
+    }
+
+    /// Returns `true` if this is a write-forbidden error (HTTP 403, sub-status 3).
+    pub fn is_write_forbidden(&self) -> bool {
+        u16::from(self.status_code) == 403
+            && self.sub_status == Some(SubStatusCode::WRITE_FORBIDDEN)
+    }
+
+    /// Returns `true` if this is a read-session-not-available error (HTTP 404, sub-status 1002).
+    pub fn is_read_session_not_available(&self) -> bool {
+        u16::from(self.status_code) == 404
+            && self.sub_status == Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE)
+    }
+
+    /// Returns `true` if this is a partition-key-range-gone error (HTTP 410, sub-status 1002).
+    pub fn is_partition_key_range_gone(&self) -> bool {
+        u16::from(self.status_code) == 410
+            && self.sub_status == Some(SubStatusCode::PARTITION_KEY_RANGE_GONE)
+    }
+
+    /// Returns `true` if this indicates a transport-generated 503 (client-side).
+    pub fn is_transport_generated_503(&self) -> bool {
+        u16::from(self.status_code) == 503
+            && self.sub_status == Some(SubStatusCode::TRANSPORT_GENERATED_503)
+    }
+
+    /// Returns the human-readable name of this status combination, if known.
+    ///
+    /// Unlike the raw sub-status code, this method always resolves ambiguous
+    /// codes correctly because it has the HTTP status code context.
+    ///
+    /// Returns `None` for unknown sub-status codes or when no sub-status is present.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use azure_core::http::StatusCode;
+    /// use azure_data_cosmos_driver::models::CosmosStatus;
+    ///
+    /// let status = CosmosStatus::with_sub_status(StatusCode::NotFound, 1002);
+    /// assert_eq!(status.name(), Some("ReadSessionNotAvailable"));
+    ///
+    /// let status = CosmosStatus::with_sub_status(StatusCode::Gone, 1002);
+    /// assert_eq!(status.name(), Some("PartitionKeyRangeGone"));
+    ///
+    /// let status = CosmosStatus::new(StatusCode::Ok);
+    /// assert_eq!(status.name(), None); // No sub-status
+    /// ```
+    pub fn name(&self) -> Option<&'static str> {
+        let sub = self.sub_status?;
+        sub.name(Some(self.status_code))
+    }
+
+    // =========================================================================
+    // Well-Known CosmosStatus Constants
+    // =========================================================================
+
+    // ----- Transport / Client-Side -----
+
+    /// Transport-generated 503 Service Unavailable (sub-status 20003).
+    ///
+    /// Generated by the SDK when a transport-level error occurs (connection failure,
+    /// DNS error, TLS error, etc.) and no HTTP response was received.
+    pub const TRANSPORT_GENERATED_503: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::ServiceUnavailable,
+        sub_status: Some(SubStatusCode::TRANSPORT_GENERATED_503),
+    };
+
+    // ----- 404: Not Found -----
+
+    /// Read session not available (HTTP 404, sub-status 1002).
+    ///
+    /// Session consistency read could not be satisfied because the target
+    /// replica has not yet received the required session token.
+    pub const READ_SESSION_NOT_AVAILABLE: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::NotFound,
+        sub_status: Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE),
+    };
+
+    // ----- 403: Forbidden -----
+
+    /// Write forbidden (HTTP 403, sub-status 3).
+    ///
+    /// The region does not allow write operations (read-only region).
+    pub const WRITE_FORBIDDEN: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::Forbidden,
+        sub_status: Some(SubStatusCode::WRITE_FORBIDDEN),
+    };
+
+    // ----- 410: Gone -----
+
+    /// Partition key range gone (HTTP 410, sub-status 1002).
+    ///
+    /// The partition key range has been split or merged. The client must
+    /// refresh its partition key range cache and retry.
+    pub const PARTITION_KEY_RANGE_GONE: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::Gone,
+        sub_status: Some(SubStatusCode::PARTITION_KEY_RANGE_GONE),
+    };
+
+    /// Name cache stale (HTTP 410, sub-status 1000).
+    pub const NAME_CACHE_STALE: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::Gone,
+        sub_status: Some(SubStatusCode::NAME_CACHE_STALE),
+    };
+
+    /// Completing split or merge (HTTP 410, sub-status 1007).
+    pub const COMPLETING_SPLIT: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::Gone,
+        sub_status: Some(SubStatusCode::COMPLETING_SPLIT),
+    };
+
+    /// Completing partition migration (HTTP 410, sub-status 1008).
+    pub const COMPLETING_PARTITION_MIGRATION: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::Gone,
+        sub_status: Some(SubStatusCode::COMPLETING_PARTITION_MIGRATION),
+    };
+
+    // ----- 429: Too Many Requests -----
+
+    /// RU budget exceeded (HTTP 429, sub-status 3200).
+    pub const RU_BUDGET_EXCEEDED: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::TooManyRequests,
+        sub_status: Some(SubStatusCode::RU_BUDGET_EXCEEDED),
+    };
+}
+
+impl Default for CosmosStatus {
+    fn default() -> Self {
+        Self {
+            status_code: StatusCode::from(0),
+            sub_status: None,
+        }
+    }
+}
+
+impl fmt::Debug for CosmosStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status_u16: u16 = self.status_code.into();
+        match (self.sub_status, self.name()) {
+            (Some(sub), Some(name)) => {
+                write!(f, "CosmosStatus({}/{} {})", status_u16, sub.value(), name)
+            }
+            (Some(sub), None) => write!(f, "CosmosStatus({}/{})", status_u16, sub.value()),
+            (None, _) => write!(f, "CosmosStatus({})", status_u16),
+        }
+    }
+}
+
+impl fmt::Display for CosmosStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status_u16: u16 = self.status_code.into();
+        match (self.sub_status, self.name()) {
+            (Some(sub), Some(name)) => write!(f, "{}/{} ({})", status_u16, sub.value(), name),
+            (Some(sub), None) => write!(f, "{}/{}", status_u16, sub.value()),
+            (None, _) => write!(f, "{}", status_u16),
+        }
+    }
+}
+
+impl Serialize for CosmosStatus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("CosmosStatus", 2)?;
+        s.serialize_field("status_code", &u16::from(self.status_code))?;
+        if let Some(sub) = self.sub_status {
+            s.serialize_field("sub_status_code", &sub.value())?;
+        }
+        s.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for CosmosStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            status_code: u16,
+            sub_status_code: Option<u32>,
+        }
+        let h = Helper::deserialize(deserializer)?;
+        Ok(CosmosStatus {
+            status_code: StatusCode::from(h.status_code),
+            sub_status: h.sub_status_code.map(SubStatusCode::new),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_without_sub_status() {
+        let status = CosmosStatus::new(StatusCode::Ok);
+        assert_eq!(status.status_code(), StatusCode::Ok);
+        assert!(status.sub_status().is_none());
+        assert!(status.is_success());
+        assert!(status.name().is_none());
+    }
+
+    #[test]
+    fn with_sub_status_unambiguous() {
+        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, 3200);
+        assert_eq!(status.status_code(), StatusCode::TooManyRequests);
+        assert_eq!(status.sub_status(), Some(SubStatusCode::new(3200)));
+        assert!(status.is_throttled());
+        assert_eq!(status.name(), Some("RUBudgetExceeded"));
+    }
+
+    #[test]
+    fn disambiguates_1002_404_vs_410() {
+        let not_found = CosmosStatus::with_sub_status(StatusCode::NotFound, 1002);
+        assert_eq!(not_found.name(), Some("ReadSessionNotAvailable"));
+        assert!(not_found.is_read_session_not_available());
+        assert!(!not_found.is_partition_key_range_gone());
+
+        let gone = CosmosStatus::with_sub_status(StatusCode::Gone, 1002);
+        assert_eq!(gone.name(), Some("PartitionKeyRangeGone"));
+        assert!(gone.is_partition_key_range_gone());
+        assert!(!gone.is_read_session_not_available());
+    }
+
+    #[test]
+    fn disambiguates_1008_403_vs_410() {
+        let forbidden = CosmosStatus::with_sub_status(StatusCode::Forbidden, 1008);
+        assert_eq!(forbidden.name(), Some("DatabaseAccountNotFound"));
+
+        let gone = CosmosStatus::with_sub_status(StatusCode::Gone, 1008);
+        assert_eq!(gone.name(), Some("CompletingPartitionMigration"));
+    }
+
+    #[test]
+    fn well_known_constants() {
+        assert!(CosmosStatus::TRANSPORT_GENERATED_503.is_transport_generated_503());
+        assert!(CosmosStatus::READ_SESSION_NOT_AVAILABLE.is_read_session_not_available());
+        assert!(CosmosStatus::PARTITION_KEY_RANGE_GONE.is_partition_key_range_gone());
+        assert!(CosmosStatus::WRITE_FORBIDDEN.is_write_forbidden());
+        assert!(CosmosStatus::RU_BUDGET_EXCEEDED.is_throttled());
+    }
+
+    #[test]
+    fn is_success() {
+        assert!(CosmosStatus::new(StatusCode::Ok).is_success());
+        assert!(CosmosStatus::new(StatusCode::Created).is_success());
+        assert!(!CosmosStatus::new(StatusCode::NotFound).is_success());
+        assert!(!CosmosStatus::RU_BUDGET_EXCEEDED.is_success());
+    }
+
+    #[test]
+    fn display_with_name() {
+        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, 3200);
+        assert_eq!(format!("{}", status), "429/3200 (RUBudgetExceeded)");
+    }
+
+    #[test]
+    fn display_without_sub_status() {
+        let status = CosmosStatus::new(StatusCode::Ok);
+        assert_eq!(format!("{}", status), "200");
+    }
+
+    #[test]
+    fn display_unknown_sub_status() {
+        let status = CosmosStatus::with_sub_status(StatusCode::Ok, 99999);
+        assert_eq!(format!("{}", status), "200/99999");
+    }
+
+    #[test]
+    fn debug_format() {
+        let status = CosmosStatus::with_sub_status(StatusCode::NotFound, 1002);
+        assert_eq!(
+            format!("{:?}", status),
+            "CosmosStatus(404/1002 ReadSessionNotAvailable)"
+        );
+    }
+
+    #[test]
+    fn equality() {
+        assert_eq!(
+            CosmosStatus::with_sub_status(StatusCode::NotFound, 1002),
+            CosmosStatus::READ_SESSION_NOT_AVAILABLE
+        );
+        assert_ne!(
+            CosmosStatus::with_sub_status(StatusCode::NotFound, 1002),
+            CosmosStatus::with_sub_status(StatusCode::Gone, 1002),
+        );
+    }
+
+    #[test]
+    fn serialization_roundtrip() {
+        let status = CosmosStatus::with_sub_status(StatusCode::TooManyRequests, 3200);
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"status_code\":429"));
+        assert!(json.contains("\"sub_status_code\":3200"));
+
+        let deserialized: CosmosStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, status);
+    }
+
+    #[test]
+    fn serialization_without_sub_status() {
+        let status = CosmosStatus::new(StatusCode::Ok);
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"status_code\":200"));
+        assert!(!json.contains("sub_status"));
+    }
+
+    #[test]
+    fn default_is_zero() {
+        let status = CosmosStatus::default();
+        assert_eq!(u16::from(status.status_code()), 0);
+        assert!(status.sub_status().is_none());
+    }
+
+    // =========================================================================
+    // SubStatusCode tests
+    // =========================================================================
 
     #[test]
     fn new_and_value() {
@@ -867,7 +1265,7 @@ mod tests {
     }
 
     #[test]
-    fn equality() {
+    fn sub_status_code_equality() {
         assert_eq!(
             SubStatusCode::new(1002),
             SubStatusCode::PARTITION_KEY_RANGE_GONE
@@ -1005,3 +1403,4 @@ mod tests {
         assert_eq!(SubStatusCode::SERVER_GENERATED_503.value(), 21008);
     }
 }
+

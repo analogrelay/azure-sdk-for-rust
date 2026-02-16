@@ -165,7 +165,7 @@ impl DriverTestRunContext {
             .await?;
 
         // Check for success status (201 Created)
-        let status = result.diagnostics().status_code();
+        let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
             return Err(format!("Failed to create database, status: {:?}", status).into());
         }
@@ -194,7 +194,7 @@ impl DriverTestRunContext {
             .await?;
 
         // Check for success status (204 No Content)
-        let status = result.diagnostics().status_code();
+        let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
             return Err(format!("Failed to delete database, status: {:?}", status).into());
         }
@@ -227,7 +227,7 @@ impl DriverTestRunContext {
             .await?;
 
         // Check for success status (201 Created)
-        let status = result.diagnostics().status_code();
+        let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
             return Err(format!("Failed to create container, status: {:?}", status).into());
         }

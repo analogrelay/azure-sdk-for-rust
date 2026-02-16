@@ -122,7 +122,7 @@ pub async fn control_plane_uses_metadata_pipeline() -> Result<(), Box<dyn Error>
             .await?;
 
         // Verify item creation succeeded
-        let status = result.diagnostics().status_code();
+        let status = result.diagnostics().status();
         assert!(status.map(|s| s.is_success()).unwrap_or(false));
 
         Ok(())

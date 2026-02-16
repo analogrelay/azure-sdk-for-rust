@@ -4,7 +4,7 @@
 //! Diagnostics for individual HTTP request/response pairs.
 
 use crate::{
-    models::{ActivityId, SubStatusCode},
+    models::{ActivityId, CosmosStatus},
     options::Region,
 };
 use azure_core::http::StatusCode;
@@ -162,13 +162,9 @@ pub struct RequestDiagnostics {
     /// Endpoint URI contacted.
     pub(super) endpoint: String,
 
-    /// HTTP status code from response.
-    #[serde(serialize_with = "serialize_status_code")]
-    pub(super) status_code: StatusCode,
-
-    /// Cosmos sub-status code (for detailed error classification).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) sub_status_code: Option<SubStatusCode>,
+    /// Combined HTTP status code and Cosmos sub-status code.
+    #[serde(flatten)]
+    pub(super) status: CosmosStatus,
 
     /// Request charge (RU) for this individual request.
     pub(crate) request_charge: f64,
@@ -214,13 +210,6 @@ pub struct RequestDiagnostics {
     pub(super) error: Option<String>,
 }
 
-fn serialize_status_code<S>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_u16((*status).into())
-}
-
 impl RequestDiagnostics {
     /// Creates a new request diagnostics entry for a request being started.
     pub(crate) fn new(
@@ -236,10 +225,9 @@ impl RequestDiagnostics {
             transport_security,
             region,
             endpoint,
-            // Status code is set when the request completes via `complete()`.
+            // Status is set when the request completes via `complete()`.
             // Using 0 as sentinel value for "not yet completed".
-            status_code: StatusCode::from(0),
-            sub_status_code: None,
+            status: CosmosStatus::default(),
             request_charge: 0.0,
             activity_id: None,
             session_token: None,
@@ -258,7 +246,7 @@ impl RequestDiagnostics {
     /// Since we received a response, the request was definitely sent.
     pub(crate) fn complete(&mut self, status_code: StatusCode) {
         self.completed_at = Some(Instant::now());
-        self.status_code = status_code;
+        self.status = CosmosStatus::new(status_code);
         self.request_sent = RequestSentStatus::Sent;
         self.duration_ms = self
             .completed_at
@@ -308,8 +296,11 @@ impl RequestDiagnostics {
     }
 
     /// Sets the sub-status code.
-    pub(crate) fn with_sub_status(mut self, sub_status: SubStatusCode) -> Self {
-        self.sub_status_code = Some(sub_status);
+    pub(crate) fn with_sub_status(mut self, sub_status: u32) -> Self {
+        self.status = CosmosStatus::from_parts(
+            self.status.status_code(),
+            Some(sub_status),
+        );
         self
     }
 
@@ -368,14 +359,9 @@ impl RequestDiagnostics {
         &self.endpoint
     }
 
-    /// Returns the HTTP status code from response.
-    pub fn status_code(&self) -> StatusCode {
-        self.status_code
-    }
-
-    /// Returns the Cosmos sub-status code, if present.
-    pub fn sub_status_code(&self) -> Option<SubStatusCode> {
-        self.sub_status_code
+    /// Returns the combined HTTP status and sub-status code.
+    pub fn status(&self) -> &CosmosStatus {
+        &self.status
     }
 
     /// Returns the request charge (RU) for this individual request.

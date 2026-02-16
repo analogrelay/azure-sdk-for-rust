@@ -16,13 +16,13 @@ mod container_properties;
 mod cosmos_operation;
 mod cosmos_resource_reference;
 mod cosmos_result;
+mod cosmos_status;
 mod etag;
 mod partition_key;
 mod resource_id;
 mod resource_reference;
 mod resource_types;
 mod session;
-mod sub_status_code;
 mod throughput_control;
 mod triggers;
 mod user_agent;
@@ -46,8 +46,8 @@ pub use resource_reference::{
     TriggerReference, UdfReference,
 };
 pub use resource_types::{OperationType, ResourceType};
+pub use cosmos_status::{CosmosStatus, SubStatusCode};
 pub use session::SessionToken;
-pub use sub_status_code::SubStatusCode;
 pub use throughput_control::ThroughputControlGroupName;
 pub use triggers::TriggerInvocation;
 pub use user_agent::UserAgent;

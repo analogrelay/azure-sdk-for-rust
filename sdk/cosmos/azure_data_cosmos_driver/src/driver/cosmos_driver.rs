@@ -7,7 +7,7 @@ use crate::{
     diagnostics::{DiagnosticsContextBuilder, ExecutionContext, PipelineType, TransportSecurity},
     models::{
         AccountEndpoint, AccountReference, ActivityId, ContainerReference, CosmosHeaders,
-        CosmosOperation, CosmosResult, SubStatusCode,
+        CosmosOperation, CosmosResult,
     },
     options::{
         DriverOptions, OperationOptions, Region, RuntimeOptions, ThroughputControlGroupSnapshot,
@@ -290,8 +290,7 @@ impl CosmosDriver {
                     .get_optional_str(&azure_core::http::headers::HeaderName::from_static(
                         "x-ms-substatus",
                     ))
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .map(SubStatusCode::new);
+                    .and_then(|s| s.parse::<u32>().ok());
 
                 // Update request with response data (before completing to keep it mutable)
                 if let Some(charge) = response
@@ -349,7 +348,7 @@ impl CosmosDriver {
                 // Complete diagnostics with error state
                 diagnostics_builder.set_operation_status(
                     azure_core::http::StatusCode::ServiceUnavailable,
-                    Some(SubStatusCode::TRANSPORT_GENERATED_503),
+                    Some(20003),
                 );
 
                 Err(e)

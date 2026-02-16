@@ -43,15 +43,13 @@ mod header_names {
 ///
 /// // Status codes are accessed via diagnostics
 /// let diagnostics = result.diagnostics();
-/// println!("Status: {:?}", diagnostics.status_code());
-/// println!("Sub-status: {:?}", diagnostics.sub_status_code());
-/// println!("RU Charge: {}", result.headers().request_charge().unwrap_or(0.0));
-/// println!("Activity ID: {:?}", diagnostics.activity_id());
-///
-/// // Check for success
-/// if diagnostics.status_code().is_some_and(|s| s.is_success()) {
-///     let body = result.into_body();
-///     // Deserialize body...
+/// if let Some(status) = diagnostics.status() {
+///     println!("Status: {}", status);
+///     println!("RU Charge: {}", result.headers().request_charge().unwrap_or(0.0));
+///     if status.is_success() {
+///         let body = result.into_body();
+///         // Deserialize body...
+///     }
 /// }
 /// ```
 #[derive(Debug)]
@@ -267,13 +265,15 @@ impl CosmosHeaders {
 mod tests {
     use super::*;
     use crate::{
-        diagnostics::DiagnosticsContextBuilder, models::SubStatusCode, options::DiagnosticsOptions,
+        diagnostics::DiagnosticsContextBuilder,
+        models::CosmosStatus,
+        options::DiagnosticsOptions,
     };
     use azure_core::http::StatusCode;
 
     fn make_diagnostics(
         status_code: Option<StatusCode>,
-        sub_status_code: Option<SubStatusCode>,
+        sub_status_code: Option<u32>,
     ) -> Arc<DiagnosticsContext> {
         let mut builder = DiagnosticsContextBuilder::new(
             ActivityId::new_uuid(),
@@ -298,12 +298,10 @@ mod tests {
         );
 
         // Status codes are accessed via diagnostics
-        assert_eq!(result.diagnostics().status_code(), Some(StatusCode::Ok));
-        assert!(result
-            .diagnostics()
-            .status_code()
-            .is_some_and(|s| s.is_success()));
-        assert!(result.diagnostics().sub_status_code().is_none());
+        let status = result.diagnostics().status().unwrap();
+        assert_eq!(status.status_code(), StatusCode::Ok);
+        assert!(status.is_success());
+        assert!(status.sub_status().is_none());
         assert_eq!(result.body(), b"{\"id\": \"test\"}");
         assert_eq!(result.headers().request_charge(), Some(5.5));
     }
@@ -315,18 +313,14 @@ mod tests {
             CosmosHeaders::new(),
             make_diagnostics(
                 Some(StatusCode::TooManyRequests),
-                Some(SubStatusCode::RU_BUDGET_EXCEEDED),
+                Some(3200),
             ),
         );
 
-        assert!(!result
-            .diagnostics()
-            .status_code()
-            .is_some_and(|s| s.is_success()));
-        assert_eq!(
-            result.diagnostics().sub_status_code(),
-            Some(SubStatusCode::RU_BUDGET_EXCEEDED)
-        );
+        let status = result.diagnostics().status().unwrap();
+        assert!(!status.is_success());
+        assert!(status.is_throttled());
+        assert_eq!(status, &CosmosStatus::RU_BUDGET_EXCEEDED);
     }
 
     #[test]
@@ -340,8 +334,8 @@ mod tests {
 
         let (body, headers, diagnostics) = result.into_parts();
         assert_eq!(body, b"body");
-        assert_eq!(diagnostics.status_code(), Some(StatusCode::Created));
-        assert!(diagnostics.sub_status_code().is_none());
+        assert_eq!(diagnostics.status().unwrap().status_code(), StatusCode::Created);
+        assert!(diagnostics.status().unwrap().sub_status().is_none());
         assert_eq!(headers.request_charge(), Some(1.0));
     }
 
@@ -349,25 +343,18 @@ mod tests {
     fn cosmos_result_status_via_diagnostics() {
         let diagnostics = make_diagnostics(
             Some(StatusCode::NotFound),
-            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE),
+            Some(1002),
         );
         let result = CosmosResult::new(b"{}".to_vec(), CosmosHeaders::new(), diagnostics.clone());
 
         // Status codes are only accessible via diagnostics
-        assert_eq!(diagnostics.status_code(), Some(StatusCode::NotFound));
-        assert_eq!(
-            diagnostics.sub_status_code(),
-            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE)
-        );
+        let status = diagnostics.status().unwrap();
+        assert_eq!(status.status_code(), StatusCode::NotFound);
+        assert!(status.is_read_session_not_available());
         // Same via result.diagnostics()
-        assert_eq!(
-            result.diagnostics().status_code(),
-            Some(StatusCode::NotFound)
-        );
-        assert_eq!(
-            result.diagnostics().sub_status_code(),
-            Some(SubStatusCode::READ_SESSION_NOT_AVAILABLE)
-        );
+        let result_status = result.diagnostics().status().unwrap();
+        assert_eq!(result_status.status_code(), StatusCode::NotFound);
+        assert!(result_status.is_read_session_not_available());
     }
 
     #[test]

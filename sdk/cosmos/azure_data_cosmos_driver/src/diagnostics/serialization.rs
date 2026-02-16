@@ -3,8 +3,7 @@
 
 //! Internal JSON serialization structures for diagnostics output.
 
-use crate::models::{ActivityId, SubStatusCode};
-use azure_core::http::StatusCode;
+use crate::models::{ActivityId, CosmosStatus};
 use serde::Serialize;
 
 use super::{ExecutionContext, RequestDiagnostics};
@@ -48,21 +47,12 @@ pub(super) struct RegionSummary {
 pub(super) struct RequestSummary {
     pub execution_context: ExecutionContext,
     pub endpoint: String,
-    #[serde(serialize_with = "serialize_status_code")]
-    pub status_code: StatusCode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub_status_code: Option<SubStatusCode>,
+    #[serde(flatten)]
+    pub status: CosmosStatus,
     pub request_charge: f64,
     pub duration_ms: u64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
-}
-
-fn serialize_status_code<S>(status: &StatusCode, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_u16((*status).into())
 }
 
 impl From<&RequestDiagnostics> for RequestSummary {
@@ -70,8 +60,7 @@ impl From<&RequestDiagnostics> for RequestSummary {
         Self {
             execution_context: req.execution_context,
             endpoint: req.endpoint.clone(),
-            status_code: req.status_code,
-            sub_status_code: req.sub_status_code,
+            status: req.status,
             request_charge: req.request_charge,
             duration_ms: req.duration_ms,
             timed_out: req.timed_out,
@@ -83,10 +72,8 @@ impl From<&RequestDiagnostics> for RequestSummary {
 #[derive(Serialize)]
 pub(super) struct DeduplicatedGroup {
     pub endpoint: String,
-    #[serde(serialize_with = "serialize_status_code")]
-    pub status_code: StatusCode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sub_status_code: Option<SubStatusCode>,
+    #[serde(flatten)]
+    pub status: CosmosStatus,
     pub execution_context: ExecutionContext,
     pub count: usize,
     pub total_request_charge: f64,
