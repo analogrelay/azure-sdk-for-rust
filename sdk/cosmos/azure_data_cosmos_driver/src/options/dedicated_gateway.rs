@@ -37,14 +37,12 @@ impl DedicatedGatewayOptions {
     /// integrated cache are guaranteed to be no staler than this duration.
     ///
     /// Staleness is supported at millisecond granularity.
-    #[must_use]
     pub fn with_max_integrated_cache_staleness(mut self, staleness: Duration) -> Self {
         self.max_integrated_cache_staleness = Some(staleness);
         self
     }
 
     /// Sets whether to bypass the integrated cache.
-    #[must_use]
     pub fn with_bypass_integrated_cache(mut self, bypass: bool) -> Self {
         self.bypass_integrated_cache = bypass;
         self

@@ -43,28 +43,24 @@ impl DiagnosticsThresholds {
     }
 
     /// Sets the latency threshold for point operations.
-    #[must_use]
     pub fn with_point_operation_latency_threshold(mut self, threshold: Duration) -> Self {
         self.point_operation_latency_threshold = Some(threshold);
         self
     }
 
     /// Sets the latency threshold for non-point operations.
-    #[must_use]
     pub fn with_non_point_operation_latency_threshold(mut self, threshold: Duration) -> Self {
         self.non_point_operation_latency_threshold = Some(threshold);
         self
     }
 
     /// Sets the request charge threshold.
-    #[must_use]
     pub fn with_request_charge_threshold(mut self, threshold: RequestCharge) -> Self {
         self.request_charge_threshold = Some(threshold);
         self
     }
 
     /// Sets the payload size threshold.
-    #[must_use]
     pub fn with_payload_size_threshold(mut self, threshold: usize) -> Self {
         self.payload_size_threshold = Some(threshold);
         self

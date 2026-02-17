@@ -22,14 +22,12 @@ impl TriggerOptions {
     }
 
     /// Adds a pre-trigger to execute before the operation.
-    #[must_use]
     pub fn with_pre_trigger(mut self, trigger: impl Into<TriggerInvocation>) -> Self {
         self.pre_triggers.push(trigger.into());
         self
     }
 
     /// Adds a post-trigger to execute after the operation.
-    #[must_use]
     pub fn with_post_trigger(mut self, trigger: impl Into<TriggerInvocation>) -> Self {
         self.post_triggers.push(trigger.into());
         self

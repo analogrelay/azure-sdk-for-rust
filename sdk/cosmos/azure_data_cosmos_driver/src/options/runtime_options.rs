@@ -55,14 +55,12 @@ impl RuntimeOptions {
     /// Returns a builder initialized with this instance's values.
     ///
     /// Use this to create a modified copy of the current options.
-    #[must_use]
     pub fn to_builder(&self) -> RuntimeOptionsBuilder {
         RuntimeOptionsBuilder::from_options(self.clone())
     }
 
     /// Merges this options with a base, returning a new options where
     /// `self` values take precedence over `base` values.
-    #[must_use]
     pub fn merge_with_base(&self, base: &RuntimeOptions) -> RuntimeOptions {
         RuntimeOptions {
             throughput_control_group_name: self
@@ -133,56 +131,48 @@ impl RuntimeOptionsBuilder {
     }
 
     /// Sets the throughput control group name.
-    #[must_use]
     pub fn throughput_control_group_name(mut self, name: ThroughputControlGroupName) -> Self {
         self.options.throughput_control_group_name = Some(name);
         self
     }
 
     /// Sets the dedicated gateway options.
-    #[must_use]
     pub fn dedicated_gateway_options(mut self, options: DedicatedGatewayOptions) -> Self {
         self.options.dedicated_gateway_options = Some(options);
         self
     }
 
     /// Sets the diagnostics thresholds.
-    #[must_use]
     pub fn diagnostics_thresholds(mut self, thresholds: DiagnosticsThresholds) -> Self {
         self.options.diagnostics_thresholds = Some(thresholds);
         self
     }
 
     /// Sets the end-to-end latency policy.
-    #[must_use]
     pub fn end_to_end_latency_policy(mut self, policy: EndToEndOperationLatencyPolicy) -> Self {
         self.options.end_to_end_latency_policy = Some(policy);
         self
     }
 
     /// Sets the custom headers.
-    #[must_use]
     pub fn custom_headers(mut self, headers: Headers) -> Self {
         self.options.custom_headers = Some(headers);
         self
     }
 
     /// Sets the excluded regions.
-    #[must_use]
     pub fn excluded_regions(mut self, regions: ExcludedRegions) -> Self {
         self.options.excluded_regions = Some(regions);
         self
     }
 
     /// Sets the read consistency strategy.
-    #[must_use]
     pub fn read_consistency_strategy(mut self, strategy: ReadConsistencyStrategy) -> Self {
         self.options.read_consistency_strategy = Some(strategy);
         self
     }
 
     /// Sets the content response on write setting.
-    #[must_use]
     pub fn content_response_on_write(mut self, value: ContentResponseOnWrite) -> Self {
         self.options.content_response_on_write = Some(value);
         self

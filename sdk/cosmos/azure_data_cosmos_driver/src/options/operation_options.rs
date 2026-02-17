@@ -89,7 +89,6 @@ impl OperationOptions {
     }
 
     /// Sets the trigger options for this operation.
-    #[must_use]
     pub fn triggers(mut self, triggers: TriggerOptions) -> Self {
         self.triggers = Some(triggers);
         self
@@ -101,7 +100,6 @@ impl OperationOptions {
     }
 
     /// Sets the read consistency strategy for this operation.
-    #[must_use]
     pub fn read_consistency_strategy(mut self, strategy: ReadConsistencyStrategy) -> Self {
         self.runtime.read_consistency_strategy = Some(strategy);
         self
@@ -113,7 +111,6 @@ impl OperationOptions {
     }
 
     /// Sets the session token for session consistency.
-    #[must_use]
     pub fn session_token(mut self, token: SessionToken) -> Self {
         self.session_token = Some(token);
         self
@@ -125,7 +122,6 @@ impl OperationOptions {
     }
 
     /// Sets the ETag condition for optimistic concurrency.
-    #[must_use]
     pub fn etag_condition(mut self, condition: ETagCondition) -> Self {
         self.etag_condition = Some(condition);
         self
@@ -137,7 +133,6 @@ impl OperationOptions {
     }
 
     /// Sets the partition key for this operation.
-    #[must_use]
     pub fn partition_key(mut self, key: PartitionKey) -> Self {
         self.partition_key = Some(key);
         self
@@ -149,7 +144,6 @@ impl OperationOptions {
     }
 
     /// Sets whether the response should include the content after write operations.
-    #[must_use]
     pub fn content_response_on_write(mut self, value: ContentResponseOnWrite) -> Self {
         self.runtime.content_response_on_write = Some(value);
         self
@@ -161,7 +155,6 @@ impl OperationOptions {
     }
 
     /// Sets the throughput control group name for this operation.
-    #[must_use]
     pub fn throughput_control_group_name(mut self, name: ThroughputControlGroupName) -> Self {
         self.runtime.throughput_control_group_name = Some(name);
         self
@@ -173,7 +166,6 @@ impl OperationOptions {
     }
 
     /// Sets the dedicated gateway options for integrated cache.
-    #[must_use]
     pub fn dedicated_gateway_options(mut self, options: DedicatedGatewayOptions) -> Self {
         self.runtime.dedicated_gateway_options = Some(options);
         self
@@ -185,7 +177,6 @@ impl OperationOptions {
     }
 
     /// Sets the diagnostics thresholds for this operation.
-    #[must_use]
     pub fn diagnostics_thresholds(mut self, thresholds: DiagnosticsThresholds) -> Self {
         self.runtime.diagnostics_thresholds = Some(thresholds);
         self
@@ -197,7 +188,6 @@ impl OperationOptions {
     }
 
     /// Sets whether non-idempotent write retries are enabled.
-    #[must_use]
     pub fn non_idempotent_write_retries(mut self, value: NonIdempotentWriteRetries) -> Self {
         self.non_idempotent_write_retries = Some(value);
         self
@@ -209,7 +199,6 @@ impl OperationOptions {
     }
 
     /// Sets the end-to-end operation latency policy.
-    #[must_use]
     pub fn end_to_end_latency_policy(mut self, policy: EndToEndOperationLatencyPolicy) -> Self {
         self.runtime.end_to_end_latency_policy = Some(policy);
         self
@@ -221,7 +210,6 @@ impl OperationOptions {
     }
 
     /// Sets the regions to exclude from routing.
-    #[must_use]
     pub fn excluded_regions(mut self, regions: ExcludedRegions) -> Self {
         self.runtime.excluded_regions = Some(regions);
         self
@@ -233,7 +221,6 @@ impl OperationOptions {
     }
 
     /// Sets the priority level for this operation.
-    #[must_use]
     pub fn priority_level(mut self, level: PriorityLevel) -> Self {
         self.priority_level = Some(level);
         self
@@ -245,7 +232,6 @@ impl OperationOptions {
     }
 
     /// Sets whether script logging is enabled.
-    #[must_use]
     pub fn script_logging_enabled(mut self, value: ScriptLoggingEnabled) -> Self {
         self.script_logging_enabled = Some(value);
         self
@@ -257,7 +243,6 @@ impl OperationOptions {
     }
 
     /// Sets whether quota info is included in responses.
-    #[must_use]
     pub fn quota_info_enabled(mut self, value: QuotaInfoEnabled) -> Self {
         self.quota_info_enabled = Some(value);
         self
@@ -269,7 +254,6 @@ impl OperationOptions {
     }
 
     /// Sets custom HTTP headers to include in the request.
-    #[must_use]
     pub fn custom_headers(mut self, headers: Headers) -> Self {
         self.runtime.custom_headers = Some(headers);
         self
@@ -284,7 +268,6 @@ impl OperationOptions {
     ///
     /// The filter predicate is a SQL-like condition that must evaluate to true
     /// for the patch operation to be applied. Only used with patch operations.
-    #[must_use]
     pub fn filter_predicate(mut self, predicate: impl Into<FilterPredicate>) -> Self {
         self.filter_predicate = Some(predicate.into());
         self

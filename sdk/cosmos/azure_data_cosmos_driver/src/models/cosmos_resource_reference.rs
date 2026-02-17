@@ -73,14 +73,12 @@ impl CosmosResourceReference {
     }
 
     /// Sets the resource name.
-    #[must_use]
     pub fn with_name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     /// Sets the resource identifier (RID).
-    #[must_use]
     pub fn with_rid(mut self, rid: impl Into<Cow<'static, str>>) -> Self {
         self.rid = Some(rid.into());
         self

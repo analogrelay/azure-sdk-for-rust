@@ -86,7 +86,6 @@ impl AccountProperties {
     }
 
     /// Sets the account's resource ID.
-    #[must_use]
     pub fn with_rid(mut self, rid: impl Into<String>) -> Self {
         self.rid = Some(rid.into());
         self

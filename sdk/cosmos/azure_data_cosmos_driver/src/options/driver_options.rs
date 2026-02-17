@@ -96,7 +96,6 @@ impl DriverOptionsBuilder {
     /// Sets the runtime options (defaults for operations).
     ///
     /// Use [`RuntimeOptions::builder()`] to create the runtime options.
-    #[must_use]
     pub fn runtime_options(mut self, options: RuntimeOptions) -> Self {
         self.runtime_options = Some(options);
         self

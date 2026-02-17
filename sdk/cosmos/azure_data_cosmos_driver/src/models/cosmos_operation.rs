@@ -104,14 +104,12 @@ impl CosmosOperation {
     }
 
     /// Sets the partition key for the operation.
-    #[must_use]
     pub fn with_partition_key(mut self, partition_key: impl Into<PartitionKey>) -> Self {
         self.partition_key = Some(partition_key.into());
         self
     }
 
     /// Adds a header to the operation.
-    #[must_use]
     pub fn with_header(
         mut self,
         name: impl Into<azure_core::http::headers::HeaderName>,
@@ -122,7 +120,6 @@ impl CosmosOperation {
     }
 
     /// Sets the request body.
-    #[must_use]
     pub fn with_body(mut self, body: Vec<u8>) -> Self {
         self.body = Some(body);
         self

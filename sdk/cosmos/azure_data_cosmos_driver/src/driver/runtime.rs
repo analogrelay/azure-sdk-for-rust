@@ -494,14 +494,12 @@ impl CosmosDriverRuntimeBuilder {
     }
 
     /// Sets the HTTP client options.
-    #[must_use]
     pub fn client_options(mut self, options: ClientOptions) -> Self {
         self.client_options = Some(options);
         self
     }
 
     /// Sets the connection pool options.
-    #[must_use]
     pub fn connection_pool(mut self, options: ConnectionPoolOptions) -> Self {
         self.connection_pool = Some(options);
         self
@@ -510,7 +508,6 @@ impl CosmosDriverRuntimeBuilder {
     /// Sets the diagnostics options.
     ///
     /// Controls verbosity and size limits for diagnostic output.
-    #[must_use]
     pub fn diagnostics_options(mut self, options: DiagnosticsOptions) -> Self {
         self.diagnostics_options = Some(options);
         self
@@ -519,7 +516,6 @@ impl CosmosDriverRuntimeBuilder {
     /// Sets the runtime options (defaults for operations).
     ///
     /// Use [`RuntimeOptions::builder()`] to create the runtime options.
-    #[must_use]
     pub fn runtime_options(mut self, options: RuntimeOptions) -> Self {
         self.runtime_options = Some(options);
         self
@@ -529,7 +525,6 @@ impl CosmosDriverRuntimeBuilder {
     ///
     /// The workload ID is used as a fallback for the user agent suffix
     /// if [`user_agent_suffix()`](Self::user_agent_suffix) is not set.
-    #[must_use]
     pub fn workload_id(mut self, workload_id: WorkloadId) -> Self {
         self.workload_id = Some(workload_id);
         self
@@ -546,7 +541,6 @@ impl CosmosDriverRuntimeBuilder {
     /// If the cardinality of correlation IDs is too high, metrics aggregation
     /// may ignore this dimension. Choose values with moderate cardinality
     /// (e.g., cluster names, environment identifiers, deployment IDs).
-    #[must_use]
     pub fn correlation_id(mut self, correlation_id: CorrelationId) -> Self {
         self.correlation_id = Some(correlation_id);
         self
@@ -564,7 +558,6 @@ impl CosmosDriverRuntimeBuilder {
     ///
     /// Good examples: AKS cluster name, Azure VM ID (if limited nodes),
     /// app name with region.
-    #[must_use]
     pub fn user_agent_suffix(mut self, suffix: UserAgentSuffix) -> Self {
         self.user_agent_suffix = Some(suffix);
         self

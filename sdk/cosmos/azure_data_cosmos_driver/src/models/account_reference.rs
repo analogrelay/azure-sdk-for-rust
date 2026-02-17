@@ -266,21 +266,18 @@ impl AccountReferenceBuilder {
     }
 
     /// Sets master key authentication.
-    #[must_use]
     pub fn master_key(mut self, key: impl Into<Secret>) -> Self {
         self.auth = Some(AuthOptions::MasterKey(key.into()));
         self
     }
 
     /// Sets token credential authentication.
-    #[must_use]
     pub fn credential(mut self, credential: Arc<dyn TokenCredential>) -> Self {
         self.auth = Some(AuthOptions::TokenCredential(credential));
         self
     }
 
     /// Sets authentication options directly.
-    #[must_use]
     pub fn auth(mut self, auth: AuthOptions) -> Self {
         self.auth = Some(auth);
         self
@@ -322,7 +319,6 @@ pub struct LegacyAccountReference {
 #[allow(deprecated)]
 impl LegacyAccountReference {
     /// Sets master key authentication.
-    #[must_use]
     pub fn with_master_key(self, key: impl Into<Secret>) -> AccountReference {
         AccountReference {
             endpoint: self.endpoint,
@@ -331,7 +327,6 @@ impl LegacyAccountReference {
     }
 
     /// Sets token credential authentication.
-    #[must_use]
     pub fn with_credential(self, credential: Arc<dyn TokenCredential>) -> AccountReference {
         AccountReference {
             endpoint: self.endpoint,
@@ -340,7 +335,6 @@ impl LegacyAccountReference {
     }
 
     /// Sets authentication options directly.
-    #[must_use]
     pub fn with_auth(self, auth: AuthOptions) -> AccountReference {
         AccountReference {
             endpoint: self.endpoint,
