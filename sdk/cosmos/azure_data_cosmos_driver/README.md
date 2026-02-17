@@ -70,9 +70,10 @@ async fn main() -> azure_core::Result<()> {
     // Use logged-in developer credentials (Azure CLI, azd, etc.)
     let credential = DeveloperToolsCredential::new(None)?;
 
-    let account = AccountReference::new(
+    let account = AccountReference::with_credential(
         Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-    ).with_credential(credential);
+        credential,
+    );
 
     // Create the runtime
     let runtime = CosmosDriverRuntime::builder().build().await?;

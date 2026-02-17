@@ -157,9 +157,10 @@ impl CosmosDriver {
     /// # async fn example() -> azure_core::Result<()> {
     /// let runtime = CosmosDriverRuntime::builder().build().await?;
     ///
-    /// let account = AccountReference::new(
+    /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-    /// ).with_master_key("my-key");
+    ///     "my-key",
+    /// );
     ///
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     ///

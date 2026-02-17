@@ -215,21 +215,6 @@ impl AccountReference {
     pub fn auth(&self) -> &AuthOptions {
         &self.auth
     }
-
-    // Deprecated: Keep for backwards compatibility during migration
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.2.0",
-        note = "Use AccountReference::builder() or with_master_key() instead"
-    )]
-    #[allow(deprecated)] // Allow constructing deprecated type
-    #[allow(clippy::new_ret_no_self)] // Intentionally returns LegacyAccountReference for migration
-    pub fn new(endpoint: Url) -> LegacyAccountReference {
-        LegacyAccountReference {
-            endpoint,
-            auth: None,
-        }
-    }
 }
 
 /// Builder for constructing an [`AccountReference`].
@@ -300,46 +285,6 @@ impl AccountReferenceBuilder {
             endpoint: self.endpoint,
             auth,
         })
-    }
-}
-
-/// Legacy account reference for backwards compatibility.
-///
-/// This type exists only to support the deprecated `AccountReference::new()` method.
-/// Use [`AccountReference::builder()`] or [`AccountReference::with_master_key()`] instead.
-#[doc(hidden)]
-#[deprecated(since = "0.2.0", note = "Use AccountReference instead")]
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct LegacyAccountReference {
-    endpoint: Url,
-    auth: Option<AuthOptions>,
-}
-
-#[allow(deprecated)]
-impl LegacyAccountReference {
-    /// Sets master key authentication.
-    pub fn with_master_key(self, key: impl Into<Secret>) -> AccountReference {
-        AccountReference {
-            endpoint: self.endpoint,
-            auth: AuthOptions::MasterKey(key.into()),
-        }
-    }
-
-    /// Sets token credential authentication.
-    pub fn with_credential(self, credential: Arc<dyn TokenCredential>) -> AccountReference {
-        AccountReference {
-            endpoint: self.endpoint,
-            auth: AuthOptions::TokenCredential(credential),
-        }
-    }
-
-    /// Sets authentication options directly.
-    pub fn with_auth(self, auth: AuthOptions) -> AccountReference {
-        AccountReference {
-            endpoint: self.endpoint,
-            auth,
-        }
     }
 }
 
@@ -430,19 +375,5 @@ mod tests {
 
         // Same endpoint, different keys - should be equal
         assert_eq!(account1, account2);
-    }
-
-    #[test]
-    #[allow(deprecated)]
-    fn legacy_new_with_master_key() {
-        // Test deprecated API still works
-        let account =
-            AccountReference::new(Url::parse("https://test.documents.azure.com:443/").unwrap())
-                .with_master_key("my-secret-key");
-
-        match account.auth() {
-            AuthOptions::MasterKey(key) => assert_eq!(key.secret(), "my-secret-key"),
-            _ => panic!("Expected MasterKey auth"),
-        }
     }
 }
