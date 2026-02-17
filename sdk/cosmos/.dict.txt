@@ -48,6 +48,14 @@ cmake
 rfind
 subsec
 
+# Windows API types (used in cpu_memory.rs)
+FILETIME
+MEMORYSTATUSEX
+
+# Common English words not in default dictionary
+roundtrips
+normalises
+
 # Driver-specific terms
 partitionkey
 enablecrosspartition
