@@ -34,7 +34,7 @@ The Azure Cosmos DB Rust ecosystem consists of three distinct layers:
 │  ┌──────────────────────────────────────────────────────────────────┐   │
 │  │  Layer 1: azure_data_cosmos_driver (This Crate)  ◄───────────────┼───┘
 │  │  - Transport, routing, protocol handling                         │
-│  │  - Schema-agnostic (raw bytes in/out)                            │
+│  │  - Typed metadata APIs; schema-agnostic data plane (raw bytes)   │
 │  │  - Community support only                                        │
 │  └──────────────────────────────────────────────────────────────────┘
 └─────────────────────────────────────────────────────────────────────────┘
@@ -94,6 +94,66 @@ The Azure Cosmos DB Rust ecosystem consists of three distinct layers:
 3. **Resource Reference** built from typed references (`ContainerReference`, `ItemReference`, etc.)
 4. **Operation** created via factory methods: `CosmosOperation::create(resource_ref)`, `.read()`, `.query()`, etc.
 5. **Execution** happens via `driver.execute_operation(operation)` - returns `CosmosResult`
+
+---
+
+## Schema-Agnostic Data Plane / Typed Metadata Plane
+
+The driver follows a split design philosophy for different operation types:
+
+### Data Plane Operations (Schema-Agnostic)
+
+**Applies to**: Item CRUD operations (create/read/update/delete/query items/documents)
+
+The driver is **completely ignorant of item/document schemas and serialization formats**. Item operations work exclusively with raw bytes (`&[u8]` for requests, `Vec<u8>` for responses):
+
+```rust
+// Driver API - raw bytes in/out
+pub async fn execute_operation(
+    &self,
+    operation: CosmosOperation,  // operation.body() is Vec<u8>
+) -> Result<CosmosResult> {
+    // CosmosResult::response_bytes() returns Vec<u8>
+}
+```
+
+**Rationale**: 
+- Cosmos DB is a schemaless database - item structure is application-defined
+- Serialization must be handled by each language SDK natively (Rust: serde, Java: Jackson, .NET: System.Text.Json)
+- Driver supports multiple consuming SDKs (Rust, Java, .NET, Python) via the native layer
+
+### Metadata/Control Plane Operations (Typed APIs)
+
+**Applies to**: Database/container/user/permission/offer management operations
+
+The driver provides **typed models** for metadata resources and deserializes responses internally:
+
+```rust
+// Driver internally deserializes metadata
+let container_props: ContainerProperties = 
+    serde_json::from_slice(response.body())?;
+
+// Typed public API (future - not yet exposed)
+pub async fn read_container(
+    &self,
+    container_ref: ContainerReference,
+) -> Result<ContainerProperties> { /* ... */ }
+```
+
+**Rationale**:
+- Metadata schemas are defined by the Cosmos DB service, not applications
+- Typed APIs prevent misuse (e.g., setting invalid partition key definitions)
+- Applications should never parse raw JSON from metadata operations
+- Cross-language SDKs all use identical metadata models (service contract)
+
+### Current Implementation
+
+The driver currently:
+- ✅ Uses typed metadata models internally for cache resolution (`DatabaseProperties`, `ContainerProperties`)
+- ✅ Returns raw bytes for all data plane operations
+- ⚠️ Does not yet expose high-level typed metadata APIs publicly (operations return `CosmosResult` with raw bytes)
+
+Future iterations may expose dedicated metadata operation methods returning typed models directly.
 
 ---
 

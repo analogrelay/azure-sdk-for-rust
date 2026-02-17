@@ -157,18 +157,17 @@ The Cosmos DB implementation is split across three crates with distinct purposes
 
 ### Schema-Agnostic Data Plane Principle
 
-**Critical Architectural Rule**: `azure_data_cosmos_driver` is completely ignorant of document/item schemas and serialization formats.
+**Critical Architectural Rule**: `azure_data_cosmos_driver` is completely ignorant of **data plane** document/item schemas and serialization formats. Metadata/control plane operations (database/container management) use typed models.
 
 **Rationale**:
 
-- Cosmos DB is a **schemaless database** - item structure is application-defined
-- Driver must support multiple language SDKs (Rust, Java, .NET, Python) each with native serialization patterns
-- Serialization is a **core capability** that must be handled natively in the consuming SDK
+- **Data Plane**: Cosmos DB is a **schemaless database** - item structure is application-defined. Driver must support multiple language SDKs (Rust, Java, .NET, Python) each with native serialization patterns. Serialization is a **core capability** that must be handled natively in the consuming SDK.
+- **Metadata/Control Plane**: Database/container/user/permission schemas are defined by the Cosmos DB service. Driver provides typed models to prevent misuse and ensure correctness.
 
-**Driver Data Plane Contract**:
+**Driver Data Plane Contract** (Schema-Agnostic):
 
 ```rust
-// Driver APIs work with raw bytes (buffered, ≤16MB payload limit)
+// Driver APIs work with raw bytes for item operations (buffered, ≤16MB payload limit)
 pub async fn create_item(
     &self,
     partition_key: &PartitionKey,
@@ -187,10 +186,24 @@ pub struct ItemResponse {
 }
 ```
 
+**Driver Metadata Plane Contract** (Typed Models):
+
+```rust
+// Driver uses typed models for metadata operations
+pub async fn read_container(
+    &self,
+    container_ref: ContainerReference,
+    options: &ReadContainerOptions,
+) -> Result<ContainerProperties> {
+    // Driver deserializes metadata internally
+    // Returns typed ContainerProperties, not raw bytes
+}
+```
+
 **SDK Layer Responsibility** (`azure_data_cosmos`):
 
 ```rust
-// SDK provides type-safe serialization on top of driver
+// SDK provides type-safe serialization on top of driver for data plane
 pub async fn create_item<T: Serialize>(
     &self,
     item: &T,
@@ -210,10 +223,12 @@ where
 
 **Implications**:
 
-- Driver `models/` contains **zero** item/document types
-- Driver APIs accept `&[u8]` for request bodies
-- Driver APIs return `Vec<u8>` for response bodies (buffered; Cosmos enforces 4MB default, 16MB absolute max)
-- Each consuming SDK implements its own serialization strategy
+- Driver `models/` contains **zero** data plane item/document types
+- Driver `models/` **includes** metadata types: `DatabaseProperties`, `ContainerProperties`, `PartitionKeyDefinition`, `IndexingPolicy`, etc.
+- Driver data plane APIs accept `&[u8]` for item request bodies
+- Driver data plane APIs return `Vec<u8>` for item response bodies (buffered; Cosmos enforces 4MB default, 16MB absolute max)
+- Driver metadata APIs return typed models (`ContainerProperties`, etc.)
+- Each consuming SDK implements its own data plane serialization strategy
 
 ## Module Organization Patterns
 
