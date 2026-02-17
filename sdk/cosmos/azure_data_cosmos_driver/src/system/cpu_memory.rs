@@ -547,8 +547,7 @@ fn read_cpu_usage_windows() -> Option<f64> {
     }
 
     let idle_delta = idle.saturating_sub(prev_idle);
-    let total_delta =
-        kernel.saturating_sub(prev_kernel) + user.saturating_sub(prev_user);
+    let total_delta = kernel.saturating_sub(prev_kernel) + user.saturating_sub(prev_user);
 
     if total_delta == 0 {
         return Some(0.0);
@@ -601,9 +600,7 @@ fn read_available_memory_linux() -> u64 {
 
 #[cfg(target_os = "windows")]
 fn read_available_memory_windows() -> u64 {
-    use windows_sys::Win32::System::SystemInformation::{
-        GlobalMemoryStatusEx, MEMORYSTATUSEX,
-    };
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 
     let mut mem_info = MEMORYSTATUSEX {
         dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,

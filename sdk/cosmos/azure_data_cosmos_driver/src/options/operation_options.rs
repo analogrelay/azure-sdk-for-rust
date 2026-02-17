@@ -9,9 +9,8 @@ use crate::{
     models::{ETagCondition, PartitionKey, SessionToken, ThroughputControlGroupName},
     options::{
         ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
-        EndToEndOperationLatencyPolicy, ExcludedRegions,
-        PriorityLevel, QuotaInfoEnabled, ReadConsistencyStrategy,
-        RuntimeOptions, ScriptLoggingEnabled, TriggerOptions,
+        EndToEndOperationLatencyPolicy, ExcludedRegions, PriorityLevel, QuotaInfoEnabled,
+        ReadConsistencyStrategy, RuntimeOptions, ScriptLoggingEnabled, TriggerOptions,
     },
 };
 
@@ -248,5 +247,4 @@ impl OperationOptions {
     pub fn custom_headers_ref(&self) -> Option<&Headers> {
         self.runtime.custom_headers.as_ref()
     }
-
 }

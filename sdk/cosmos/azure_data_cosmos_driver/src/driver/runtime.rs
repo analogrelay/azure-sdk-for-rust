@@ -11,8 +11,8 @@ use std::{
 
 use crate::{
     models::{
-        AccountEndpoint, AccountReference, ContainerReference,
-        ThroughputControlGroupName, UserAgent,
+        AccountEndpoint, AccountReference, ContainerReference, ThroughputControlGroupName,
+        UserAgent,
     },
     options::{
         ConnectionPoolOptions, CorrelationId, DiagnosticsOptions, DriverOptions, RuntimeOptions,

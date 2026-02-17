@@ -555,9 +555,7 @@ impl ThroughputControlGroupRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{
-        AccountReference, PartitionKeyDefinition,
-    };
+    use crate::models::{AccountReference, PartitionKeyDefinition};
     use url::Url;
 
     fn test_container_props() -> crate::models::ContainerProperties {

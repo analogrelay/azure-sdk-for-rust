@@ -424,19 +424,19 @@ impl CosmosDriver {
 
         // 1. Read the database to obtain its _rid.
         let db_result = self
-            .execute_operation(CosmosOperation::read_database(db_ref.clone()), options.clone())
+            .execute_operation(
+                CosmosOperation::read_database(db_ref.clone()),
+                options.clone(),
+            )
             .await?;
         let db_props: DatabaseProperties = serde_json::from_slice(db_result.body())
             .map_err(|e| azure_core::Error::new(azure_core::error::ErrorKind::DataConversion, e))?;
-        let db_rid = db_props
-            .system_properties
-            .rid
-            .ok_or_else(|| {
-                azure_core::Error::with_message(
-                    azure_core::error::ErrorKind::DataConversion,
-                    "database response missing _rid",
-                )
-            })?;
+        let db_rid = db_props.system_properties.rid.ok_or_else(|| {
+            azure_core::Error::with_message(
+                azure_core::error::ErrorKind::DataConversion,
+                "database response missing _rid",
+            )
+        })?;
 
         // 2. Read the container to obtain its _rid and properties.
         let container_result = self
@@ -445,10 +445,8 @@ impl CosmosDriver {
                 options,
             )
             .await?;
-        let container_props: ContainerProperties =
-            serde_json::from_slice(container_result.body()).map_err(|e| {
-                azure_core::Error::new(azure_core::error::ErrorKind::DataConversion, e)
-            })?;
+        let container_props: ContainerProperties = serde_json::from_slice(container_result.body())
+            .map_err(|e| azure_core::Error::new(azure_core::error::ErrorKind::DataConversion, e))?;
         let container_rid = container_props
             .system_properties
             .rid
@@ -471,9 +469,7 @@ impl CosmosDriver {
         );
 
         // 4. Cache it (both name and RID indices).
-        self.runtime
-            .cache_container(container_ref.clone())
-            .await;
+        self.runtime.cache_container(container_ref.clone()).await;
 
         Ok(container_ref)
     }

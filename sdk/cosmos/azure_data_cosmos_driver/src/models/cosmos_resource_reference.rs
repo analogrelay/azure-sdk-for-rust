@@ -557,9 +557,7 @@ impl CosmosResourceReference {
         match self.resource_type {
             ResourceType::DatabaseAccount => false,
             ResourceType::Database => self.database.is_none(),
-            ResourceType::DocumentCollection => {
-                self.container.is_none() && self.name.is_none()
-            }
+            ResourceType::DocumentCollection => self.container.is_none() && self.name.is_none(),
             ResourceType::Document => self.name.is_none() && self.rid.is_none(),
             ResourceType::StoredProcedure
             | ResourceType::Trigger

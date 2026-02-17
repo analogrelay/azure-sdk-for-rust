@@ -234,18 +234,12 @@ impl ContainerReference {
 
     /// Returns the name-based relative path: `/dbs/{db_name}/colls/{container_name}`
     pub fn name_based_path(&self) -> String {
-        format!(
-            "/dbs/{}/colls/{}",
-            self.db_name, self.container_name
-        )
+        format!("/dbs/{}/colls/{}", self.db_name, self.container_name)
     }
 
     /// Returns the RID-based relative path: `/dbs/{db_rid}/colls/{container_rid}`
     pub fn rid_based_path(&self) -> String {
-        format!(
-            "/dbs/{}/colls/{}",
-            self.db_rid, self.container_rid
-        )
+        format!("/dbs/{}/colls/{}", self.db_rid, self.container_rid)
     }
 
     /// Returns the internal container name as a `ResourceName`.

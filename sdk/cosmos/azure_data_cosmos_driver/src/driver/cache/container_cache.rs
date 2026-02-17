@@ -229,8 +229,7 @@ impl Default for ContainerCache {
 mod tests {
     use super::*;
     use crate::models::{
-        AccountReference, ContainerProperties, ContainerReference,
-        PartitionKeyDefinition,
+        AccountReference, ContainerProperties, ContainerReference, PartitionKeyDefinition,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -288,16 +287,12 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         // Should be retrievable by name
-        let by_name = cache
-            .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
-            .await;
+        let by_name = cache.get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll").await;
         assert!(by_name.is_some());
         assert_eq!(by_name.unwrap().name(), "mycoll");
 
         // Should be cross-populated and retrievable by RID
-        let by_rid = cache
-            .get_by_rid(ACCOUNT_ENDPOINT, container.rid())
-            .await;
+        let by_rid = cache.get_by_rid(ACCOUNT_ENDPOINT, container.rid()).await;
         assert!(by_rid.is_some());
         assert_eq!(by_rid.unwrap().name(), "mycoll");
     }
@@ -355,16 +350,12 @@ mod tests {
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         // Should be cross-populated and retrievable by name
-        let by_name = cache
-            .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
-            .await;
+        let by_name = cache.get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll").await;
         assert!(by_name.is_some());
         assert_eq!(by_name.unwrap().rid(), container_rid);
 
         // Should also be retrievable by RID
-        let by_rid = cache
-            .get_by_rid(ACCOUNT_ENDPOINT, &container_rid)
-            .await;
+        let by_rid = cache.get_by_rid(ACCOUNT_ENDPOINT, &container_rid).await;
         assert!(by_rid.is_some());
     }
 
@@ -378,18 +369,11 @@ mod tests {
 
         cache.put(container).await;
 
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
-                .await
-                .is_some()
-        );
-        assert!(
-            cache
-                .get_by_rid(ACCOUNT_ENDPOINT, &rid)
-                .await
-                .is_some()
-        );
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
+            .await
+            .is_some());
+        assert!(cache.get_by_rid(ACCOUNT_ENDPOINT, &rid).await.is_some());
     }
 
     // --- different containers ---
@@ -445,23 +429,19 @@ mod tests {
     #[tokio::test]
     async fn get_by_name_returns_none_before_fetch() {
         let cache = ContainerCache::new();
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "db", "unknown")
-                .await
-                .is_none()
-        );
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "db", "unknown")
+            .await
+            .is_none());
     }
 
     #[tokio::test]
     async fn get_by_rid_returns_none_before_fetch() {
         let cache = ContainerCache::new();
-        assert!(
-            cache
-                .get_by_rid(ACCOUNT_ENDPOINT, "unknown_rid")
-                .await
-                .is_none()
-        );
+        assert!(cache
+            .get_by_rid(ACCOUNT_ENDPOINT, "unknown_rid")
+            .await
+            .is_none());
     }
 
     // --- invalidation ---
@@ -475,35 +455,21 @@ mod tests {
         cache.put(container.clone()).await;
 
         // Verify present in both
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
-                .await
-                .is_some()
-        );
-        assert!(
-            cache
-                .get_by_rid(ACCOUNT_ENDPOINT, &rid)
-                .await
-                .is_some()
-        );
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
+            .await
+            .is_some());
+        assert!(cache.get_by_rid(ACCOUNT_ENDPOINT, &rid).await.is_some());
 
         // Invalidate
         cache.invalidate(&container).await;
 
         // Both should be gone
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
-                .await
-                .is_none()
-        );
-        assert!(
-            cache
-                .get_by_rid(ACCOUNT_ENDPOINT, &rid)
-                .await
-                .is_none()
-        );
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "mydb", "mycoll")
+            .await
+            .is_none());
+        assert!(cache.get_by_rid(ACCOUNT_ENDPOINT, &rid).await.is_none());
     }
 
     // --- clear ---
@@ -517,17 +483,13 @@ mod tests {
 
         cache.clear().await;
 
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "db", "coll1")
-                .await
-                .is_none()
-        );
-        assert!(
-            cache
-                .get_by_name(ACCOUNT_ENDPOINT, "db", "coll2")
-                .await
-                .is_none()
-        );
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "db", "coll1")
+            .await
+            .is_none());
+        assert!(cache
+            .get_by_name(ACCOUNT_ENDPOINT, "db", "coll2")
+            .await
+            .is_none());
     }
 }
