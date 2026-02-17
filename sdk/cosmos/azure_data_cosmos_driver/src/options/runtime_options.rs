@@ -4,6 +4,11 @@
 //! Runtime-configurable options shared across environment, driver, and operation levels.
 
 use azure_core::http::headers::Headers;
+// Note: `std::sync::RwLock` is used intentionally here instead of `tokio::sync::RwLock`
+// because `RuntimeOptions` may be read from synchronous contexts (e.g., builder construction,
+// configuration merging). The lock is held only briefly for reads/writes of option values,
+// so contention is minimal. Using `std::sync::RwLock` also avoids coupling the crate to a
+// specific async runtime (tokio), which is important for runtime-agnostic design.
 use std::sync::{Arc, RwLock};
 
 use crate::{

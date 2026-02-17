@@ -202,6 +202,17 @@ impl RequestSentExt for azure_core::Error {
 /// Reqwest errors can occur at various stages:
 /// - Before sending: DNS failure, connection refused, TLS error
 /// - After sending: Timeout waiting for response, connection reset
+///
+/// # Note
+///
+/// This function is currently unused (`#[allow(dead_code)]`) because the tracked
+/// transport integration with reqwest is not yet wired up. It will be called from
+/// the transport layer once reqwest-based request tracking is enabled.
+///
+/// Unit tests for this function are limited because `reqwest::Error` is an opaque
+/// type that cannot be directly constructed in tests. The error classification
+/// logic is validated indirectly through the `azure_core::Error`-based
+/// `request_sent_status()` tests and integration tests.
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)]
 pub(crate) fn reqwest_request_sent_status(error: &reqwest::Error) -> RequestSentStatus {

@@ -127,3 +127,30 @@ impl ETagCondition {
         matches!(self, Self::IfNoneMatch(_))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn if_match_accessors() {
+        let etag = ETag::new("abc123");
+        let condition = ETagCondition::if_match(etag.clone());
+
+        assert!(condition.is_if_match());
+        assert!(!condition.is_if_none_match());
+        assert_eq!(condition.as_if_match(), Some(&etag));
+        assert_eq!(condition.as_if_none_match(), None);
+    }
+
+    #[test]
+    fn if_none_match_accessors() {
+        let etag = ETag::new("*");
+        let condition = ETagCondition::if_none_match(etag.clone());
+
+        assert!(!condition.is_if_match());
+        assert!(condition.is_if_none_match());
+        assert_eq!(condition.as_if_match(), None);
+        assert_eq!(condition.as_if_none_match(), Some(&etag));
+    }
+}

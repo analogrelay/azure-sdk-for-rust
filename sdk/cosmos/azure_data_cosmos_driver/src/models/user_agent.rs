@@ -57,8 +57,12 @@ impl UserAgent {
         let os_name = std::env::consts::OS;
         let os_arch = std::env::consts::ARCH;
 
-        // Rust version is available at compile time via rustc_version_runtime or we use a const
-        // For simplicity, we'll use the compile-time RUSTC version if available
+        // `RUSTC_VERSION` is an optional compile-time environment variable that should
+        // contain the Rust compiler version (e.g., "1.85.0"). It can be set by:
+        // - CI/CD pipelines (e.g., `RUSTC_VERSION=$(rustc --version | cut -d' ' -f2)`)
+        // - A build script (`build.rs`) that captures `rustc --version` output
+        // - Manual export before building
+        // If not set, falls back to "unknown" in the user agent string.
         let rust_version = option_env!("RUSTC_VERSION").unwrap_or("unknown");
 
         format!(

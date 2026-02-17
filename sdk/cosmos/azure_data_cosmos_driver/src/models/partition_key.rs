@@ -402,6 +402,14 @@ mod tests {
     }
 
     #[test]
+    fn unit_converts_to_empty() {
+        let pk = PartitionKey::from(());
+        assert_eq!(pk, PartitionKey::EMPTY);
+        assert!(pk.is_empty());
+        assert_eq!(pk.len(), 0);
+    }
+
+    #[test]
     fn null_partition_key_value() {
         let pk = PartitionKey::from(None::<String>);
         assert_eq!(pk.len(), 1);
