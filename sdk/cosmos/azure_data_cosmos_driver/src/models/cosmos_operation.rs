@@ -231,14 +231,6 @@ impl CosmosOperation {
         Self::new(OperationType::Execute, resource_reference)
     }
 
-    /// Creates a Patch operation.
-    ///
-    /// Accepts any type that can be converted into a `CosmosResourceReference`,
-    /// including typed references like `ItemReference`.
-    pub fn patch(resource_reference: impl Into<CosmosResourceReference>) -> Self {
-        Self::new(OperationType::Patch, resource_reference)
-    }
-
     /// Creates a Batch operation.
     ///
     /// Accepts any type that can be converted into a `CosmosResourceReference`,
@@ -545,16 +537,6 @@ impl CosmosOperation {
         Self::new_with_partition_key(OperationType::Replace, item, partition_key)
     }
 
-    /// Patches (partially updates) an existing item (document) in a container.
-    ///
-    /// The `ItemReference` contains the container, partition key, and item identifier,
-    /// providing all the information needed for the operation.
-    /// Use `with_body()` to provide the patch operations JSON.
-    pub fn patch_item(item: ItemReference) -> Self {
-        let partition_key = item.partition_key().clone();
-        Self::new_with_partition_key(OperationType::Patch, item, partition_key)
-    }
-
     /// Reads (lists) all items within a single partition.
     ///
     /// Returns a feed of document resources from the specified partition.
@@ -612,8 +594,7 @@ impl CosmosOperation {
 mod tests {
     use super::*;
     use crate::models::{
-        AccountReference, ContainerReference, DatabaseReference,
-        PartitionKeyDefinition,
+        AccountReference, ContainerReference, DatabaseReference, PartitionKeyDefinition,
     };
     use std::sync::Arc;
     use url::Url;

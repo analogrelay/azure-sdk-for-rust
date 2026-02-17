@@ -364,10 +364,6 @@ mod tests {
         ));
         assert!(uses_dataplane_pipeline(
             ResourceType::Document,
-            OperationType::Patch
-        ));
-        assert!(uses_dataplane_pipeline(
-            ResourceType::Document,
             OperationType::Upsert
         ));
     }

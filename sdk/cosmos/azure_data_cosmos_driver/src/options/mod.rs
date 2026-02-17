@@ -32,8 +32,8 @@ pub use driver_options::{DriverOptions, DriverOptionsBuilder};
 pub use identity::{CorrelationId, UserAgentSuffix, WorkloadId};
 pub use operation_options::OperationOptions;
 pub use policies::{
-    ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,
-    NonIdempotentWriteRetries, QuotaInfoEnabled, ScriptLoggingEnabled,
+    ContentResponseOnWrite, EndToEndOperationLatencyPolicy, ExcludedRegions,
+    QuotaInfoEnabled, ScriptLoggingEnabled,
 };
 pub use priority::PriorityLevel;
 pub use read_consistency::ReadConsistencyStrategy;

@@ -390,8 +390,6 @@ pub enum OperationType {
     QueryPlan,
     /// Execute a batch operation.
     Batch,
-    /// Partially update a resource.
-    Patch,
     /// Check resource existence (HEAD).
     Head,
     /// Check feed existence (HEAD).
@@ -416,7 +414,6 @@ impl OperationType {
             OperationType::Read => Method::Get,
             OperationType::ReadFeed => Method::Get,
             OperationType::Replace => Method::Put,
-            OperationType::Patch => Method::Patch,
             OperationType::Head | OperationType::HeadFeed => Method::Head,
         }
     }

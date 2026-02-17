@@ -4,7 +4,7 @@
 //! Request policy types.
 
 use crate::options::Region;
-use std::{borrow::Cow, time::Duration};
+use std::time::Duration;
 
 /// Controls whether the response body is returned for write operations.
 ///
@@ -21,26 +21,6 @@ impl ContentResponseOnWrite {
 }
 
 impl From<bool> for ContentResponseOnWrite {
-    fn from(value: bool) -> Self {
-        Self(value)
-    }
-}
-
-/// Controls whether non-idempotent write operations can be retried.
-///
-/// When enabled, allows retrying create/update operations that would
-/// normally not be retryable due to potential duplicate writes.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct NonIdempotentWriteRetries(pub bool);
-
-impl NonIdempotentWriteRetries {
-    /// Non-idempotent write retries are enabled.
-    pub const ENABLED: Self = Self(true);
-    /// Non-idempotent write retries are disabled.
-    pub const DISABLED: Self = Self(false);
-}
-
-impl From<bool> for NonIdempotentWriteRetries {
     fn from(value: bool) -> Self {
         Self(value)
     }
@@ -147,48 +127,5 @@ impl QuotaInfoEnabled {
 impl From<bool> for QuotaInfoEnabled {
     fn from(value: bool) -> Self {
         Self(value)
-    }
-}
-
-/// A filter predicate for conditional patch operations.
-///
-/// The filter predicate is a SQL-like condition that must evaluate to true
-/// for the patch operation to be applied.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FilterPredicate(Cow<'static, str>);
-
-impl FilterPredicate {
-    /// Creates a new filter predicate.
-    pub fn new(predicate: impl Into<Cow<'static, str>>) -> Self {
-        Self(predicate.into())
-    }
-
-    /// Returns the predicate as a string slice.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl From<&'static str> for FilterPredicate {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<String> for FilterPredicate {
-    fn from(value: String) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<Cow<'static, str>> for FilterPredicate {
-    fn from(value: Cow<'static, str>) -> Self {
-        Self::new(value)
-    }
-}
-
-impl std::fmt::Display for FilterPredicate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
     }
 }

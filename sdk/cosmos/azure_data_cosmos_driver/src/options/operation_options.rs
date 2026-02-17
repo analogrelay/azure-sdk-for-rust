@@ -9,8 +9,8 @@ use crate::{
     models::{ETagCondition, PartitionKey, SessionToken, ThroughputControlGroupName},
     options::{
         ContentResponseOnWrite, DedicatedGatewayOptions, DiagnosticsThresholds,
-        EndToEndOperationLatencyPolicy, ExcludedRegions, FilterPredicate,
-        NonIdempotentWriteRetries, PriorityLevel, QuotaInfoEnabled, ReadConsistencyStrategy,
+        EndToEndOperationLatencyPolicy, ExcludedRegions,
+        PriorityLevel, QuotaInfoEnabled, ReadConsistencyStrategy,
         RuntimeOptions, ScriptLoggingEnabled, TriggerOptions,
     },
 };
@@ -54,10 +54,6 @@ pub struct OperationOptions {
 
     // Just write operations
     triggers: Option<TriggerOptions>,
-    non_idempotent_write_retries: Option<NonIdempotentWriteRetries>,
-
-    // Only patch operations
-    filter_predicate: Option<FilterPredicate>,
 
     // Only StoredProc executions
     script_logging_enabled: Option<ScriptLoggingEnabled>,
@@ -187,17 +183,6 @@ impl OperationOptions {
         self.runtime.diagnostics_thresholds.as_ref()
     }
 
-    /// Sets whether non-idempotent write retries are enabled.
-    pub fn non_idempotent_write_retries(mut self, value: NonIdempotentWriteRetries) -> Self {
-        self.non_idempotent_write_retries = Some(value);
-        self
-    }
-
-    /// Gets the non-idempotent write retries setting.
-    pub fn non_idempotent_write_retries_ref(&self) -> Option<&NonIdempotentWriteRetries> {
-        self.non_idempotent_write_retries.as_ref()
-    }
-
     /// Sets the end-to-end operation latency policy.
     pub fn end_to_end_latency_policy(mut self, policy: EndToEndOperationLatencyPolicy) -> Self {
         self.runtime.end_to_end_latency_policy = Some(policy);
@@ -264,17 +249,4 @@ impl OperationOptions {
         self.runtime.custom_headers.as_ref()
     }
 
-    /// Sets the filter predicate for conditional patch operations.
-    ///
-    /// The filter predicate is a SQL-like condition that must evaluate to true
-    /// for the patch operation to be applied. Only used with patch operations.
-    pub fn filter_predicate(mut self, predicate: impl Into<FilterPredicate>) -> Self {
-        self.filter_predicate = Some(predicate.into());
-        self
-    }
-
-    /// Gets the filter predicate.
-    pub fn filter_predicate_ref(&self) -> Option<&FilterPredicate> {
-        self.filter_predicate.as_ref()
-    }
 }

@@ -16,6 +16,7 @@ const MIN_MAX_SUMMARY_SIZE_BYTES: usize = 4 * 1024;
 /// Diagnostics can be output in different levels of detail depending on
 /// debugging needs vs. log size constraints.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DiagnosticsVerbosity {
     /// Use the default verbosity level configured in the runtime.
     #[default]
