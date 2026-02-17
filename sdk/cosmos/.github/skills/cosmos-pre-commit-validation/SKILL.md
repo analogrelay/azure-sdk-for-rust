@@ -63,6 +63,9 @@ Follow these steps strictly:
    - Formatting checks
    - Build succeeds for affected crates
    - Clippy lints pass for affected crates
+   - **Re-run formatting** after any auto-fix: if `auto-fix` is true and clippy or other tools modified files,
+     re-run `cargo fmt` to ensure the auto-fixed code is properly formatted (e.g., `cargo clippy --fix` can
+     leave trailing blank lines when removing unused imports).
    - Documentation builds successfully where applicable
    - Unit and emulator tests relevant to the touched modules and crates
    - **CI-gated test compilation**: Some test files are conditionally compiled via `cfg` flags that CI sets but local builds omit.
