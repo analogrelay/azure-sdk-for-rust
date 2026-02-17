@@ -159,19 +159,24 @@ pub(super) fn parse_duration_millis_from_env(
 }
 
 /// Validates a duration value against min/max bounds (in milliseconds).
+///
+/// Comparisons use `u128` to avoid silent truncation since
+/// [`Duration::as_millis`] returns `u128`.
 fn validate_duration_bounds(
     value: Duration,
     env_var_name: &str,
     min_millis: u64,
     max_millis: u64,
 ) -> azure_core::Result<()> {
-    let value_millis = value.as_millis() as u64;
+    let value_millis = value.as_millis();
+    let min = u128::from(min_millis);
+    let max = u128::from(max_millis);
     let field_name = env_var_name
         .strip_prefix("AZURE_COSMOS_CONNECTION_POOL_")
         .unwrap_or(env_var_name)
         .to_lowercase();
 
-    if value_millis < min_millis {
+    if value_millis < min {
         return Err(azure_core::Error::with_message(
             azure_core::error::ErrorKind::Other,
             format!(
@@ -181,7 +186,7 @@ fn validate_duration_bounds(
         ));
     }
 
-    if value_millis > max_millis {
+    if value_millis > max {
         return Err(azure_core::Error::with_message(
             azure_core::error::ErrorKind::Other,
             format!(

@@ -27,9 +27,9 @@ use crate::{
 ///
 /// # Example
 ///
-/// ```ignore
-/// use azure_data_cosmos_driver::options::OperationOptions;
-/// use azure_data_cosmos_driver::models::{PartitionKey, PriorityLevel, ContentResponseOnWrite};
+/// ```rust,no_run
+/// use azure_data_cosmos_driver::options::{OperationOptions, PriorityLevel, ContentResponseOnWrite};
+/// use azure_data_cosmos_driver::models::PartitionKey;
 ///
 /// let options = OperationOptions::new()
 ///     .partition_key(PartitionKey::from("my-partition"))

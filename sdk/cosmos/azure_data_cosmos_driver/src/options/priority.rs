@@ -51,3 +51,39 @@ impl std::str::FromStr for PriorityLevel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use azure_core::error::ErrorKind;
+
+    #[test]
+    fn parses_valid_priority_levels() {
+        let high: PriorityLevel = "High".parse().expect("parse High");
+        let low: PriorityLevel = "Low".parse().expect("parse Low");
+        assert_eq!(high, PriorityLevel::High);
+        assert_eq!(low, PriorityLevel::Low);
+    }
+
+    #[test]
+    fn parsing_invalid_priority_returns_data_conversion_error() {
+        let err = "Medium"
+            .parse::<PriorityLevel>()
+            .expect_err("expected error for invalid priority");
+        assert_eq!(*err.kind(), ErrorKind::DataConversion);
+        assert!(
+            err.to_string().contains("Unknown priority level: Medium"),
+            "unexpected error message: {err}"
+        );
+    }
+
+    #[test]
+    fn display_roundtrips_through_from_str() {
+        for level in [PriorityLevel::High, PriorityLevel::Low] {
+            let s = level.to_string();
+            assert_eq!(s, level.as_str());
+            let parsed: PriorityLevel = s.parse().expect("roundtrip parse failed");
+            assert_eq!(parsed, level);
+        }
+    }
+}

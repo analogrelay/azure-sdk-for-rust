@@ -78,6 +78,7 @@ impl UserAgent {
     fn new(suffix: Option<impl Into<String>>) -> Self {
         let base = Self::base_user_agent();
         let suffix = suffix.map(Into::into);
+        let base_stripped = strip_non_ascii(&base);
 
         let full_user_agent = match &suffix {
             Some(s) if !s.is_empty() => {
@@ -104,9 +105,23 @@ impl UserAgent {
             _ => base,
         };
 
+        let full_user_agent = strip_non_ascii(&full_user_agent);
+
+        // Compute the effective suffix that actually appears in `full_user_agent`
+        // after truncation and ASCII stripping, so that `suffix()` matches
+        // what was actually appended.
+        let effective_suffix = match &suffix {
+            Some(_) => full_user_agent
+                .strip_prefix(base_stripped.as_str())
+                .and_then(|rest| rest.strip_prefix(' '))
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+            _ => None,
+        };
+
         Self {
-            full_user_agent: strip_non_ascii(&full_user_agent),
-            suffix,
+            full_user_agent,
+            suffix: effective_suffix,
         }
     }
 

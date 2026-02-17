@@ -265,8 +265,12 @@ impl AsHeaders for PartitionKey {
                             '\r' => json.push_str(r#"\r"#),
                             '\t' => json.push_str(r#"\t"#),
                             '"' => json.push_str(r#"\""#),
-                            '\\' => json.push('\\'),
-                            c if c.is_ascii() => json.push(c),
+                            '\\' => json.push_str(r#"\\"#),
+                            c if c.is_ascii() && !c.is_control() => json.push(c),
+                            c if c.is_ascii() => {
+                                // Remaining ASCII control characters (< 0x20) must be \uXXXX-escaped.
+                                json.push_str(&format!("\\u{:04x}", c as u32));
+                            }
                             c => {
                                 let encoded = c.encode_utf16(&mut utf_buf);
                                 for code_unit in encoded {
