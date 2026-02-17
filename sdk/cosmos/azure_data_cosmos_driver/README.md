@@ -90,10 +90,11 @@ async fn main() -> azure_core::Result<()> {
 
 ## Module Organization
 
-- **`options`**: Configuration types (driver options, connection pool settings)
-- **`models`**: Management/metadata resource types (container properties, partition key definitions)
 - **`diagnostics`**: Operational telemetry (RU consumption, retry counts, timing information)
-- **`builders`**: Fluent builders for constructing driver instances
+- **`driver`**: Core transport, routing, and protocol handling
+- **`models`**: Resource types, partition keys, status codes, and request metadata
+- **`options`**: Configuration types (driver options, connection pool settings, diagnostics)
+- **`system`**: System-level utilities (CPU/memory monitoring, VM metadata)
 
 Internal modules (pipeline, routing, handlers) have `pub(crate)` visibility.
 

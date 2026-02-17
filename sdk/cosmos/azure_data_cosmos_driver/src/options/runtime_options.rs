@@ -210,69 +210,61 @@ impl SharedRuntimeOptions {
 
     /// Returns a snapshot of the current runtime options.
     ///
-    /// # Panics
-    ///
-    /// Panics if the lock is poisoned.
+    /// If the lock is poisoned (a thread panicked while holding it), this
+    /// recovers the inner data via [`PoisonError::into_inner`] rather than
+    /// propagating the panic.
     pub fn snapshot(&self) -> RuntimeOptions {
-        self.0.read().expect("lock poisoned").clone()
+        self.0
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Acquires a write guard, recovering from a poisoned lock if necessary.
+    fn write_guard(&self) -> std::sync::RwLockWriteGuard<'_, RuntimeOptions> {
+        self.0
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Sets the throughput control group name.
     pub fn set_throughput_control_group_name(&self, name: Option<ThroughputControlGroupName>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .throughput_control_group_name = name;
+        self.write_guard().throughput_control_group_name = name;
     }
 
     /// Sets the dedicated gateway options.
     pub fn set_dedicated_gateway_options(&self, options: Option<DedicatedGatewayOptions>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .dedicated_gateway_options = options;
+        self.write_guard().dedicated_gateway_options = options;
     }
 
     /// Sets the diagnostics thresholds.
     pub fn set_diagnostics_thresholds(&self, thresholds: Option<DiagnosticsThresholds>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .diagnostics_thresholds = thresholds;
+        self.write_guard().diagnostics_thresholds = thresholds;
     }
 
     /// Sets the end-to-end latency policy.
     pub fn set_end_to_end_latency_policy(&self, policy: Option<EndToEndOperationLatencyPolicy>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .end_to_end_latency_policy = policy;
+        self.write_guard().end_to_end_latency_policy = policy;
     }
 
     /// Sets the custom headers.
     pub fn set_custom_headers(&self, headers: Option<Headers>) {
-        self.0.write().expect("lock poisoned").custom_headers = headers;
+        self.write_guard().custom_headers = headers;
     }
 
     /// Sets the excluded regions.
     pub fn set_excluded_regions(&self, regions: Option<ExcludedRegions>) {
-        self.0.write().expect("lock poisoned").excluded_regions = regions;
+        self.write_guard().excluded_regions = regions;
     }
 
     /// Sets the read consistency strategy.
     pub fn set_read_consistency_strategy(&self, strategy: Option<ReadConsistencyStrategy>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .read_consistency_strategy = strategy;
+        self.write_guard().read_consistency_strategy = strategy;
     }
 
     /// Sets the content response on write setting.
     pub fn set_content_response_on_write(&self, value: Option<ContentResponseOnWrite>) {
-        self.0
-            .write()
-            .expect("lock poisoned")
-            .content_response_on_write = value;
+        self.write_guard().content_response_on_write = value;
     }
 }
 

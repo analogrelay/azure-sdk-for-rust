@@ -85,10 +85,17 @@ impl UserAgent {
                 if proposed.len() <= MAX_USER_AGENT_LENGTH {
                     proposed
                 } else {
-                    // Truncate suffix to fit within limit
+                    // Truncate suffix to fit within limit, on a char boundary
+                    // to avoid panicking on multi-byte UTF-8 characters.
                     let max_suffix_len = MAX_USER_AGENT_LENGTH.saturating_sub(base.len() + 1);
                     if max_suffix_len > 0 {
-                        format!("{} {}", base, &s[..max_suffix_len.min(s.len())])
+                        let limit = max_suffix_len.min(s.len());
+                        // Find the last char boundary at or before `limit`
+                        let safe_end = s[..limit]
+                            .char_indices()
+                            .last()
+                            .map_or(0, |(idx, ch)| idx + ch.len_utf8());
+                        format!("{} {}", base, &s[..safe_end])
                     } else {
                         base
                     }

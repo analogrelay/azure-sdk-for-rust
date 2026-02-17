@@ -26,7 +26,8 @@ const VERSION: HeaderName = HeaderName::from_static("x-ms-version");
 /// x-ms-cosmos-sdk-supportedcapabilities header name.
 ///
 /// This header indicates which SDK capabilities are supported. The value is a
-/// bitmask where bit 0 (value "1") indicates partition merge support.
+/// bitmask where bit 0 (value 1) would indicate partition merge support.
+/// Currently set to "0" (no special capabilities enabled).
 const SDK_SUPPORTED_CAPABILITIES: HeaderName =
     HeaderName::from_static("x-ms-cosmos-sdk-supportedcapabilities");
 
@@ -49,7 +50,7 @@ const NO_CACHE: HeaderValue = HeaderValue::from_static("no-cache");
 ///
 /// This policy adds the following headers if not already present:
 /// - `x-ms-version`: API version (2020-07-15)
-/// - `x-ms-cosmos-sdk-supportedcapabilities`: SDK capability flags (1)
+/// - `x-ms-cosmos-sdk-supportedcapabilities`: SDK capability flags (0 - no special capabilities)
 /// - `Content-Type`: application/json
 /// - `Accept`: application/json
 /// - `Cache-Control`: no-cache
