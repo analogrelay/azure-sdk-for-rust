@@ -22,10 +22,6 @@ mod partition_key;
 mod request_charge;
 mod resource_id;
 mod resource_reference;
-mod resource_types;
-mod session;
-mod throughput_control;
-mod triggers;
 mod user_agent;
 
 pub use account_reference::{AccountReference, AccountReferenceBuilder, AuthOptions};
@@ -48,10 +44,6 @@ pub use resource_reference::{
     ContainerReference, DatabaseReference, ItemReference, StoredProcedureReference,
     TriggerReference, UdfReference,
 };
-pub use resource_types::{OperationType, ResourceType};
-pub use session::SessionToken;
-pub use throughput_control::ThroughputControlGroupName;
-pub use triggers::TriggerInvocation;
 pub use user_agent::UserAgent;
 
 pub(crate) use account_reference::AccountEndpoint;
@@ -286,4 +278,289 @@ pub struct SystemProperties {
     /// ETag for optimistic concurrency control.
     #[serde(rename = "_etag", skip_serializing_if = "Option::is_none")]
     pub etag: Option<String>,
+}
+
+// ── ResourceType & OperationType (moved from resource_types.rs) ─────────────
+
+/// The type of resource being operated on.
+///
+/// Used to identify the Cosmos DB resource category for routing and authorization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ResourceType {
+    /// Database account (root level).
+    DatabaseAccount,
+    /// A database within an account.
+    Database,
+    /// A container (collection) within a database.
+    DocumentCollection,
+    /// A document (item) within a container.
+    Document,
+    /// A stored procedure within a container.
+    StoredProcedure,
+    /// A trigger within a container.
+    Trigger,
+    /// A user-defined function within a container.
+    UserDefinedFunction,
+    /// A partition key range within a container.
+    PartitionKeyRange,
+    /// An offer (throughput configuration).
+    Offer,
+}
+
+impl ResourceType {
+    /// Returns the URL path segment for this resource type.
+    pub fn path_segment(self) -> &'static str {
+        match self {
+            ResourceType::DatabaseAccount => "",
+            ResourceType::Database => "dbs",
+            ResourceType::DocumentCollection => "colls",
+            ResourceType::Document => "docs",
+            ResourceType::StoredProcedure => "sprocs",
+            ResourceType::Trigger => "triggers",
+            ResourceType::UserDefinedFunction => "udfs",
+            ResourceType::PartitionKeyRange => "pkranges",
+            ResourceType::Offer => "offers",
+        }
+    }
+
+    /// Returns true if this resource type is metadata (not data plane items).
+    pub fn is_metadata(self) -> bool {
+        matches!(
+            self,
+            ResourceType::DatabaseAccount
+                | ResourceType::Database
+                | ResourceType::DocumentCollection
+                | ResourceType::PartitionKeyRange
+                | ResourceType::Offer
+        )
+    }
+
+    /// Returns true if this resource type requires a container reference.
+    pub fn requires_container(self) -> bool {
+        matches!(
+            self,
+            ResourceType::Document
+                | ResourceType::DocumentCollection
+                | ResourceType::StoredProcedure
+                | ResourceType::Trigger
+                | ResourceType::UserDefinedFunction
+                | ResourceType::PartitionKeyRange
+        )
+    }
+
+    /// Returns true if this resource type requires a database reference.
+    pub fn requires_database(self) -> bool {
+        matches!(
+            self,
+            ResourceType::Database
+                | ResourceType::DocumentCollection
+                | ResourceType::Document
+                | ResourceType::StoredProcedure
+                | ResourceType::Trigger
+                | ResourceType::UserDefinedFunction
+                | ResourceType::PartitionKeyRange
+        )
+    }
+}
+
+/// The type of operation being performed.
+///
+/// Used to determine HTTP method, retry behavior, and authorization requirements.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum OperationType {
+    /// Create a new resource.
+    Create,
+    /// Read an existing resource.
+    Read,
+    /// Read a feed (list) of resources.
+    ReadFeed,
+    /// Replace an existing resource.
+    Replace,
+    /// Delete a resource.
+    Delete,
+    /// Create or replace a resource.
+    Upsert,
+    /// Execute a query.
+    Query,
+    /// Execute a SQL query.
+    SqlQuery,
+    /// Get a query plan.
+    QueryPlan,
+    /// Execute a batch operation.
+    Batch,
+    /// Partially update a resource.
+    Patch,
+    /// Check resource existence (HEAD).
+    Head,
+    /// Check feed existence (HEAD).
+    HeadFeed,
+    /// Execute a stored procedure.
+    Execute,
+}
+
+impl OperationType {
+    /// Returns the HTTP method for this operation type.
+    pub fn http_method(self) -> azure_core::http::Method {
+        use azure_core::http::Method;
+        match self {
+            OperationType::Create
+            | OperationType::Upsert
+            | OperationType::Query
+            | OperationType::SqlQuery
+            | OperationType::Batch
+            | OperationType::QueryPlan
+            | OperationType::Execute => Method::Post,
+            OperationType::Delete => Method::Delete,
+            OperationType::Read => Method::Get,
+            OperationType::ReadFeed => Method::Get,
+            OperationType::Replace => Method::Put,
+            OperationType::Patch => Method::Patch,
+            OperationType::Head | OperationType::HeadFeed => Method::Head,
+        }
+    }
+
+    /// Returns true if the operation does not modify server state.
+    pub fn is_read_only(self) -> bool {
+        matches!(
+            self,
+            OperationType::Read
+                | OperationType::ReadFeed
+                | OperationType::Query
+                | OperationType::SqlQuery
+                | OperationType::QueryPlan
+                | OperationType::Head
+                | OperationType::HeadFeed
+        )
+    }
+
+    /// Returns true if the operation is idempotent (safe to retry).
+    pub fn is_idempotent(self) -> bool {
+        matches!(
+            self,
+            OperationType::Read
+                | OperationType::ReadFeed
+                | OperationType::Query
+                | OperationType::SqlQuery
+                | OperationType::QueryPlan
+                | OperationType::Head
+                | OperationType::HeadFeed
+                | OperationType::Replace
+                | OperationType::Delete
+        )
+    }
+}
+
+// ── SessionToken (moved from session.rs) ────────────────────────────────────
+
+/// A session token for maintaining session consistency.
+///
+/// Session tokens track the logical sequence number of operations, enabling
+/// read-your-writes consistency within a session.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SessionToken(pub Cow<'static, str>);
+
+impl SessionToken {
+    /// Creates a new session token with the given value.
+    pub fn new(value: impl Into<Cow<'static, str>>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the session token value as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<T: Into<Cow<'static, str>>> From<T> for SessionToken {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl std::fmt::Display for SessionToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+// ── TriggerInvocation (moved from triggers.rs) ──────────────────────────────
+
+/// Represents a trigger to be invoked before or after an operation.
+///
+/// Triggers are server-side scripts that can be automatically invoked
+/// during create, update, and delete operations on items.
+///
+/// This type is serialized into request headers to specify which trigger to invoke.
+/// For resource references to trigger definitions, see the resource reference types.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TriggerInvocation {
+    /// The name/id of the trigger to invoke.
+    pub name: Cow<'static, str>,
+}
+
+impl TriggerInvocation {
+    /// Creates a new trigger invocation with the given name.
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self { name: name.into() }
+    }
+}
+
+impl From<&'static str> for TriggerInvocation {
+    fn from(name: &'static str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<String> for TriggerInvocation {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+// ── ThroughputControlGroupName (moved from throughput_control.rs) ───────────
+
+/// Unique name identifying a throughput control group.
+///
+/// This name is serialized into request headers when referencing a control group.
+/// The group configuration is defined separately via [`ThroughputControlGroupOptions`](crate::options::ThroughputControlGroupOptions).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ThroughputControlGroupName(pub Cow<'static, str>);
+
+impl ThroughputControlGroupName {
+    /// Creates a new throughput control group name.
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self(name.into())
+    }
+
+    /// Returns the name as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&'static str> for ThroughputControlGroupName {
+    fn from(name: &'static str) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<String> for ThroughputControlGroupName {
+    fn from(name: String) -> Self {
+        Self::new(name)
+    }
+}
+
+impl From<Cow<'static, str>> for ThroughputControlGroupName {
+    fn from(name: Cow<'static, str>) -> Self {
+        Self::new(name)
+    }
+}
+
+impl std::fmt::Display for ThroughputControlGroupName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
