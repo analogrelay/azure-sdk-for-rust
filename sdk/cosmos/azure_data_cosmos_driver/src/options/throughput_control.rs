@@ -555,16 +555,34 @@ impl ThroughputControlGroupRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AccountReference, DatabaseReference};
+    use crate::models::{
+        AccountReference, PartitionKeyDefinition,
+    };
     use url::Url;
+
+    fn test_container_props() -> crate::models::ContainerProperties {
+        crate::models::ContainerProperties {
+            partition_key: PartitionKeyDefinition {
+                paths: vec!["/pk".into()],
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 
     fn test_container() -> ContainerReference {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         );
-        let db = DatabaseReference::from_name(account, "testdb");
-        ContainerReference::from_database(&db, "testcontainer")
+        ContainerReference::new(
+            account,
+            "testdb",
+            "testdb_rid",
+            "testcontainer",
+            "testcontainer_rid",
+            &test_container_props(),
+        )
     }
 
     fn test_container_2() -> ContainerReference {
@@ -572,8 +590,14 @@ mod tests {
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         );
-        let db = DatabaseReference::from_name(account, "testdb");
-        ContainerReference::from_database(&db, "container2")
+        ContainerReference::new(
+            account,
+            "testdb",
+            "testdb_rid",
+            "container2",
+            "container2_rid",
+            &test_container_props(),
+        )
     }
 
     #[test]

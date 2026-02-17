@@ -24,29 +24,34 @@ use azure_core::http::headers::Headers;
 ///
 /// # Examples
 ///
-/// ```
+/// ```no_run
+/// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
 /// use azure_data_cosmos_driver::models::{
-///     AccountReference, ContainerReference, CosmosOperation, CosmosResourceReference,
-///     DatabaseReference, ItemReference, OperationType, PartitionKey,
+///     AccountReference, CosmosOperation,
+///     ItemReference, PartitionKey,
 /// };
+/// use azure_data_cosmos_driver::options::OperationOptions;
 /// use url::Url;
 ///
+/// # async fn example() -> azure_core::Result<()> {
+/// // 1. Set up runtime and driver
+/// let runtime = CosmosDriverRuntime::builder().build().await?;
 /// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 ///     "my-key",
 /// );
+/// let driver = runtime.get_or_create_driver(account, None).await?;
 ///
-/// // Using typed ItemReference (recommended) - partition key is embedded
-/// let container = ContainerReference::from_name(account.clone(), "mydb", "mycontainer");
-/// let item = ItemReference::from_name(&container, PartitionKey::from("partition1"), "doc1");
-/// let operation = CosmosOperation::read_item(item);
+/// // 2. Resolve the container (reads database + container from service, caches result)
+/// let container = driver.resolve_container("mydb", "mycontainer").await?;
 ///
-/// // Or using CosmosResourceReference directly (requires separate partition key)
-/// let container = ContainerReference::from_name(account, "mydb", "mycontainer");
-/// let operation = CosmosOperation::read(
-///     CosmosResourceReference::document_by_name(container, "doc1"),
-/// )
-/// .with_partition_key(PartitionKey::from("partition1"));
+/// // 3. Build and execute item operations
+/// let item = ItemReference::from_name(&container, PartitionKey::from("pk1"), "doc1");
+/// let result = driver
+///     .execute_operation(CosmosOperation::read_item(item), OperationOptions::new())
+///     .await?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -317,6 +322,15 @@ impl CosmosOperation {
         Self::new(OperationType::Delete, resource_ref)
     }
 
+    /// Reads a database's properties from the service.
+    ///
+    /// Returns the [`DatabaseProperties`](crate::models::DatabaseProperties) including
+    /// the system-managed `_rid`, `_ts`, and `_etag`.
+    pub fn read_database(database: DatabaseReference) -> Self {
+        let resource_ref = CosmosResourceReference::database_by_name(database);
+        Self::new(OperationType::Read, resource_ref)
+    }
+
     /// Creates a container in a database.
     ///
     /// Use `with_body()` to provide the container properties JSON:
@@ -366,23 +380,58 @@ impl CosmosOperation {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
+    /// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
     /// use azure_data_cosmos_driver::models::{
-    ///     AccountReference, ContainerReference, CosmosOperation,
+    ///     AccountReference, CosmosOperation,
     /// };
+    /// use azure_data_cosmos_driver::options::OperationOptions;
     /// use url::Url;
     ///
+    /// # async fn example() -> azure_core::Result<()> {
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
     /// );
+    /// let driver = runtime.get_or_create_driver(account, None).await?;
+    /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
-    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
-    /// let operation = CosmosOperation::delete_container(container);
+    /// let result = driver
+    ///     .execute_operation(
+    ///         CosmosOperation::delete_container(container),
+    ///         OperationOptions::new(),
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn delete_container(container: ContainerReference) -> Self {
         let resource_ref = CosmosResourceReference::document_collection_by_name(container);
         Self::new(OperationType::Delete, resource_ref)
+    }
+
+    /// Reads a container's properties from the service.
+    ///
+    /// Returns the full [`ContainerProperties`](crate::models::ContainerProperties) for the container,
+    /// including system-managed properties like `_rid`, `_ts`, and `_etag`.
+    pub fn read_container(container: ContainerReference) -> Self {
+        let resource_ref = CosmosResourceReference::document_collection_by_name(container);
+        Self::new(OperationType::Read, resource_ref)
+    }
+
+    /// Reads a container's properties by database and container name.
+    ///
+    /// Unlike [`read_container`](Self::read_container), this does not require an
+    /// already-resolved `ContainerReference`. Use this for initial container
+    /// resolution when only the names are known.
+    pub fn read_container_by_name(
+        database: DatabaseReference,
+        container_name: impl Into<std::borrow::Cow<'static, str>>,
+    ) -> Self {
+        let resource_ref =
+            CosmosResourceReference::document_collection_in_database(database, container_name);
+        Self::new(OperationType::Read, resource_ref)
     }
 
     // ===== Data Plane Factory Methods =====
@@ -395,21 +444,34 @@ impl CosmosOperation {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
+    /// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
     /// use azure_data_cosmos_driver::models::{
-    ///     AccountReference, ContainerReference, CosmosOperation, ItemReference, PartitionKey,
+    ///     AccountReference, CosmosOperation, ItemReference,
+    ///     PartitionKey,
     /// };
+    /// use azure_data_cosmos_driver::options::OperationOptions;
     /// use url::Url;
     ///
+    /// # async fn example() -> azure_core::Result<()> {
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
     /// );
+    /// let driver = runtime.get_or_create_driver(account, None).await?;
+    /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
-    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
     /// let item = ItemReference::from_name(&container, PartitionKey::from("pk-value"), "doc1");
-    /// let operation = CosmosOperation::create_item(item)
-    ///     .with_body(br#"{"id": "doc1", "pk": "pk-value", "data": "hello"}"#.to_vec());
+    /// let result = driver
+    ///     .execute_operation(
+    ///         CosmosOperation::create_item(item)
+    ///             .with_body(br#"{"id": "doc1", "pk": "pk-value", "data": "hello"}"#.to_vec()),
+    ///         OperationOptions::new(),
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn create_item(item: ItemReference) -> Self {
         let partition_key = item.partition_key().clone();
@@ -423,20 +485,30 @@ impl CosmosOperation {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
+    /// use azure_data_cosmos_driver::driver::CosmosDriverRuntime;
     /// use azure_data_cosmos_driver::models::{
-    ///     AccountReference, ContainerReference, CosmosOperation, ItemReference, PartitionKey,
+    ///     AccountReference, CosmosOperation, ItemReference,
+    ///     PartitionKey,
     /// };
+    /// use azure_data_cosmos_driver::options::OperationOptions;
     /// use url::Url;
     ///
+    /// # async fn example() -> azure_core::Result<()> {
+    /// let runtime = CosmosDriverRuntime::builder().build().await?;
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
     /// );
+    /// let driver = runtime.get_or_create_driver(account, None).await?;
+    /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
-    /// let container = ContainerReference::from_name(account, "my-database", "my-container");
     /// let item = ItemReference::from_name(&container, PartitionKey::from("pk-value"), "doc1");
-    /// let operation = CosmosOperation::read_item(item);
+    /// let result = driver
+    ///     .execute_operation(CosmosOperation::read_item(item), OperationOptions::new())
+    ///     .await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn read_item(item: ItemReference) -> Self {
         let partition_key = item.partition_key().clone();
@@ -539,7 +611,11 @@ impl CosmosOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{AccountReference, ContainerReference, DatabaseReference};
+    use crate::models::{
+        AccountReference, ContainerReference, DatabaseReference,
+        PartitionKeyDefinition,
+    };
+    use std::sync::Arc;
     use url::Url;
 
     fn test_account() -> AccountReference {
@@ -553,8 +629,25 @@ mod tests {
         DatabaseReference::from_name(test_account(), "testdb")
     }
 
+    fn test_container_props() -> crate::models::ContainerProperties {
+        crate::models::ContainerProperties {
+            partition_key: PartitionKeyDefinition {
+                paths: vec!["/pk".into()],
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
     fn test_container() -> ContainerReference {
-        ContainerReference::from_database(&test_database(), "testcontainer")
+        ContainerReference::new(
+            test_account(),
+            "testdb",
+            "testdb_rid",
+            "testcontainer",
+            "testcontainer_rid",
+            &test_container_props(),
+        )
     }
 
     #[test]

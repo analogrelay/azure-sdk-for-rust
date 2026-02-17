@@ -12,8 +12,11 @@ use crate::models::{
         ContainerId, DatabaseId, ItemIdentifier, PartitionKeyRangeId, ResourceName, ResourceRid,
         StoredProcedureId, TriggerId, UdfId,
     },
-    AccountReference, PartitionKey,
+    AccountReference, ImmutableContainerProperties, PartitionKey,
 };
+
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 // =============================================================================
 // DatabaseReference
@@ -99,101 +102,85 @@ impl DatabaseReference {
 // ContainerReference
 // =============================================================================
 
-/// A reference to a Cosmos DB container.
+/// A resolved reference to a Cosmos DB container.
 ///
-/// Contains either the name or resource identifier (RID) of the container,
-/// along with references to its parent database and account. The addressing mode
-/// (name vs RID) is enforced at compile time - if the container is by name,
-/// the database must also be by name.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// Always carries both the name-based and RID-based identifiers for the container
+/// and its parent database, along with immutable container properties (partition key
+/// definition and unique key policy). This guarantees that both addressing modes
+/// are available without additional I/O.
+///
+/// Instances are created via async factory methods that resolve the container
+/// metadata from the Cosmos DB service or cache.
+///
+/// ## Equality and Hashing
+///
+/// Two `ContainerReference` values are considered equal if they refer to the same
+/// account, container RID, and container name. This detects both delete + recreate
+/// (same name, different RID) and rename scenarios (same RID, different name).
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct ContainerReference {
     /// Reference to the parent account.
     account: AccountReference,
-    /// The container identifier (includes database identifier).
-    id: ContainerId,
+    /// The database user-provided name.
+    db_name: ResourceName,
+    /// The database internal RID.
+    db_rid: ResourceRid,
+    /// The container user-provided name.
+    container_name: ResourceName,
+    /// The container internal RID.
+    container_rid: ResourceRid,
+    /// Immutable container properties (partition key, unique key policy).
+    immutable_properties: Arc<ImmutableContainerProperties>,
+}
+
+impl PartialEq for ContainerReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.account == other.account
+            && self.container_rid == other.container_rid
+            && self.container_name == other.container_name
+    }
+}
+
+impl Eq for ContainerReference {}
+
+impl Hash for ContainerReference {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.account.hash(state);
+        self.container_rid.hash(state);
+        self.container_name.hash(state);
+    }
 }
 
 impl ContainerReference {
-    /// Creates a new container reference by name.
+    /// Creates a fully resolved container reference.
     ///
-    /// Both database and container are identified by their user-provided names.
-    pub fn from_name(
+    /// All fields are required — the caller must have already resolved both
+    /// name-based and RID-based identifiers (typically by reading the container
+    /// from the Cosmos DB service).
+    ///
+    /// The immutable properties (partition key definition, unique key policy)
+    /// are extracted from `container_properties` and stored internally.
+    ///
+    /// Not exposed publicly — use [`CosmosDriver::resolve_container()`](crate::driver::CosmosDriver::resolve_container)
+    /// to obtain a resolved container reference.
+    pub(crate) fn new(
         account: AccountReference,
         db_name: impl Into<ResourceName>,
-        container_name: impl Into<ResourceName>,
-    ) -> Self {
-        Self {
-            account,
-            id: ContainerId::ByName {
-                db_name: db_name.into(),
-                name: container_name.into(),
-            },
-        }
-    }
-
-    /// Creates a new container reference by name from a parent database reference.
-    ///
-    /// This is a convenience method that extracts the account and database name
-    /// from the parent `DatabaseReference`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the database reference is RID-based (not name-based).
-    pub fn from_database(
-        database: &DatabaseReference,
-        container_name: impl Into<ResourceName>,
-    ) -> Self {
-        let db_name = database
-            .name()
-            .expect("DatabaseReference must be name-based to create ContainerReference by name");
-        Self {
-            account: database.account().clone(),
-            id: ContainerId::ByName {
-                db_name: ResourceName::new(db_name.to_owned()),
-                name: container_name.into(),
-            },
-        }
-    }
-
-    /// Creates a new container reference by RID.
-    ///
-    /// Both database and container are identified by their internal RIDs.
-    pub fn from_rid(
-        account: AccountReference,
         db_rid: impl Into<ResourceRid>,
+        container_name: impl Into<ResourceName>,
         container_rid: impl Into<ResourceRid>,
+        container_properties: &crate::models::ContainerProperties,
     ) -> Self {
         Self {
             account,
-            id: ContainerId::ByRid {
-                db_rid: db_rid.into(),
-                rid: container_rid.into(),
-            },
-        }
-    }
-
-    /// Creates a new container reference by RID from a parent database reference.
-    ///
-    /// This is a convenience method that extracts the account and database RID
-    /// from the parent `DatabaseReference`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the database reference is name-based (not RID-based).
-    pub fn from_database_rid(
-        database: &DatabaseReference,
-        container_rid: impl Into<ResourceRid>,
-    ) -> Self {
-        let db_rid = database
-            .rid()
-            .expect("DatabaseReference must be RID-based to create ContainerReference by RID");
-        Self {
-            account: database.account().clone(),
-            id: ContainerId::ByRid {
-                db_rid: ResourceRid::new(db_rid.to_owned()),
-                rid: container_rid.into(),
-            },
+            db_name: db_name.into(),
+            db_rid: db_rid.into(),
+            container_name: container_name.into(),
+            container_rid: container_rid.into(),
+            immutable_properties: Arc::new(
+                ImmutableContainerProperties::from_container_properties(container_properties),
+            ),
         }
     }
 
@@ -202,69 +189,83 @@ impl ContainerReference {
         &self.account
     }
 
-    /// Returns the container name, if this is a name-based reference.
-    pub fn name(&self) -> Option<&str> {
-        self.id.name()
+    /// Returns the container name.
+    pub fn name(&self) -> &str {
+        self.container_name.as_str()
     }
 
-    /// Returns the container RID, if this is a RID-based reference.
-    pub fn rid(&self) -> Option<&str> {
-        self.id.rid()
+    /// Returns the container RID.
+    pub fn rid(&self) -> &str {
+        self.container_rid.as_str()
     }
 
-    /// Returns the database name, if this is a name-based reference.
-    pub fn database_name(&self) -> Option<&str> {
-        self.id.database_name()
+    /// Returns the database name.
+    pub fn database_name(&self) -> &str {
+        self.db_name.as_str()
     }
 
-    /// Returns the database RID, if this is a RID-based reference.
-    pub fn database_rid(&self) -> Option<&str> {
-        self.id.database_rid()
+    /// Returns the database RID.
+    pub fn database_rid(&self) -> &str {
+        self.db_rid.as_str()
     }
 
-    /// Returns the internal container ID.
-    pub(crate) fn id(&self) -> &ContainerId {
-        &self.id
+    /// Returns the partition key definition for this container.
+    pub fn partition_key(&self) -> &crate::models::PartitionKeyDefinition {
+        self.immutable_properties.partition_key()
     }
 
-    /// Returns a `DatabaseReference` for the parent database.
+    /// Returns the unique key policy for this container, if any.
+    pub fn unique_key_policy(&self) -> Option<&crate::models::UniqueKeyPolicy> {
+        self.immutable_properties.unique_key_policy()
+    }
+
+    /// Returns the immutable container properties.
+    pub(crate) fn immutable_properties(&self) -> &Arc<ImmutableContainerProperties> {
+        &self.immutable_properties
+    }
+
+    /// Returns a `DatabaseReference` for the parent database (name-based).
     pub fn database(&self) -> DatabaseReference {
         DatabaseReference {
             account: self.account.clone(),
-            id: self.id.database_id(),
+            id: DatabaseId::ByName(self.db_name.clone()),
         }
-    }
-
-    /// Returns `true` if this is a name-based reference.
-    pub fn is_by_name(&self) -> bool {
-        matches!(self.id, ContainerId::ByName { .. })
-    }
-
-    /// Returns `true` if this is a RID-based reference.
-    pub fn is_by_rid(&self) -> bool {
-        matches!(self.id, ContainerId::ByRid { .. })
     }
 
     /// Returns the name-based relative path: `/dbs/{db_name}/colls/{container_name}`
-    ///
-    /// Returns `None` if this is a RID-based reference.
-    pub fn name_based_path(&self) -> Option<String> {
-        match &self.id {
-            ContainerId::ByName { db_name, name } => {
-                Some(format!("/dbs/{}/colls/{}", db_name, name))
-            }
-            ContainerId::ByRid { .. } => None,
-        }
+    pub fn name_based_path(&self) -> String {
+        format!(
+            "/dbs/{}/colls/{}",
+            self.db_name, self.container_name
+        )
     }
 
     /// Returns the RID-based relative path: `/dbs/{db_rid}/colls/{container_rid}`
-    ///
-    /// Returns `None` if this is a name-based reference.
-    pub fn rid_based_path(&self) -> Option<String> {
-        match &self.id {
-            ContainerId::ByName { .. } => None,
-            ContainerId::ByRid { db_rid, rid } => Some(format!("/dbs/{}/colls/{}", db_rid, rid)),
-        }
+    pub fn rid_based_path(&self) -> String {
+        format!(
+            "/dbs/{}/colls/{}",
+            self.db_rid, self.container_rid
+        )
+    }
+
+    /// Returns the internal container name as a `ResourceName`.
+    pub(crate) fn container_name_ref(&self) -> &ResourceName {
+        &self.container_name
+    }
+
+    /// Returns the internal container RID as a `ResourceRid`.
+    pub(crate) fn container_rid_ref(&self) -> &ResourceRid {
+        &self.container_rid
+    }
+
+    /// Returns the internal database name as a `ResourceName`.
+    pub(crate) fn db_name_ref(&self) -> &ResourceName {
+        &self.db_name
+    }
+
+    /// Returns the internal database RID as a `ResourceRid`.
+    pub(crate) fn db_rid_ref(&self) -> &ResourceRid {
+        &self.db_rid
     }
 }
 
@@ -299,20 +300,13 @@ impl ItemReference {
     /// * `container` - Reference to the parent container.
     /// * `partition_key` - The partition key for the item.
     /// * `item_name` - The document ID (name) of the item.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is RID-based (not name-based).
     pub fn from_name(
         container: &ContainerReference,
         partition_key: PartitionKey,
         item_name: impl Into<ResourceName>,
     ) -> Self {
         let name = item_name.into();
-        let resource_link = container
-            .name_based_path()
-            .map(|path| format!("{}/docs/{}", path, name))
-            .expect("ContainerReference must be name-based to create ItemReference by name");
+        let resource_link = format!("{}/docs/{}", container.name_based_path(), name);
         Self {
             container: container.clone(),
             partition_key,
@@ -328,20 +322,13 @@ impl ItemReference {
     /// * `container` - Reference to the parent container.
     /// * `partition_key` - The partition key for the item.
     /// * `item_rid` - The internal RID of the item.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is name-based (not RID-based).
     pub fn from_rid(
         container: &ContainerReference,
         partition_key: PartitionKey,
         item_rid: impl Into<ResourceRid>,
     ) -> Self {
         let rid = item_rid.into();
-        let resource_link = container
-            .rid_based_path()
-            .map(|path| format!("{}/docs/{}", path, rid))
-            .expect("ContainerReference must be RID-based to create ItemReference by RID");
+        let resource_link = format!("{}/docs/{}", container.rid_based_path(), rid);
         Self {
             container: container.clone(),
             partition_key,
@@ -437,24 +424,17 @@ impl StoredProcedureReference {
     }
 
     /// Creates a new stored procedure reference by name from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is RID-based (not name-based).
     pub fn from_container(
         container: &ContainerReference,
         sproc_name: impl Into<ResourceName>,
     ) -> Self {
-        let container_id = container.id().clone();
-        if !container.is_by_name() {
-            panic!(
-                "ContainerReference must be name-based to create StoredProcedureReference by name"
-            );
-        }
         Self {
             account: container.account().clone(),
             id: StoredProcedureId::ByName {
-                container: container_id,
+                container: ContainerId::ByName {
+                    db_name: container.db_name_ref().clone(),
+                    name: container.container_name_ref().clone(),
+                },
                 name: sproc_name.into(),
             },
         }
@@ -476,21 +456,14 @@ impl StoredProcedureReference {
     }
 
     /// Creates a new stored procedure reference by RID from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is name-based (not RID-based).
     pub fn from_container_rid(
         container: &ContainerReference,
         sproc_rid: impl Into<ResourceRid>,
     ) -> Self {
-        let container_rid = container.rid().expect(
-            "ContainerReference must be RID-based to create StoredProcedureReference by RID",
-        );
         Self {
             account: container.account().clone(),
             id: StoredProcedureId::ByRid {
-                container_rid: ResourceRid::new(container_rid.to_owned()),
+                container_rid: container.container_rid_ref().clone(),
                 rid: sproc_rid.into(),
             },
         }
@@ -595,22 +568,17 @@ impl TriggerReference {
     }
 
     /// Creates a new trigger reference by name from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is RID-based (not name-based).
     pub fn from_container(
         container: &ContainerReference,
         trigger_name: impl Into<ResourceName>,
     ) -> Self {
-        let container_id = container.id().clone();
-        if !container.is_by_name() {
-            panic!("ContainerReference must be name-based to create TriggerReference by name");
-        }
         Self {
             account: container.account().clone(),
             id: TriggerId::ByName {
-                container: container_id,
+                container: ContainerId::ByName {
+                    db_name: container.db_name_ref().clone(),
+                    name: container.container_name_ref().clone(),
+                },
                 name: trigger_name.into(),
             },
         }
@@ -632,21 +600,14 @@ impl TriggerReference {
     }
 
     /// Creates a new trigger reference by RID from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is name-based (not RID-based).
     pub fn from_container_rid(
         container: &ContainerReference,
         trigger_rid: impl Into<ResourceRid>,
     ) -> Self {
-        let container_rid = container
-            .rid()
-            .expect("ContainerReference must be RID-based to create TriggerReference by RID");
         Self {
             account: container.account().clone(),
             id: TriggerId::ByRid {
-                container_rid: ResourceRid::new(container_rid.to_owned()),
+                container_rid: container.container_rid_ref().clone(),
                 rid: trigger_rid.into(),
             },
         }
@@ -748,22 +709,17 @@ impl UdfReference {
     }
 
     /// Creates a new UDF reference by name from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is RID-based (not name-based).
     pub fn from_container(
         container: &ContainerReference,
         udf_name: impl Into<ResourceName>,
     ) -> Self {
-        let container_id = container.id().clone();
-        if !container.is_by_name() {
-            panic!("ContainerReference must be name-based to create UdfReference by name");
-        }
         Self {
             account: container.account().clone(),
             id: UdfId::ByName {
-                container: container_id,
+                container: ContainerId::ByName {
+                    db_name: container.db_name_ref().clone(),
+                    name: container.container_name_ref().clone(),
+                },
                 name: udf_name.into(),
             },
         }
@@ -785,21 +741,14 @@ impl UdfReference {
     }
 
     /// Creates a new UDF reference by RID from a parent container reference.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the container reference is name-based (not RID-based).
     pub fn from_container_rid(
         container: &ContainerReference,
         udf_rid: impl Into<ResourceRid>,
     ) -> Self {
-        let container_rid = container
-            .rid()
-            .expect("ContainerReference must be RID-based to create UdfReference by RID");
         Self {
             account: container.account().clone(),
             id: UdfId::ByRid {
-                container_rid: ResourceRid::new(container_rid.to_owned()),
+                container_rid: container.container_rid_ref().clone(),
                 rid: udf_rid.into(),
             },
         }

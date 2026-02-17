@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     models::{
-        AccountEndpoint, AccountReference, ContainerProperties, ContainerReference,
+        AccountEndpoint, AccountReference, ContainerReference,
         ThroughputControlGroupName, UserAgent,
     },
     options::{
@@ -324,42 +324,79 @@ impl CosmosDriverRuntime {
 
     // ===== Cache Access Methods =====
 
-    /// Returns cached container properties if available.
+    /// Returns a cached resolved container reference looked up by name.
     ///
-    /// Returns `None` if the container hasn't been cached yet.
-    /// Use [`get_or_fetch_container_properties`](Self::get_or_fetch_container_properties) to fetch and cache if needed.
-    #[allow(dead_code)]
-    async fn get_cached_container_properties(
+    /// Returns `None` if the container hasn't been resolved and cached yet.
+    /// Use [`resolve_container_by_name`](Self::resolve_container_by_name) to fetch and cache if needed.
+    pub(crate) async fn get_cached_container_by_name(
         &self,
-        container: &ContainerReference,
-    ) -> Option<Arc<ContainerProperties>> {
-        self.container_cache.get(container).await
+        account_endpoint: &str,
+        db_name: &str,
+        container_name: &str,
+    ) -> Option<Arc<ContainerReference>> {
+        self.container_cache
+            .get_by_name(account_endpoint, db_name, container_name)
+            .await
     }
 
-    /// Gets container properties, fetching and caching if not already cached.
+    /// Resolves a container by name, fetching and caching if not already cached.
     ///
     /// The `fetch_fn` is only called if the container is not in the cache.
-    /// Concurrent requests for the same container share the same fetch operation.
+    /// On a cache miss the resolved reference is cross-populated into the
+    /// by-RID cache as well. Concurrent requests for the same container
+    /// share the same fetch operation.
     #[allow(dead_code)]
-    async fn get_or_fetch_container_properties<F, Fut>(
+    async fn resolve_container_by_name<F, Fut>(
         &self,
-        container: ContainerReference,
+        account_endpoint: &str,
+        db_name: &str,
+        container_name: &str,
         fetch_fn: F,
-    ) -> Arc<ContainerProperties>
+    ) -> Arc<ContainerReference>
     where
         F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = ContainerProperties>,
+        Fut: std::future::Future<Output = ContainerReference>,
     {
-        self.container_cache.get_or_fetch(container, fetch_fn).await
+        self.container_cache
+            .get_or_fetch_by_name(account_endpoint, db_name, container_name, fetch_fn)
+            .await
     }
 
-    /// Invalidates cached container properties.
+    /// Resolves a container by RID, fetching and caching if not already cached.
+    ///
+    /// The `fetch_fn` is only called if the container is not in the cache.
+    /// On a cache miss the resolved reference is cross-populated into the
+    /// by-name cache as well.
+    #[allow(dead_code)]
+    async fn resolve_container_by_rid<F, Fut>(
+        &self,
+        account_endpoint: &str,
+        container_rid: &str,
+        fetch_fn: F,
+    ) -> Arc<ContainerReference>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = ContainerReference>,
+    {
+        self.container_cache
+            .get_or_fetch_by_rid(account_endpoint, container_rid, fetch_fn)
+            .await
+    }
+
+    /// Invalidates the cached container reference from both name and RID caches.
     ///
     /// Call this when container properties may have changed (e.g., after
-    /// updating indexing policy).
+    /// updating indexing policy) or when a container has been deleted/recreated.
     #[allow(dead_code)]
     async fn invalidate_container_cache(&self, container: &ContainerReference) {
         self.container_cache.invalidate(container).await;
+    }
+
+    /// Inserts a resolved container reference into the cache.
+    ///
+    /// Populates both the by-name and by-RID indices.
+    pub(crate) async fn cache_container(&self, container: ContainerReference) {
+        self.container_cache.put(container).await;
     }
 
     /// Invalidates cached account metadata.
@@ -579,7 +616,7 @@ impl CosmosDriverRuntimeBuilder {
     /// ```no_run
     /// use azure_data_cosmos_driver::driver::CosmosDriverRuntimeBuilder;
     /// use azure_data_cosmos_driver::options::{ThroughputControlGroupOptions, ThroughputTarget};
-    /// use azure_data_cosmos_driver::models::{AccountReference, DatabaseReference, ContainerReference};
+    /// use azure_data_cosmos_driver::models::AccountReference;
     /// use url::Url;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -587,10 +624,13 @@ impl CosmosDriverRuntimeBuilder {
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
     /// );
-    /// let database = DatabaseReference::from_name(account, "mydb");
-    /// let container = ContainerReference::from_database(&database, "mycollection");
     ///
-    /// // Register a default group for the container
+    /// // Build the runtime first, then resolve the container via the driver.
+    /// let runtime = CosmosDriverRuntimeBuilder::new().build().await?;
+    /// let driver = runtime.get_or_create_driver(account, None).await?;
+    /// let container = driver.resolve_container("mydb", "mycollection").await?;
+    ///
+    /// // Register a throughput control group on a new runtime builder.
     /// let runtime = CosmosDriverRuntimeBuilder::new()
     ///     .register_throughput_control_group(
     ///         ThroughputControlGroupOptions::client_side(

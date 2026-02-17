@@ -445,7 +445,10 @@ impl CosmosDriverRuntimeBuilder {
     /// use azure_data_cosmos_driver::options::{
     ///     CosmosDriverRuntimeBuilder, ThroughputControlGroupOptions, ThroughputTarget,
     /// };
-    /// use azure_data_cosmos_driver::models::{AccountReference, DatabaseReference, ContainerReference};
+    /// use azure_data_cosmos_driver::models::{
+    ///     AccountReference, ContainerProperties, ContainerReference,
+    /// };
+    /// use std::sync::Arc;
     /// use url::Url;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -453,8 +456,10 @@ impl CosmosDriverRuntimeBuilder {
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
     /// );
-    /// let database = DatabaseReference::from_name(account, "mydb");
-    /// let container = ContainerReference::from_name(database, "mycollection");
+    /// let container = ContainerReference::new(
+    ///     account, "mydb", "db_rid", "mycollection", "coll_rid",
+    ///     &ContainerProperties::default(),
+    /// );
     ///
     /// // Register a default group for the container
     /// let runtime = CosmosDriverRuntimeBuilder::new()

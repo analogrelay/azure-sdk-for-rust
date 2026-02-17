@@ -21,6 +21,7 @@ azure_core = { workspace = true, features = [
   "reqwest_native_tls",
   "hmac_rust",
 ] }
+base64.workspace = true
 futures.workspace = true
 reqwest = { workspace = true, features = ["native-tls"] }
 serde.workspace = true

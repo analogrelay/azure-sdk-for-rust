@@ -159,6 +159,44 @@ pub struct ContainerProperties {
     pub system_properties: SystemProperties,
 }
 
+/// Immutable container properties that never change after creation.
+///
+/// This struct captures the subset of [`ContainerProperties`] that is fixed at container
+/// creation time: the partition key definition and optional unique key policy.
+/// It is designed to be wrapped in an `Arc` and carried on resolved references.
+///
+/// Not exposed publicly — use [`ContainerReference::partition_key()`] and
+/// [`ContainerReference::unique_key_policy()`] to access individual members.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub(crate) struct ImmutableContainerProperties {
+    /// Partition key definition specifying the partition key path(s).
+    partition_key: PartitionKeyDefinition,
+
+    /// Unique key policy for enforcing uniqueness constraints.
+    unique_key_policy: Option<UniqueKeyPolicy>,
+}
+
+impl ImmutableContainerProperties {
+    /// Creates immutable container properties from a full `ContainerProperties`.
+    pub(crate) fn from_container_properties(props: &ContainerProperties) -> Self {
+        Self {
+            partition_key: props.partition_key.clone(),
+            unique_key_policy: props.unique_key_policy.clone(),
+        }
+    }
+
+    /// Returns the partition key definition.
+    pub(crate) fn partition_key(&self) -> &PartitionKeyDefinition {
+        &self.partition_key
+    }
+
+    /// Returns the unique key policy, if any.
+    pub(crate) fn unique_key_policy(&self) -> Option<&UniqueKeyPolicy> {
+        self.unique_key_policy.as_ref()
+    }
+}
+
 /// Partition key definition for a container.
 ///
 /// Specifies the JSON path(s) used for partitioning data across physical partitions.
