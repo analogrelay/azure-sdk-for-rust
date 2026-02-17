@@ -245,13 +245,10 @@ mod tests {
     const ACCOUNT_ENDPOINT: &str = "https://myaccount.documents.azure.com/";
 
     fn test_container_props() -> ContainerProperties {
-        ContainerProperties {
-            partition_key: PartitionKeyDefinition {
-                paths: vec!["/pk".into()],
-                ..Default::default()
-            },
-            ..Default::default()
-        }
+        ContainerProperties::new(
+            "testcontainer",
+            PartitionKeyDefinition::new(["/pk"]),
+        )
     }
 
     fn test_container(db: &str, container: &str) -> ContainerReference {

@@ -683,14 +683,10 @@ mod tests {
     }
 
     fn test_container_props() -> crate::models::ContainerProperties {
-        crate::models::ContainerProperties {
-            id: "testcontainer".into(),
-            partition_key: PartitionKeyDefinition {
-                paths: vec!["/pk".into()],
-                ..Default::default()
-            },
-            ..Default::default()
-        }
+        crate::models::ContainerProperties::new(
+            "testcontainer",
+            PartitionKeyDefinition::new(["/pk"]),
+        )
     }
 
     fn test_container() -> ContainerReference {

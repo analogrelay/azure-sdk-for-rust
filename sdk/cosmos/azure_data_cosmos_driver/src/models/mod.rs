@@ -87,7 +87,7 @@ impl AccountProperties {
 /// Properties of a Cosmos DB database.
 ///
 /// Returned by database read/query operations and used when creating databases.
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DatabaseProperties {
     /// Unique identifier for the database within the account.
@@ -98,10 +98,26 @@ pub struct DatabaseProperties {
     pub system_properties: SystemProperties,
 }
 
+impl DatabaseProperties {
+    /// Creates new database properties with the given identifier.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` is empty.
+    pub fn new(id: impl Into<Cow<'static, str>>) -> Self {
+        let id = id.into();
+        assert!(!id.is_empty(), "database id must not be empty");
+        Self {
+            id,
+            system_properties: SystemProperties::default(),
+        }
+    }
+}
+
 /// Properties of a Cosmos DB container.
 ///
 /// Returned by container read/query operations and used when creating/updating containers.
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct ContainerProperties {
     /// Unique identifier for the container within the database.
@@ -149,6 +165,32 @@ pub struct ContainerProperties {
     /// System-managed properties (e.g., _rid, _ts, _etag).
     #[serde(flatten)]
     pub system_properties: SystemProperties,
+}
+
+impl ContainerProperties {
+    /// Creates new container properties with the given identifier and partition key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` is empty.
+    pub fn new(id: impl Into<Cow<'static, str>>, partition_key: PartitionKeyDefinition) -> Self {
+        let id = id.into();
+        assert!(!id.is_empty(), "container id must not be empty");
+        Self {
+            id,
+            partition_key,
+            indexing_policy: None,
+            unique_key_policy: None,
+            conflict_resolution_policy: None,
+            default_time_to_live: None,
+            analytical_storage_ttl: None,
+            computed_properties: None,
+            change_feed_policy: None,
+            vector_embedding_policy: None,
+            full_text_policy: None,
+            system_properties: SystemProperties::default(),
+        }
+    }
 }
 
 /// Immutable container properties that never change after creation.
@@ -207,10 +249,13 @@ pub struct PartitionKeyDefinition {
     pub kind: PartitionKeyKind,
 }
 
-impl Default for PartitionKeyDefinition {
-    fn default() -> Self {
+impl PartitionKeyDefinition {
+    /// Creates a new partition key definition with the given paths.
+    ///
+    /// Uses version 2 and `Hash` kind by default.
+    pub fn new(paths: impl IntoIterator<Item = impl Into<Cow<'static, str>>>) -> Self {
         Self {
-            paths: Vec::new(),
+            paths: paths.into_iter().map(Into::into).collect(),
             version: 2,
             kind: PartitionKeyKind::Hash,
         }
