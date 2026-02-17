@@ -596,7 +596,7 @@ mod tests {
     use crate::models::{
         AccountReference, ContainerReference, DatabaseReference, PartitionKeyDefinition,
     };
-    use std::sync::Arc;
+
     use url::Url;
 
     fn test_account() -> AccountReference {

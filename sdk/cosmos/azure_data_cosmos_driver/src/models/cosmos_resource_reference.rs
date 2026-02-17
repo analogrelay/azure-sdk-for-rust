@@ -668,7 +668,7 @@ impl From<ItemReference> for CosmosResourceReference {
 mod tests {
     use super::*;
     use crate::models::PartitionKeyDefinition;
-    use std::sync::Arc;
+
     use url::Url;
 
     fn test_account() -> AccountReference {

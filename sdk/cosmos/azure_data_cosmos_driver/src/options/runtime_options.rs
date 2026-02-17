@@ -211,7 +211,7 @@ impl SharedRuntimeOptions {
     /// Returns a snapshot of the current runtime options.
     ///
     /// If the lock is poisoned (a thread panicked while holding it), this
-    /// recovers the inner data via [`PoisonError::into_inner`] rather than
+    /// recovers the inner data via [`std::sync::PoisonError::into_inner`] rather than
     /// propagating the panic.
     pub fn snapshot(&self) -> RuntimeOptions {
         self.0
