@@ -8,13 +8,12 @@ This document specifies the configuration option types for the Rust SDK (`azure_
 2. [Standalone Types](#2-standalone-types)
 3. [Option Groups](#3-option-groups)
    - [RequestOptions](#31-requestoptions)
-   - [ThroughputControlOptions](#32-throughputcontroloptions)
-   - [ConnectionOptions](#33-connectionoptions)
-   - [ConnectionPoolOptions](#34-connectionpooloptions)
-   - [RegionOptions](#35-regionoptions)
-   - [RetryOptions](#36-retryoptions)
-   - [SessionRetryOptions](#37-sessionretryoptions)
-   - [CosmosAccountOptions](#38-cosmosaccountoptions)
+   - [ConnectionOptions](#32-connectionoptions)
+   - [ConnectionPoolOptions](#33-connectionpooloptions)
+   - [RegionOptions](#34-regionoptions)
+   - [RetryOptions](#35-retryoptions)
+   - [SessionRetryOptions](#36-sessionretryoptions)
+   - [CosmosAccountOptions](#37-cosmosaccountoptions)
 4. [Layer Structs](#4-layer-structs)
    - [CosmosRuntimeOptions](#41-cosmosruntimeoptions)
    - [CosmosClientOptions](#42-cosmosclientoptions)
@@ -62,7 +61,7 @@ Every option that participates at the **Runtime** layer is specifiable via an `A
 - `Duration` — parsed via `FromStr` (ISO 8601 duration format)
 - `String` — direct use
 - `Url` — parsed via `Url::parse()`
-- Enums (`ReadConsistencyStrategy`, `PriorityLevel`) — via `FromStr` impl (variant name, case-insensitive)
+- Enums (`ReadConsistencyStrategy`) — via `FromStr` impl (variant name, case-insensitive)
 - `Vec<T>` — comma-separated (e.g. `"West US,East US"`)
 - `HashSet<Url>` — comma-separated
 - Nested groups — individual fields have their own env vars
@@ -102,19 +101,7 @@ Must implement `FromStr` for environment variable parsing.
 
 #### `PriorityLevel`
 
-**Open Question:** What throughput-related options DO we want to keep?
-
-Retained as-is from the current SDK.
-
-```rust
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PriorityLevel {
-    High,
-    Low,
-}
-```
-
-Must implement `FromStr` for environment variable parsing.
+**Deferred.** Throughput control options (including `PriorityLevel` and `throughput_bucket`) will be addressed in a separate follow-up spec.
 
 #### `IndexingDirective`
 
@@ -166,28 +153,10 @@ pub struct RequestOptions { /* fields below */ }
 | Option | Type | Env Var | Notes |
 |---|---|---|---|
 | `read_consistency_strategy` | `Option<ReadConsistencyStrategy>` | `AZURE_COSMOS_READ_CONSISTENCY_STRATEGY` | Read consistency for the operation. Replaces the legacy `consistency_level` field. The SDK enforces weakening-only semantics relative to the account default. |
-| `throughput_control` | `Option<ThroughputControlOptions>` | — | Nested group for throughput control. Marked `#[option(nested)]`. |
 | `excluded_regions` | `Option<Vec<RegionName>>` | `AZURE_COSMOS_EXCLUDED_REGIONS` | Regions to exclude from routing. `None` inherits from a lower layer; `Some(vec![])` explicitly clears exclusions. Env var is comma-separated (e.g. `"West US,East US"`). |
 | `content_response_on_write` | `Option<bool>` | `AZURE_COSMOS_CONTENT_RESPONSE_ON_WRITE` | Whether write operations return the resource body in the response. Only applicable to write operations; ignored by reads and queries. Cascades from runtime → account → operation, matching .NET/Java/Go behavior. |
 
-### 3.2 `ThroughputControlOptions`
-
-**Layers:** Runtime, Account, Operation
-
-Options controlling server-side throughput allocation. Nested via `#[option(nested)]` on `RequestOptions.throughput_control`. Client-side throughput control (ThroughputControl groups referenced by identifier) is a future extension point.
-
-```rust
-#[derive(CosmosOptions)]
-#[options(layers(runtime, account, operation))]
-pub struct ThroughputControlOptions { /* fields below */ }
-```
-
-| Option | Type | Env Var | Notes |
-|---|---|---|---|
-| `priority` | `Option<PriorityLevel>` | `AZURE_COSMOS_PRIORITY` | Priority-based execution level (`High` or `Low`). |
-| `throughput_bucket` | `Option<usize>` | `AZURE_COSMOS_THROUGHPUT_BUCKET` | Throughput control bucket for the request. |
-
-### 3.3 `ConnectionOptions`
+### 3.2 `ConnectionOptions`
 
 **Layers:** Runtime, Account
 
@@ -204,7 +173,7 @@ pub struct ConnectionOptions { /* fields below */ }
 | `request_timeout` | `Option<Duration>` | `AZURE_COSMOS_REQUEST_TIMEOUT` | Per-request network timeout. |
 | `connection_pool` | `Option<ConnectionPoolOptions>` | — | Nested group for connection pool tuning. Marked `#[option(nested)]`. |
 
-### 3.4 `ConnectionPoolOptions`
+### 3.3 `ConnectionPoolOptions`
 
 **Layers:** Runtime, Account *(nested inside `ConnectionOptions`)*
 
@@ -221,7 +190,7 @@ pub struct ConnectionPoolOptions { /* fields below */ }
 | `idle_timeout` | `Option<Duration>` | `AZURE_COSMOS_POOL_IDLE_TIMEOUT` | How long idle connections are kept alive. |
 | `max_connections` | `Option<usize>` | `AZURE_COSMOS_POOL_MAX_CONNECTIONS` | Maximum number of connections in the pool. |
 
-### 3.5 `RegionOptions`
+### 3.4 `RegionOptions`
 
 **Layers:** Runtime, Account
 
@@ -237,7 +206,7 @@ pub struct RegionOptions { /* fields below */ }
 |---|---|---|---|
 | `application_region` | `Option<RegionName>` | `AZURE_COSMOS_APPLICATION_REGION` | The region where the application is running. The SDK and backend negotiate optimal region ordering from this location. Only one of `application_region` should be set (the old `preferred_regions` / `application_preferred_regions` list is removed). |
 
-### 3.6 `RetryOptions`
+### 3.5 `RetryOptions`
 
 **Layers:** Runtime, Account
 
@@ -253,7 +222,7 @@ pub struct RetryOptions { /* fields below */ }
 |---|---|---|---|
 | `session_retry` | `Option<SessionRetryOptions>` | — | Nested group for session-consistency retry behavior on 404/1002 errors. Marked `#[option(nested)]`. |
 
-### 3.7 `SessionRetryOptions`
+### 3.6 `SessionRetryOptions`
 
 **Layers:** Runtime, Account *(nested inside `RetryOptions`)*
 
@@ -272,7 +241,7 @@ pub struct SessionRetryOptions { /* fields below */ }
 
 > **Migration note:** The current `SessionRetryOptions` struct has non-`Option` fields with concrete defaults (`min_in_region_retry_time: Duration`, etc.). In the new model, all fields become `Option<T>` to support layered resolution. The concrete defaults are applied at resolution time when all layers yield `None`.
 
-### 3.8 `CosmosAccountOptions`
+### 3.7 `CosmosAccountOptions`
 
 **Layers:** Runtime, Account
 
@@ -424,7 +393,7 @@ pub struct TransactionalBatchOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `RequestOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy`, `excluded_regions`, and nested `throughput_control` all cascade. |
+| `request` | `RequestOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy` and `excluded_regions` cascade. |
 | `session_token` | `Option<SessionToken>` | Session token for the batch. Operation-only. |
 
 ### 5.5 `TransactionalBatchItemOptions`
@@ -464,9 +433,7 @@ let batch = TransactionalBatch::new(partition_key)
     );
 
 let batch_opts = TransactionalBatchOptions {
-    request: RequestOptions::default()
-            .with_throughput_control(ThroughputControlOptions::default()
-                .with_priority(PriorityLevel::Low)),
+    request: RequestOptions::default(),
     ..Default::default()
 };
 
@@ -553,9 +520,9 @@ The Cosmos SDK manages its own transport, retry, and telemetry pipeline internal
 | `enable_partition_level_circuit_breaker` | `CosmosClientOptions` | — | **Removed**; partition-level circuit breaker is always enabled |
 | `disable_partition_level_failover` | `CosmosClientOptions` | — | **Removed**; disabling PPAF degrades availability |
 | `enable_upgrade_consistency_to_local_quorum` | `CosmosClientOptions` | — | **Removed**; use `ReadConsistencyStrategy::LatestCommitted` instead |
-| `throughput_bucket` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | `ThroughputControlOptions.throughput_bucket` | Consolidated into throughput control group |
+| `throughput_bucket` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | — | **Deferred** to throughput control follow-up spec |
 | `session_retry_options` | `CosmosClientOptions` | `RetryOptions.session_retry` | Nested; fields become `Option<T>` |
-| `priority` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | `ThroughputControlOptions.priority` | Consolidated into throughput control group |
+| `priority` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | — | **Deferred** to throughput control follow-up spec |
 | `custom_headers` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | — | **Removed** (§6.3) |
 | `pre_triggers` | `ItemOptions` | — | **Removed** (§6.5) |
 | `post_triggers` | `ItemOptions` | — | **Removed** (§6.5) |
