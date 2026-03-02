@@ -275,7 +275,7 @@ pub struct CosmosRuntimeOptions {
     pub connection: Arc<ConnectionOptions>,
     pub regions: Arc<RegionOptions>,
     pub retry: Arc<RetryOptions>,
-    pub request: Arc<OperationOptions>,
+    pub operation: Arc<OperationOptions>,
     pub account: Arc<CosmosAccountOptions>,
 }
 ```
@@ -293,7 +293,7 @@ pub struct CosmosClientOptions {
     pub connection: Arc<ConnectionOptions>,
     pub regions: Arc<RegionOptions>,
     pub retry: Arc<RetryOptions>,
-    pub request: Arc<OperationOptions>,
+    pub operation: Arc<OperationOptions>,
     pub account: Arc<CosmosAccountOptions>,
 }
 ```
@@ -317,7 +317,7 @@ Options for item point-read operations (`read_item`).
 #[non_exhaustive]
 pub struct ItemReadOptions {
     // Layered option group — participates in cross-layer resolution
-    pub request: OperationOptions,
+    pub operation: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -327,7 +327,7 @@ pub struct ItemReadOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `OperationOptions` | Layered group; fields resolve through Operation → Account → Runtime → Env. |
+| `operation` | `OperationOptions` | Layered group; fields resolve through Operation → Account → Runtime → Env. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent reads. Operation-only. |
 | `precondition` | `Option<Precondition>` | Conditional ETag check. For reads, typically `IfNoneMatch` (returns 304 Not Modified if unchanged). Operation-only. |
 
@@ -340,7 +340,7 @@ Options for item write operations (`create_item`, `replace_item`, `upsert_item`,
 #[non_exhaustive]
 pub struct ItemWriteOptions {
     // Layered option group
-    pub request: OperationOptions,
+    pub operation: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -350,7 +350,7 @@ pub struct ItemWriteOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `OperationOptions` | Layered group; `content_response_on_write` is resolved here and applied to write responses. |
+| `operation` | `OperationOptions` | Layered group; `content_response_on_write` is resolved here and applied to write responses. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent writes. Operation-only. |
 | `precondition` | `Option<Precondition>` | Conditional ETag check. For writes, typically `IfMatch` (optimistic concurrency). Operation-only. |
 
@@ -363,7 +363,7 @@ Options for query operations (`query_items`, `query_items_single_partition`).
 #[non_exhaustive]
 pub struct QueryOptions {
     // Layered option group
-    pub request: OperationOptions,
+    pub operation: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -375,7 +375,7 @@ pub struct QueryOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `OperationOptions` | Layered group; `content_response_on_write` is ignored for queries. |
+| `operation` | `OperationOptions` | Layered group; `content_response_on_write` is ignored for queries. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent queries. Operation-only. |
 | `enable_scan_if_no_index` | `Option<bool>` | If the query can't be served by indexes because the relevant paths are not indexed, setting this permits the query engine to perform a full container scan. Operation-only. |
 | `populate_index_metrics` | `Option<bool>` | If set to `true`, the response will contain metrics regarding indexes used. Operation-only. |
@@ -390,7 +390,7 @@ Options for transactional batch operations. The batch as a whole carries cross-l
 #[non_exhaustive]
 pub struct TransactionalBatchOptions {
     // Layered option group
-    pub request: OperationOptions,
+    pub operation: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -399,7 +399,7 @@ pub struct TransactionalBatchOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `OperationOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy` and `excluded_regions` cascade. |
+| `operation` | `OperationOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy` and `excluded_regions` cascade. |
 | `session_token` | `Option<SessionToken>` | Session token for the batch. Operation-only. |
 
 ### 5.5 `TransactionalBatchItemOptions`
@@ -439,7 +439,7 @@ let batch = TransactionalBatch::new(partition_key)
     );
 
 let batch_opts = TransactionalBatchOptions {
-    request: OperationOptions::default(),
+    operation: OperationOptions::default(),
     ..Default::default()
 };
 
