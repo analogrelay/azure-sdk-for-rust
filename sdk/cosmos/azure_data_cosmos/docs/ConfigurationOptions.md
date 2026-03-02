@@ -306,7 +306,7 @@ pub struct CosmosClientOptions {
 
 Operation types compose a layered option group (`OperationOptions`) with operation-only fields. Fields that are only meaningful at the operation level are plain (non-`Option` or `Option`) fields directly on the struct — duplicated across operation types rather than factored into a shared group.
 
-All operation types are `#[non_exhaustive]` with `Default` and fluent `with_*` setters, following the [struct design rules](../../.github/skills/cosmos-design-struct/SKILL.md).
+All operation types are `#[non_exhaustive]` with `Default` and fluent `with_*` setters.
 
 ### 5.1 `ItemReadOptions`
 
