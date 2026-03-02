@@ -367,6 +367,9 @@ pub struct QueryOptions {
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
+    pub enable_scan_if_no_index: Option<bool>,
+    pub populate_index_metrics: Option<bool>,
+    pub populate_query_advice: Option<bool>,
 }
 ```
 
@@ -374,6 +377,9 @@ pub struct QueryOptions {
 |---|---|---|
 | `request` | `RequestOptions` | Layered group; `content_response_on_write` is ignored for queries. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent queries. Operation-only. |
+| `enable_scan_if_no_index` | `Option<bool>` | If the query can't be served by indexes because the relevant paths are not indexed, setting this permits the query engine to perform a full container scan. Operation-only. |
+| `populate_index_metrics` | `Option<bool>` | If set to `true`, the response will contain metrics regarding indexes used. Operation-only. |
+| `populate_query_advice` | `Option<bool>` | If set to `true`, the response will include query optimization suggestions from the query advisor. Operation-only. |
 
 ### 5.4 `TransactionalBatchOptions`
 
