@@ -7,7 +7,7 @@ This document specifies the configuration option types for the Rust SDK (`azure_
 1. [Layering Overview](#1-layering-overview)
 2. [Standalone Types](#2-standalone-types)
 3. [Option Groups](#3-option-groups)
-   - [RequestOptions](#31-requestoptions)
+   - [OperationOptions](#31-requestoptions)
    - [ConnectionOptions](#32-connectionoptions)
    - [ConnectionPoolOptions](#33-connectionpooloptions)
    - [RegionOptions](#34-regionoptions)
@@ -138,16 +138,16 @@ Retained as-is. Wraps `String`. Implements `From<String>`, `Display`, `Clone`.
 
 ## 3. Option Groups
 
-### 3.1 `RequestOptions`
+### 3.1 `OperationOptions`
 
 **Layers:** Runtime, Account, Operation
 
-Cross-layer options that apply to individual service requests. This is the most broadly-scoped group, present at all three explicit layers. The `#[derive(CosmosOptions)]` proc macro generates a `RequestOptionsView` for resolution.
+Cross-layer options that apply to individual service requests. This is the most broadly-scoped group, present at all three explicit layers. The `#[derive(CosmosOptions)]` proc macro generates a `OperationOptionsView` for resolution.
 
 ```rust
 #[derive(CosmosOptions)]
 #[options(layers(runtime, account, operation))]
-pub struct RequestOptions { /* fields below */ }
+pub struct OperationOptions { /* fields below */ }
 ```
 
 | Option | Type | Env Var | Notes |
@@ -194,7 +194,7 @@ pub struct ConnectionPoolOptions { /* fields below */ }
 
 **Layers:** Runtime, Account
 
-Options controlling region selection and routing. Not available at the operation layer — per-request region exclusion is handled by `RequestOptions.excluded_regions`.
+Options controlling region selection and routing. Not available at the operation layer — per-request region exclusion is handled by `OperationOptions.excluded_regions`.
 
 ```rust
 #[derive(CosmosOptions)]
@@ -275,7 +275,7 @@ pub struct CosmosRuntimeOptions {
     pub connection: Arc<ConnectionOptions>,
     pub regions: Arc<RegionOptions>,
     pub retry: Arc<RetryOptions>,
-    pub request: Arc<RequestOptions>,
+    pub request: Arc<OperationOptions>,
     pub account: Arc<CosmosAccountOptions>,
 }
 ```
@@ -293,18 +293,18 @@ pub struct CosmosClientOptions {
     pub connection: Arc<ConnectionOptions>,
     pub regions: Arc<RegionOptions>,
     pub retry: Arc<RetryOptions>,
-    pub request: Arc<RequestOptions>,
+    pub request: Arc<OperationOptions>,
     pub account: Arc<CosmosAccountOptions>,
 }
 ```
 
-> **Design note:** Storing `Arc`s at the option-group level (not the layer level) means replacing a single group (e.g., swapping `RequestOptions` to add an excluded region) does not disturb other groups or in-flight operations that hold a snapshot of the old value.
+> **Design note:** Storing `Arc`s at the option-group level (not the layer level) means replacing a single group (e.g., swapping `OperationOptions` to add an excluded region) does not disturb other groups or in-flight operations that hold a snapshot of the old value.
 
 ---
 
 ## 5. Operation-Level Types
 
-Operation types compose a layered option group (`RequestOptions`) with operation-only fields. Fields that are only meaningful at the operation level are plain (non-`Option` or `Option`) fields directly on the struct — duplicated across operation types rather than factored into a shared group.
+Operation types compose a layered option group (`OperationOptions`) with operation-only fields. Fields that are only meaningful at the operation level are plain (non-`Option` or `Option`) fields directly on the struct — duplicated across operation types rather than factored into a shared group.
 
 All operation types are `#[non_exhaustive]` with `Default` and fluent `with_*` setters, following the [struct design rules](../../.github/skills/cosmos-design-struct/SKILL.md).
 
@@ -317,7 +317,7 @@ Options for item point-read operations (`read_item`).
 #[non_exhaustive]
 pub struct ItemReadOptions {
     // Layered option group — participates in cross-layer resolution
-    pub request: RequestOptions,
+    pub request: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -327,7 +327,7 @@ pub struct ItemReadOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `RequestOptions` | Layered group; fields resolve through Operation → Account → Runtime → Env. |
+| `request` | `OperationOptions` | Layered group; fields resolve through Operation → Account → Runtime → Env. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent reads. Operation-only. |
 | `precondition` | `Option<Precondition>` | Conditional ETag check. For reads, typically `IfNoneMatch` (returns 304 Not Modified if unchanged). Operation-only. |
 
@@ -340,7 +340,7 @@ Options for item write operations (`create_item`, `replace_item`, `upsert_item`,
 #[non_exhaustive]
 pub struct ItemWriteOptions {
     // Layered option group
-    pub request: RequestOptions,
+    pub request: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -350,7 +350,7 @@ pub struct ItemWriteOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `RequestOptions` | Layered group; `content_response_on_write` is resolved here and applied to write responses. |
+| `request` | `OperationOptions` | Layered group; `content_response_on_write` is resolved here and applied to write responses. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent writes. Operation-only. |
 | `precondition` | `Option<Precondition>` | Conditional ETag check. For writes, typically `IfMatch` (optimistic concurrency). Operation-only. |
 
@@ -363,7 +363,7 @@ Options for query operations (`query_items`, `query_items_single_partition`).
 #[non_exhaustive]
 pub struct QueryOptions {
     // Layered option group
-    pub request: RequestOptions,
+    pub request: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -375,7 +375,7 @@ pub struct QueryOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `RequestOptions` | Layered group; `content_response_on_write` is ignored for queries. |
+| `request` | `OperationOptions` | Layered group; `content_response_on_write` is ignored for queries. |
 | `session_token` | `Option<SessionToken>` | Session token for session-consistent queries. Operation-only. |
 | `enable_scan_if_no_index` | `Option<bool>` | If the query can't be served by indexes because the relevant paths are not indexed, setting this permits the query engine to perform a full container scan. Operation-only. |
 | `populate_index_metrics` | `Option<bool>` | If set to `true`, the response will contain metrics regarding indexes used. Operation-only. |
@@ -383,14 +383,14 @@ pub struct QueryOptions {
 
 ### 5.4 `TransactionalBatchOptions`
 
-Options for transactional batch operations. The batch as a whole carries cross-layer options via `RequestOptions`, plus batch-level operation-only fields. This follows the same pattern as `ItemWriteOptions`.
+Options for transactional batch operations. The batch as a whole carries cross-layer options via `OperationOptions`, plus batch-level operation-only fields. This follows the same pattern as `ItemWriteOptions`.
 
 ```rust
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct TransactionalBatchOptions {
     // Layered option group
-    pub request: RequestOptions,
+    pub request: OperationOptions,
 
     // Operation-only fields
     pub session_token: Option<SessionToken>,
@@ -399,7 +399,7 @@ pub struct TransactionalBatchOptions {
 
 | Option | Type | Notes |
 |---|---|---|
-| `request` | `RequestOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy` and `excluded_regions` cascade. |
+| `request` | `OperationOptions` | Layered group; `content_response_on_write` controls whether batch responses include resource bodies. `read_consistency_strategy` and `excluded_regions` cascade. |
 | `session_token` | `Option<SessionToken>` | Session token for the batch. Operation-only. |
 
 ### 5.5 `TransactionalBatchItemOptions`
@@ -439,7 +439,7 @@ let batch = TransactionalBatch::new(partition_key)
     );
 
 let batch_opts = TransactionalBatchOptions {
-    request: RequestOptions::default(),
+    request: OperationOptions::default(),
     ..Default::default()
 };
 
@@ -448,7 +448,7 @@ container.execute_transactional_batch(batch, Some(batch_opts)).await?;
 
 ### 5.6 Metadata / Management Operations
 
-Metadata operations (database and container CRUD, throughput management) remain simple structs with operation-specific fields. They do **not** currently include `RequestOptions` for cross-layer resolution, but all are `#[non_exhaustive]` so option groups can be added later without breaking changes.
+Metadata operations (database and container CRUD, throughput management) remain simple structs with operation-specific fields. They do **not** currently include `OperationOptions` for cross-layer resolution, but all are `#[non_exhaustive]` so option groups can be added later without breaking changes.
 
 | Type | Fields | Notes |
 |---|---|---|
@@ -473,7 +473,7 @@ The following options from the current SDK are **not carried forward** into the 
 
 **Removed from:** `CosmosClientOptions`
 
-The explicit preferred-region list is replaced by `RegionOptions.application_region`, which specifies where the application is running and lets the SDK and backend negotiate the optimal region order. Per-operation exclusion remains available via `RequestOptions.excluded_regions`.
+The explicit preferred-region list is replaced by `RegionOptions.application_region`, which specifies where the application is running and lets the SDK and backend negotiate the optimal region order. Per-operation exclusion remains available via `OperationOptions.excluded_regions`.
 
 **Rationale:** Application Region is the modern approach across SDKs. The legacy preferred-regions list is error-prone (manual ordering, stale lists) and redundant when the backend can compute optimal routing from the application's location.
 
@@ -481,7 +481,7 @@ The explicit preferred-region list is replaced by `RegionOptions.application_reg
 
 **Removed from:** `CosmosClientOptions`, `ItemOptions`, `QueryOptions`
 
-Replaced by `RequestOptions.read_consistency_strategy` (type `ReadConsistencyStrategy`), which aligns with the newer strategy-based approach pioneered in the Java SDK. The new enum includes traditional weakening levels (`Eventual`, `Session`) plus new strategies (`LatestCommitted`, `GlobalStrong`).
+Replaced by `OperationOptions.read_consistency_strategy` (type `ReadConsistencyStrategy`), which aligns with the newer strategy-based approach pioneered in the Java SDK. The new enum includes traditional weakening levels (`Eventual`, `Session`) plus new strategies (`LatestCommitted`, `GlobalStrong`).
 
 The `ConsistencyLevel` enum itself is **retained** as a model type for account-level consistency properties returned by the service. It is no longer used in any options struct.
 
@@ -518,9 +518,9 @@ The Cosmos SDK manages its own transport, retry, and telemetry pipeline internal
 | `user_agent_suffix` | `CosmosClientOptions` | `CosmosAccountOptions.user_agent_suffix` | Moved to option group |
 | `application_region` | `CosmosClientOptions` | `RegionOptions.application_region` | Moved to option group |
 | `application_preferred_regions` | `CosmosClientOptions` | — | **Removed** |
-| `excluded_regions` | `CosmosClientOptions` | `RequestOptions.excluded_regions` | Moved; now `Option<Vec<_>>` for layered resolution |
+| `excluded_regions` | `CosmosClientOptions` | `OperationOptions.excluded_regions` | Moved; now `Option<Vec<_>>` for layered resolution |
 | `account_initialization_custom_endpoints` | `CosmosClientOptions` | `CosmosAccountOptions.account_initialization_custom_endpoints` | Moved to option group |
-| `consistency_level` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | `RequestOptions.read_consistency_strategy` | **Replaced** with `ReadConsistencyStrategy` |
+| `consistency_level` | `CosmosClientOptions`, `ItemOptions`, `QueryOptions` | `OperationOptions.read_consistency_strategy` | **Replaced** with `ReadConsistencyStrategy` |
 | `request_timeout` | `CosmosClientOptions` | `ConnectionOptions.request_timeout` | Moved to option group |
 | `enable_remote_region_preferred_for_session_retry` | `CosmosClientOptions` | — | **Removed**; remote-region-preferred is now always-on behavior |
 | `enable_partition_level_circuit_breaker` | `CosmosClientOptions` | — | **Removed**; partition-level circuit breaker is always enabled |
@@ -535,7 +535,7 @@ The Cosmos SDK manages its own transport, retry, and telemetry pipeline internal
 | `session_token` | `ItemOptions`, `QueryOptions` | Operation-only on each type | Duplicated across read/write/query/batch |
 | `indexing_directive` | `ItemOptions` | — | **Removed** (§6.4) |
 | `if_match_etag` | `ItemOptions` | `ItemWriteOptions.precondition` | Replaced by `Precondition::IfMatch(Etag)` |
-| `content_response_on_write_enabled` | `ItemOptions` | `RequestOptions.content_response_on_write` | Moved to layered group; renamed; now `Option<bool>` |
-| `excluded_regions` | `ItemOptions` | `RequestOptions.excluded_regions` | Consolidated into layered group |
+| `content_response_on_write_enabled` | `ItemOptions` | `OperationOptions.content_response_on_write` | Moved to layered group; renamed; now `Option<bool>` |
+| `excluded_regions` | `ItemOptions` | `OperationOptions.excluded_regions` | Consolidated into layered group |
 | `ItemOptions` (unified) | — | `ItemReadOptions` / `ItemWriteOptions` | **Split** into separate read and write types |
 
