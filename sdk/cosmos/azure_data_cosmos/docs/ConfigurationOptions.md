@@ -175,13 +175,13 @@ pub struct ConnectionOptions { /* fields below */ }
 
 ### 3.3 `ConnectionPoolOptions`
 
-**Layers:** Runtime, Account *(nested inside `ConnectionOptions`)*
+**Layers:** Runtime *(nested inside `ConnectionOptions`)*
 
-Fine-grained connection pool tuning. Nested via `#[option(nested)]` on `ConnectionOptions.connection_pool`.
+Fine-grained connection pool tuning. Nested via `#[option(nested)]` on `ConnectionOptions.connection_pool`. Applies only at the runtime layer because the application will likely share a single connection pool across all accounts.
 
 ```rust
 #[derive(CosmosOptions)]
-#[options(layers(runtime, account))]
+#[options(layers(runtime))]
 pub struct ConnectionPoolOptions { /* fields below */ }
 ```
 
