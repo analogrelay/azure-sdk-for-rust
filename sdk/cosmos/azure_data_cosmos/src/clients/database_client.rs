@@ -142,7 +142,7 @@ impl DatabaseClient {
 
     /// Creates a new container.
     ///
-    #[doc = include_str!("../../docs/control-plane-warning.md")]
+    #[doc = include_str!("../../doc/control-plane-warning.md")]
     ///
     /// # Arguments
     /// * `properties` - A [`ContainerProperties`] describing the new container.
@@ -166,7 +166,7 @@ impl DatabaseClient {
 
     /// Deletes this database.
     ///
-    #[doc = include_str!("../../docs/control-plane-warning.md")]
+    #[doc = include_str!("../../doc/control-plane-warning.md")]
     ///
     /// # Arguments
     /// * `options` - Optional parameters for the request.

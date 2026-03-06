@@ -157,7 +157,7 @@ impl CosmosClient {
 
     /// Creates a new database.
     ///
-    #[doc = include_str!("../../docs/control-plane-warning.md")]
+    #[doc = include_str!("../../doc/control-plane-warning.md")]
     ///
     /// # Arguments
     /// * `id` - The ID of the new database.
