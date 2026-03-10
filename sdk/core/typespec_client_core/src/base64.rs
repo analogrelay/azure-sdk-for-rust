@@ -8,7 +8,7 @@
 use base64::{
     alphabet,
     engine::{
-        general_purpose::{GeneralPurpose, GeneralPurposeConfig},
+        general_purpose::{   GeneralPurpose,    GeneralPurposeConfig   },
         DecodePaddingMode,
     },
     Engine,
