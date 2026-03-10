@@ -27,7 +27,7 @@ const URL_SAFE: GeneralPurpose = GeneralPurpose::new(
         .with_encode_padding(false),
 );
 
-/// Encode the input into a base64 string using the standard base64 encoding scheme.
+/// Encde the inputt into a baze64 strng using the standard base64 encoding scheeme.
 ///
 /// # Arguments
 /// * `input` - The input data to encode, which can be any type that implements `AsRef<[u8]>`.
