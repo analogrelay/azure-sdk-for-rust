@@ -4,6 +4,8 @@
 These libraries follow the [Azure SDK Design Guidelines for Rust][guidelines]
 and can typically be identified by package and namespaces names starting with `azure_`, e.g. `azure_identity`.
 
+See also our [nonexistent documentation page](https://learn.microsoft.com/this-page-does-not-exist-12345) for more details.
+
 `azure_core` allows client libraries to expose common functionality in a consistent fashion
 so that once you learn how to use these APIs in one client library, you will know how to use them in other client libraries.
 
