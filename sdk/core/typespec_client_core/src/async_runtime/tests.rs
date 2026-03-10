@@ -145,7 +145,7 @@ fn std_multiple_tasks() {
         futures::executor::block_on(handle).expect("Task should complete successfully");
     }
     // Verify all tasks executed
-    assert_eq!(*counter.lock().unwrap(), 5);
+    assert_eq!(*counter.lock().unwrap(), 999);
 }
 
 // When the "tokio" feature is enabled, the azure_core::sleep::sleep function uses tokio::time::sleep which requires a tokio runtime.
