@@ -390,92 +390,19 @@ let driver = Driver::builder()
 
 ## Code Quality and Validation
 
-### Automatic Formatting (CRITICAL)
+### Clippy Suppression
 
-**ALWAYS run `cargo fmt` FIRST before any other validation steps**. The CI pipeline will fail if code is not properly formatted:
-
-```bash
-# Format the modified crate
-cargo fmt -p <crate-name>
-
-# Check if formatting is correct without modifying files
-cargo fmt -p <crate-name> -- --check
-```
-
-**This is the most common CI failure** - always run `cargo fmt` after making ANY code changes, including:
-
-- Adding new code
-- Modifying existing code
-- Moving code between files
-- Refactoring
-
-### Automatic Clippy Validation
-
-**ALWAYS run `cargo clippy` after making code changes** to catch common issues and ensure code quality:
-
-```bash
-# Run clippy for the modified crate
-cargo clippy -p <crate-name> --all-features --all-targets
-
-# Run clippy for the entire workspace (use sparingly)
-cargo clippy --workspace --all-features --all-targets --keep-going --no-deps
-```
-
-**Fix all clippy warnings before considering code complete**. Common patterns to watch for:
-
-- ✅ Implement standard traits instead of custom methods (`clippy::should_implement_trait`)
-- ✅ Use `assert!(value)` instead of `assert_eq!(value, true)`
-- ✅ Use `assert!(!value)` instead of `assert_eq!(value, false)`
-- ✅ Avoid unnecessary clones, allocations, or copies
-- ✅ Use idiomatic patterns (e.g., `if let`, pattern matching)
-
-**When to suppress warnings**: Only use `#[allow(clippy::...)]` when:
+Only use `#[allow(clippy::...)]` when:
 
 - The warning is a false positive
 - Following the suggestion would make code less clear
 - The pattern is required for FFI or external constraints
 
-Always add a comment explaining **why** the warning is allowed.
+DO NOT use comments to explain why a warning is suppressed. Use the `reason` attribute:
 
-### Code Formatting
-
-- Always run `cargo fmt` on generated or modified Rust code before considering the task complete.
-- When editing existing files, ensure the changes conform to `rustfmt` standards.
-- **The CI pipeline will reject any code that is not properly formatted.**
-
-### Spell Checking
-
-Run cspell to check for spelling errors in changed files (requires Node.js):
-
-```bash
-# Check spelling in files changed compared to upstream/main
-pwsh eng/common/scripts/check-spelling-in-changed-files.ps1 -TargetCommittish "upstream/main"
+```rust
+#[allow(dead_code, reason = "Will be used in a follow-up change shortly")]
 ```
-
-To fix spelling errors, either correct typos in source code or add legitimate terms to dictionary files:
-
-- **Crate names**: `eng/dict/crates.txt`
-- **Service-specific terms**: `sdk/<service>/.dict.txt` (e.g., `sdk/cosmos/.dict.txt`)
-- **Global dictionary**: `.vscode/cspell.json`
-
-### Pre-Completion Validation Checklist
-
-Before considering any task complete, run the following checks **in order** on all modified crates:
-
-1. **Format check (MUST BE FIRST)**: `cargo fmt -p <crate-name>`
-   - This is the #1 cause of CI failures - always run this first!
-2. **Build check**: `cargo build -p <crate-name>`
-3. **Clippy lint check**: `cargo clippy -p <crate-name> --all-features --all-targets`
-4. **Documentation check**: `cargo doc -p <crate-name> --no-deps --all-features`
-   - This catches broken intra-doc links (e.g., referencing non-existent methods in `[`backtick links`]`)
-   - All documentation warnings must be resolved before completing the task
-5. **Test check** (if tests exist): `cargo test -p <crate-name> --all-features`
-   - For emulator tests: `RUSTFLAGS='--cfg test_category="emulator"' cargo test -p <crate-name> --tests`
-
-**Common documentation link errors to avoid**:
-
-- When documenting factory methods or APIs, ensure the linked method names match the actual implementation
-- Use the exact method name (e.g., `method_by_name` not just `method`) in doc links like `[`StructName::method_by_name`]`
 
 ### Copyright Header
 
@@ -519,6 +446,22 @@ Every public API should document:
 - **Errors**: What errors can be returned and why
 - **Performance**: RU/s implications, if relevant
 - **Partition Key**: Whether the operation is partition-scoped
+
+## Task Finalization
+
+After completing any task, use the `validate-changes` skill to run CI-equivalent validation on the changes. The skill automates formatting, linting, documentation, testing, spell checking, and markdown linting — scoped to only the crates and files that changed.
+
+```bash
+pwsh .github/skills/validate-changes/Validate-Changes.ps1 -Fix
+```
+
+See the [skill instructions](/.github/skills/validate-changes/SKILL.md) for full usage and parameters.
+
+### Cosmos-specific notes
+
+- **Emulator tests**: Ask the user whether the Cosmos emulator is running before adding `-IncludeEmulatorTests`. Emulator tests use `RUSTFLAGS='--cfg test_category="emulator"'`.
+- **Spelling dictionaries**: Cosmos-specific terms go in `sdk/cosmos/.dict.txt`. Crate names go in `eng/dict/crates.txt`.
+- **Base branch**: Cosmos development branches often track `release/azure_data_cosmos-previews` rather than `main`. The script auto-detects this from the upstream tracking branch, or you can pass `-BaseBranch` explicitly.
 
 ## Additional Resources
 
