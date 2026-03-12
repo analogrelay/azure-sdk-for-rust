@@ -3,6 +3,7 @@
 
 //! Driver test client for emulator-based E2E tests.
 
+use azure_core::error::ErrorKind;
 use azure_data_cosmos_driver::{
     diagnostics::{DiagnosticsContext, PipelineType, TransportSecurity},
     driver::{fault_injection::FaultInjectionRule, CosmosDriverRuntime},
@@ -12,7 +13,7 @@ use azure_data_cosmos_driver::{
     },
     options::{ConnectionPoolOptions, EmulatorServerCertValidation, OperationOptions},
 };
-use std::{error::Error, future::Future, sync::Arc};
+use std::{future::Future, sync::Arc};
 use uuid::Uuid;
 
 use super::env::{
@@ -36,7 +37,7 @@ impl DriverTestClient {
     /// Returns `None` if:
     /// - The environment variable is not set and test mode is not "required"
     /// - The test mode is "skipped"
-    pub async fn from_env() -> Result<Option<Self>, Box<dyn Error>> {
+    pub async fn from_env() -> azure_core::Result<Option<Self>> {
         let test_mode = get_test_mode();
 
         if test_mode == CosmosTestMode::Skipped {
@@ -84,10 +85,10 @@ impl DriverTestClient {
     /// Runs a test with access to a driver and run context.
     ///
     /// The test will be skipped if the environment is not configured.
-    pub async fn run<F, Fut>(f: F) -> Result<(), Box<dyn Error>>
+    pub async fn run<F, Fut>(f: F) -> azure_core::Result<()>
     where
         F: FnOnce(DriverTestRunContext) -> Fut,
-        Fut: Future<Output = Result<(), Box<dyn Error>>>,
+        Fut: Future<Output = azure_core::Result<()>>,
     {
         let Some(client) = Self::from_env().await? else {
             println!("Skipping test: Cosmos DB environment not configured");
@@ -99,10 +100,10 @@ impl DriverTestClient {
     }
 
     /// Runs a test with a unique database that will be cleaned up after the test.
-    pub async fn run_with_unique_db<F, Fut>(f: F) -> Result<(), Box<dyn Error>>
+    pub async fn run_with_unique_db<F, Fut>(f: F) -> azure_core::Result<()>
     where
         F: FnOnce(DriverTestRunContext, DatabaseReference) -> Fut,
-        Fut: Future<Output = Result<(), Box<dyn Error>>>,
+        Fut: Future<Output = azure_core::Result<()>>,
     {
         Self::run(async |context| {
             let db_name = context.unique_database_name();
@@ -125,7 +126,7 @@ impl DriverTestClient {
     /// Typically rules start disabled and are enabled during the test.
     async fn from_env_with_fault_injection(
         rules: Vec<Arc<FaultInjectionRule>>,
-    ) -> Result<Option<Self>, Box<dyn Error>> {
+    ) -> azure_core::Result<Option<Self>> {
         let test_mode = get_test_mode();
 
         if test_mode == CosmosTestMode::Skipped {
@@ -180,10 +181,10 @@ impl DriverTestClient {
     pub async fn run_with_fault_injection<F, Fut>(
         rules: Vec<Arc<FaultInjectionRule>>,
         f: F,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> azure_core::Result<()>
     where
         F: FnOnce(DriverTestRunContext) -> Fut,
-        Fut: Future<Output = Result<(), Box<dyn Error>>>,
+        Fut: Future<Output = azure_core::Result<()>>,
     {
         let Some(client) = Self::from_env_with_fault_injection(rules).await? else {
             println!("Skipping test: Cosmos DB environment not configured");
@@ -198,10 +199,10 @@ impl DriverTestClient {
     pub async fn run_with_fault_injection_and_unique_db<F, Fut>(
         rules: Vec<Arc<FaultInjectionRule>>,
         f: F,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> azure_core::Result<()>
     where
         F: FnOnce(DriverTestRunContext, DatabaseReference) -> Fut,
-        Fut: Future<Output = Result<(), Box<dyn Error>>>,
+        Fut: Future<Output = azure_core::Result<()>>,
     {
         Self::run_with_fault_injection(rules, async |context| {
             let db_name = context.unique_database_name();
@@ -244,10 +245,7 @@ impl DriverTestRunContext {
     }
 
     /// Creates a database using the driver.
-    pub async fn create_database(
-        &self,
-        db_name: &str,
-    ) -> Result<DatabaseReference, Box<dyn Error>> {
+    pub async fn create_database(&self, db_name: &str) -> azure_core::Result<DatabaseReference> {
         let driver = self
             .client
             .runtime
@@ -265,7 +263,10 @@ impl DriverTestRunContext {
         // Check for success status (201 Created)
         let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
-            return Err(format!("Failed to create database, status: {:?}", status).into());
+            return Err(azure_core::Error::with_message(
+                ErrorKind::Other,
+                format!("Failed to create database, status: {:?}", status),
+            ));
         }
 
         Ok(DatabaseReference::from_name(
@@ -275,10 +276,7 @@ impl DriverTestRunContext {
     }
 
     /// Deletes a database using the driver.
-    pub async fn delete_database(
-        &self,
-        database: &DatabaseReference,
-    ) -> Result<(), Box<dyn Error>> {
+    pub async fn delete_database(&self, database: &DatabaseReference) -> azure_core::Result<()> {
         let driver = self
             .client
             .runtime
@@ -294,7 +292,10 @@ impl DriverTestRunContext {
         // Check for success status (204 No Content)
         let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
-            return Err(format!("Failed to delete database, status: {:?}", status).into());
+            return Err(azure_core::Error::with_message(
+                ErrorKind::Other,
+                format!("Failed to delete database, status: {:?}", status),
+            ));
         }
 
         Ok(())
@@ -306,7 +307,7 @@ impl DriverTestRunContext {
         database: &DatabaseReference,
         container_name: &str,
         partition_key_path: &str,
-    ) -> Result<ContainerReference, Box<dyn Error>> {
+    ) -> azure_core::Result<ContainerReference> {
         let driver = self
             .client
             .runtime
@@ -327,11 +328,17 @@ impl DriverTestRunContext {
         // Check for success status (201 Created)
         let status = result.diagnostics().status();
         if !status.map(|s| s.is_success()).unwrap_or(false) {
-            return Err(format!("Failed to create container, status: {:?}", status).into());
+            return Err(azure_core::Error::with_message(
+                ErrorKind::Other,
+                format!("Failed to create container, status: {:?}", status),
+            ));
         }
-        let db_name = database
-            .name()
-            .ok_or_else(|| "database reference must be name-based".to_string())?;
+        let db_name = database.name().ok_or_else(|| {
+            azure_core::Error::with_message(
+                ErrorKind::Other,
+                "database reference must be name-based",
+            )
+        })?;
         let container = driver
             .resolve_container_by_name(db_name, container_name)
             .await?;
@@ -345,7 +352,7 @@ impl DriverTestRunContext {
         item_id: &str,
         partition_key: impl Into<PartitionKey>,
         body: &[u8],
-    ) -> Result<CosmosResponse, Box<dyn Error>> {
+    ) -> azure_core::Result<CosmosResponse> {
         let driver = self
             .client
             .runtime
@@ -369,7 +376,7 @@ impl DriverTestRunContext {
         container: &ContainerReference,
         item_id: &str,
         partition_key: impl Into<PartitionKey>,
-    ) -> Result<CosmosResponse, Box<dyn Error>> {
+    ) -> azure_core::Result<CosmosResponse> {
         let driver = self
             .client
             .runtime

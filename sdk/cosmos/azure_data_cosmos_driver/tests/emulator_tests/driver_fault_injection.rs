@@ -16,7 +16,6 @@ use azure_data_cosmos_driver::driver::fault_injection::{
     FaultInjectionRuleBuilder, FaultOperationType,
 };
 use serde::{Deserialize, Serialize};
-use std::error::Error;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,7 +29,7 @@ struct TestItem {
 
 /// With probability 0.0, the fault should never be applied. All reads should succeed.
 #[tokio::test]
-pub async fn fault_injection_probability_zero_never_fails() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_probability_zero_never_fails() -> azure_core::Result<()> {
     let result = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::ServiceUnavailable)
         .with_probability(0.0)
@@ -89,7 +88,7 @@ pub async fn fault_injection_probability_zero_never_fails() -> Result<(), Box<dy
 
 /// With probability 1.0, every read should fail with 503 ServiceUnavailable.
 #[tokio::test]
-pub async fn fault_injection_probability_one_always_fails() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_probability_one_always_fails() -> azure_core::Result<()> {
     let result = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::ServiceUnavailable)
         .with_probability(1.0)
@@ -150,7 +149,7 @@ pub async fn fault_injection_probability_one_always_fails() -> Result<(), Box<dy
 /// Injects 429 with hit_limit=2. The first read should exhaust the fault budget via retries,
 /// and the read should eventually succeed.
 #[tokio::test]
-pub async fn fault_injection_429_retry_with_hit_limit() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_429_retry_with_hit_limit() -> azure_core::Result<()> {
     let result = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::TooManyRequests)
         .build();
@@ -209,7 +208,7 @@ pub async fn fault_injection_429_retry_with_hit_limit() -> Result<(), Box<dyn Er
 /// Two rules target ReadItem. The first rule (429) should win over the second (503)
 /// because rules are evaluated in order.
 #[tokio::test]
-pub async fn fault_injection_multiple_rules_priority() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_multiple_rules_priority() -> azure_core::Result<()> {
     let error1 = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::TooManyRequests)
         .build();
@@ -279,7 +278,7 @@ pub async fn fault_injection_multiple_rules_priority() -> Result<(), Box<dyn Err
 
 /// First rule has a future start_time, so it's skipped. Second rule (503) applies.
 #[tokio::test]
-pub async fn fault_injection_first_rule_inactive_due_to_start_time() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_first_rule_inactive_due_to_start_time() -> azure_core::Result<()> {
     let error1 = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::TooManyRequests)
         .build();
@@ -350,7 +349,7 @@ pub async fn fault_injection_first_rule_inactive_due_to_start_time() -> Result<(
 
 /// First rule has an end_time in the past (already expired). Second rule (503) applies.
 #[tokio::test]
-pub async fn fault_injection_first_rule_expired_due_to_end_time() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_first_rule_expired_due_to_end_time() -> azure_core::Result<()> {
     let error1 = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::TooManyRequests)
         .build();
@@ -426,7 +425,7 @@ pub async fn fault_injection_first_rule_expired_due_to_end_time() -> Result<(), 
 /// With hit_limit=4, the first few reads fail (consuming the budget via retries),
 /// and subsequent reads succeed.
 #[tokio::test]
-pub async fn fault_injection_hit_limit_behavior() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_hit_limit_behavior() -> azure_core::Result<()> {
     let result = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::InternalServerError)
         .build();
@@ -504,7 +503,7 @@ pub async fn fault_injection_hit_limit_behavior() -> Result<(), Box<dyn Error>> 
 
 /// With no fault rules, operations should succeed normally.
 #[tokio::test]
-pub async fn fault_injection_empty_rules() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_empty_rules() -> azure_core::Result<()> {
     DriverTestClient::run_with_unique_db(async |context, database| {
         let container_name = context.unique_container_name();
         let container = context
@@ -538,7 +537,7 @@ pub async fn fault_injection_empty_rules() -> Result<(), Box<dyn Error>> {
 
 /// Disabling a rule at runtime prevents fault injection; re-enabling resumes injection.
 #[tokio::test]
-pub async fn fault_injection_enable_disable_rule() -> Result<(), Box<dyn Error>> {
+pub async fn fault_injection_enable_disable_rule() -> azure_core::Result<()> {
     let result = FaultInjectionResultBuilder::new()
         .with_error(FaultInjectionErrorType::ServiceUnavailable)
         .build();
