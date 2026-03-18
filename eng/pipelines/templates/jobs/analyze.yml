@@ -59,3 +59,4 @@ jobs:
         Directory: sdk/${{ parameters.ServiceDirectory }}
       CheckLinkGuidance: $true
       Condition: succeededOrFailed()
+      AllowRelativeLinksFile: '$(Build.SourcesDirectory)/eng/allow-relative-links.txt'
