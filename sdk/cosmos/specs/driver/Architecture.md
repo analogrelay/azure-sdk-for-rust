@@ -897,3 +897,7 @@ tokio::spawn(async move {
 - CHANGELOG.md - Version history
 - [Azure Cosmos DB Documentation](https://learn.microsoft.com/azure/cosmos-db/)
 -->
+
+## Related Specs
+
+See also: [Transport Pipeline Spec](TransportPipelineSpec.md)
