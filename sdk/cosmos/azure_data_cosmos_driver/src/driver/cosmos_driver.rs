@@ -13,7 +13,7 @@ use crate::{
         CosmosOperation, DatabaseProperties, DatabaseReference,
     },
     options::{
-        ConnectionPoolOptions, DiagnosticsOptions, DriverOptions, OperationOptions, RuntimeOptions,
+        ConnectionPoolOptions, DiagnosticsOptions, DriverOptions, OperationOptions,
         RuntimeOptionsView, ThroughputControlGroupSnapshot,
     },
 };
@@ -699,11 +699,11 @@ impl CosmosDriver {
     /// Returns `None` if no applicable control group is found.
     pub(crate) fn effective_throughput_control_group(
         &self,
-        effective_options: &RuntimeOptions,
+        effective_options: &RuntimeOptionsView<'_>,
         container: &ContainerReference,
     ) -> Option<ThroughputControlGroupSnapshot> {
         // First, check if an explicit group name is specified in options
-        if let Some(group_name) = &effective_options.throughput_control_group_name {
+        if let Some(group_name) = effective_options.throughput_control_group_name() {
             if let Some(group) = self
                 .runtime
                 .get_throughput_control_group(container, group_name)
@@ -787,21 +787,8 @@ impl CosmosDriver {
         }
         tracing::debug!("operation started");
 
-        // Step 1: Build the runtime options view for layered resolution and
-        // materialize a resolved snapshot for the pipeline.
-        let view = self.runtime_options_view(&options);
-        let effective_options = RuntimeOptions {
-            throughput_control_group_name: view.throughput_control_group_name().cloned(),
-            dedicated_gateway_options: view.dedicated_gateway_options().cloned(),
-            diagnostics_thresholds: view.diagnostics_thresholds().cloned(),
-            end_to_end_latency_policy: view.end_to_end_latency_policy().cloned(),
-            excluded_regions: view.excluded_regions().cloned(),
-            read_consistency_strategy: view.read_consistency_strategy().copied(),
-            content_response_on_write: view.content_response_on_write().copied(),
-            max_failover_retry_count: view.max_failover_retry_count().copied(),
-            max_session_retry_count: view.max_session_retry_count().copied(),
-            endpoint_unavailability_ttl: view.endpoint_unavailability_ttl().copied(),
-        };
+        // Step 1: Build the runtime options view for layered resolution.
+        let effective_options = self.runtime_options_view(&options);
 
         // Step 2: Resolve effective throughput control group (if any).
         // Step 1 transport pipeline does not consume this yet.
