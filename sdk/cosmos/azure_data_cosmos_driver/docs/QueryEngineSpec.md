@@ -266,13 +266,25 @@ pub(crate) struct ExecutionContext {
     driver: Arc<CosmosDriver>,
     container: ContainerReference,
     options: OperationOptions,
+    execution_options: ExecutionOptions,
     semaphore: Arc<Semaphore>,
 }
 
 impl ExecutionContext {
+    pub fn new(
+        driver: Arc<CosmosDriver>,
+        container: ContainerReference,
+        options: OperationOptions,
+        execution_options: ExecutionOptions,
+    ) -> Self {
+        let semaphore = Arc::new(Semaphore::new(execution_options.max_concurrent_sources));
+        Self { driver, container, options, execution_options, semaphore }
+    }
+
     pub fn driver(&self) -> &CosmosDriver { ... }
     pub fn container(&self) -> &ContainerReference { ... }
     pub fn options(&self) -> &OperationOptions { ... }
+    pub fn execution_options(&self) -> &ExecutionOptions { ... }
 
     pub async fn acquire_io_permit(&self) -> IoPermitGuard {
         let permit = self.semaphore.acquire_arc().await;
@@ -305,7 +317,7 @@ impl PipelineExecutor {
             driver,
             plan.container.clone(),
             options,
-            execution_options.max_concurrent_sources,
+            execution_options,
         );
 
         let stream = Self::build_node(plan.output_node, &plan, &ctx);
