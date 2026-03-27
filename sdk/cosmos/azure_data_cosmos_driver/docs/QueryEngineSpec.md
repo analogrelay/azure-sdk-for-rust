@@ -1,39 +1,82 @@
-# Query Engine Specification
+# Query Engine Specification: ReadItems
 
 ## Problem Statement
 
-The Cosmos DB driver (`azure_data_cosmos_driver`) needs a client-side query execution pipeline that can:
+The Cosmos DB driver (`azure_data_cosmos_driver`) needs a client-side query execution
+pipeline. This spec focuses on the first operation: **ReadItems**, which reads multiple
+items by their ID + partition key pairs, grouped and routed to physical partitions.
 
-- Model query execution as a DAG of typed nodes
-- Support concurrent execution of source nodes with configurable limits
-- Stream results with back-pressure when possible, buffer when required
-- Produce per-node and pipeline-level metrics
-- Handle varying data shapes efficiently through a closed type system
-- Support inline partition-split recovery
+The pipeline is internal to the driver crate (`pub(crate)`). The general architecture
+(pull-based composable streams, concurrency limiting, metrics) is designed to extend
+to other operations (cross-partition ORDER BY, vector queries, aggregates) in the future.
 
-The pipeline is internal to the driver crate (`pub(crate)`). Plans are constructed either
-programmatically (e.g., ReadMany) or by translating a backend-provided query plan JSON, or both.
+## ReadItems Operation
 
-**This document uses illustrative row shapes that may not directly represent the actual rows returned by the backend.**
+### Public API
+
+```rust
+pub struct ItemIdentity {
+    pub id: String,
+    pub partition_key: PartitionKey,
+}
+
+impl CosmosDriver {
+    pub fn read_items(
+        &self,
+        items: Vec<ItemIdentity>,
+        container: &ContainerReference,
+        options: OperationOptions,
+    ) -> PipelineStream { ... }
+}
+```
+
+### Planning
+
+The planner takes the list of `ItemIdentity` and produces a `QueryPlan`:
+
+1. Hash each PK → effective partition key using `ContainerReference::partition_key_definition()`.
+2. Map each EPK → physical partition (pkrange) via the cached partition key range map.
+3. Group items by pkrange.
+4. For each pkrange group, choose a source node:
+   - **1 item** → `PointRead` node
+   - **2+ items, all same logical PK** → `QueryIdsInSinglePk` node
+   - **2+ items, multiple logical PKs** → `QueryIdPkPairs` node
+5. All sources feed into a single `UnsortedMerge` output node.
+
+### Plan Example
+
+```text
+Input: [(id1, pkA), (id2, pkA), (id3, pkB), (id4, pkB), (id5, pkC)]
+
+After grouping by physical partition:
+  pkrange0: [(id1, pkA), (id2, pkA)]         → same logical PK → QueryIdsInSinglePk
+  pkrange1: [(id3, pkB), (id4, pkB), (id5, pkC)] → mixed PKs  → QueryIdPkPairs
+  (assume these are the only two physical partitions)
+
+Plan DAG:
+  QueryIdsInSinglePk(pkrange0, pkA, [id1, id2]) ──┐
+                                                    ├── UnsortedMerge → output
+  QueryIdPkPairs(pkrange1, [(id3,pkB),(id4,pkB),(id5,pkC)]) ──┘
+```
+
+If a pkrange group had exactly one item, it would be a `PointRead` instead.
 
 ## Module Structure
 
 ```text
 sdk/cosmos/azure_data_cosmos_driver/src/
 └── pipeline/
-    ├── mod.rs              # Module root, re-exports, PipelineStream type alias
-    ├── row.rs              # PipelineRow enum + OrderByRow, etc.
-    ├── plan.rs             # QueryPlan, PlanNode enum, PlanEdge, validation
-    ├── executor.rs         # build_pipeline() — assembles a plan into a composed Stream
+    ├── mod.rs              # Module root, re-exports, PipelineStream, PipelineBatch
+    ├── row.rs              # PipelineRow enum, RowShape
+    ├── plan.rs             # QueryPlan, PlanEdge, validation
+    ├── executor.rs         # ExecutionContext, ExecutionOptions, IoPermitGuard
     ├── metrics.rs          # NodeMetrics, PipelineMetrics, MetricsSnapshot
-    ├── node/
-    │   ├── mod.rs          # Common node types
-    │   ├── partition_query.rs  # Stream impl: pages through a single-partition query
-    │   ├── point_read.rs       # Stream impl: yields a single item
-    │   ├── order_by_merge.rs   # Stream impl: k-way merge over input streams
-    │   ├── buffer_and_sort.rs  # Stream impl: collects all inputs, sorts, yields
-    │   └── aggregate.rs        # Stream impl: accumulates partials, yields final
-    └── concurrency.rs      # ConcurrencyLimiter (semaphore-based)
+    └── nodes/
+        ├── mod.rs          # PlanNode enum, output_shape/input_shape, build() dispatch
+        ├── point_read.rs   # PointRead build: returns impl Stream
+        ├── query_ids_in_single_pk.rs  # QueryIdsInSinglePk build: returns impl Stream
+        ├── query_id_pk_pairs.rs       # QueryIdPkPairs build: returns impl Stream
+        └── unsorted_merge.rs          # UnsortedMerge build: returns impl Stream
 ```
 
 ## Design
@@ -41,211 +84,267 @@ sdk/cosmos/azure_data_cosmos_driver/src/
 ### Row Shapes (`row.rs`)
 
 A closed enum representing the possible data shapes flowing through the pipeline.
-Nodes declare their expected input/output shapes at plan construction time.
-Debug-mode validation checks compatibility; runtime nodes fail the pipeline on shape mismatch.
 
 ```rust
-/// A single value in an ORDER BY clause, as provided by the backend.
-/// Used for comparison during k-way merge.
-pub(crate) struct OrderByValue {
-    /// The raw JSON value (could be string, number, bool, null, etc.)
-    /// Type is inferred from the JSON for sorting purposes.
-    pub value: Box<RawValue>,
-}
-
-/// A row from a backend ORDER BY query.
-pub(crate) struct OrderByRow {
-    /// One value per ORDER BY clause, in clause order.
-    pub order_by_items: Vec<OrderByValue>,
-    /// The actual document, deferred for parsing.
-    pub payload: Box<RawValue>,
-}
-
-/// The shapes that can flow between pipeline nodes.
 pub(crate) enum PipelineRow {
-    /// A plain JSON document (point reads, final output).
     RawItem(Box<RawValue>),
-    /// A row from an ORDER BY query with sort keys + payload.
-    OrderBy(OrderByRow),
-    /// A partial or final aggregate result.
-    Aggregate(Box<RawValue>),
 }
 
-/// Declares which PipelineRow variant(s) a node accepts/produces.
-/// Used for plan validation.
+#[derive(PartialEq, Eq)]
 pub(crate) enum RowShape {
     RawItem,
-    OrderBy,
-    Aggregate,
-    /// Node accepts multiple shapes (e.g., a collect node).
-    AnyOf(Vec<RowShape>),
 }
 ```
 
-### Query Plan (`plan.rs`)
+### Plan Nodes (`nodes/mod.rs`)
 
-The plan is a DAG represented as a flat list of nodes + edges. Each node has an ID
-(index into the vec). The plan is validated at construction time (debug builds) and
-is immutable once built.
+The `PlanNode` enum defines all node types. Each variant carries the data needed to
+construct its stream. Shape declarations and the `build()` dispatch live here;
+node-specific stream construction lives in submodules.
 
 ```rust
-pub(crate) type NodeId = usize;
-
-/// A node in the query plan DAG.
 pub(crate) enum PlanNode {
-    /// Issues a SQL query against a single physical partition, paging via continuations.
-    PartitionQuery {
-        /// The SQL query text + parameters.
-        query: Query,
-        /// Target physical partition range.
-        pk_range_id: String,
-        /// The continuation token, if resuming.
-        continuation: Option<String>,
-    },
-
-    /// Reads a single item by ID + partition key.
     PointRead {
         item_id: String,
         partition_key: PartitionKey,
     },
 
-    /// Streaming k-way merge of pre-sorted inputs using a binary heap.
-    /// Inputs MUST produce OrderBy rows. Output is RawItem (extracted payload).
-    OrderByMerge {
-        /// Sort directions per ORDER BY clause (ascending/descending).
-        sort_orders: Vec<SortOrder>,
+    QueryIdsInSinglePk {
+        pk_range_id: String,
+        partition_key: PartitionKey,
+        item_ids: Vec<String>,
     },
 
-    /// Collects ALL input rows, sorts them, then emits.
-    /// For vector/full-text queries where streaming isn't possible.
-    BufferAndSort {
-        sort_orders: Vec<SortOrder>,
+    QueryIdPkPairs {
+        pk_range_id: String,
+        items: Vec<ItemIdentity>,
     },
 
-    /// Accumulates partial aggregates from multiple partitions.
-    AggregateAccumulate {
-        /// The aggregate functions to apply (COUNT, SUM, MIN, MAX, AVG, etc.)
-        functions: Vec<AggregateFunction>,
-    },
+    UnsortedMerge,
 }
 
-pub(crate) enum SortOrder {
-    Ascending,
-    Descending,
+impl PlanNode {
+    pub fn output_shape(&self) -> RowShape {
+        match self {
+            PlanNode::PointRead { .. } => RowShape::RawItem,
+            PlanNode::QueryIdsInSinglePk { .. } => RowShape::RawItem,
+            PlanNode::QueryIdPkPairs { .. } => RowShape::RawItem,
+            PlanNode::UnsortedMerge => RowShape::RawItem,
+        }
+    }
+
+    pub fn input_shape(&self) -> Option<RowShape> {
+        match self {
+            PlanNode::PointRead { .. } => None,
+            PlanNode::QueryIdsInSinglePk { .. } => None,
+            PlanNode::QueryIdPkPairs { .. } => None,
+            PlanNode::UnsortedMerge => Some(RowShape::RawItem),
+        }
+    }
+
+    pub fn build(
+        self,
+        inputs: Vec<BoxedPipelineStream>,
+        ctx: ExecutionContext,
+    ) -> BoxedPipelineStream {
+        match self {
+            PlanNode::PointRead { item_id, partition_key } => {
+                Box::pin(point_read::build(item_id, partition_key, ctx))
+            }
+            PlanNode::QueryIdsInSinglePk { pk_range_id, partition_key, item_ids } => {
+                Box::pin(query_ids_in_single_pk::build(
+                    pk_range_id, partition_key, item_ids, ctx,
+                ))
+            }
+            PlanNode::QueryIdPkPairs { pk_range_id, items } => {
+                Box::pin(query_id_pk_pairs::build(pk_range_id, items, ctx))
+            }
+            PlanNode::UnsortedMerge => {
+                Box::pin(unsorted_merge::build(inputs))
+            }
+        }
+    }
 }
 
-pub(crate) enum AggregateFunction {
-    Count,
-    Sum,
-    Min,
-    Max,
-    Average,
-}
+type BoxedPipelineStream = Pin<Box<dyn Stream<Item = Result<PipelineBatch>> + Send>>;
+```
 
-/// Directed edge: output of `from` feeds into `to`.
+Each submodule exposes a `build()` function that returns
+`impl Stream<Item = Result<PipelineBatch>> + Send`. The node is free to use any
+combination of `futures` stream combinators, custom `Stream` structs, or async
+blocks to produce the stream.
+
+### Query Plan (`plan.rs`)
+
+The plan is a DAG of nodes + edges. `PlanNode` is defined in `nodes/mod.rs`;
+`QueryPlan` is defined here alongside `PlanEdge` and the DAG validation logic.
+
+```rust
+pub(crate) type NodeId = usize;
+
 pub(crate) struct PlanEdge {
     pub from: NodeId,
     pub to: NodeId,
 }
 
-/// A complete query execution plan.
 pub(crate) struct QueryPlan {
-    /// Nodes in topological order. Index = NodeId.
     pub nodes: Vec<PlanNode>,
-    /// Directed edges (from → to).
     pub edges: Vec<PlanEdge>,
-    /// The final node whose output is the pipeline result.
     pub output_node: NodeId,
-    /// Container context for executing operations.
     pub container: ContainerReference,
 }
+```
 
+#### QueryPlan Methods
+
+```rust
 impl QueryPlan {
-    /// Validate the plan DAG:
-    /// - Acyclic
-    /// - All edges reference valid nodes
-    /// - Row shape compatibility between connected nodes
-    /// - Exactly one output node with no outgoing edges
-    /// Only runs in debug builds for performance.
-    pub fn validate(&self) -> Result<()> { ... }
+    pub fn validate(&self) -> Result<()> {
+        for edge in &self.edges {
+            assert!(edge.from < self.nodes.len());
+            assert!(edge.to < self.nodes.len());
+        }
 
-    /// Returns source nodes (nodes with no incoming edges).
-    pub fn source_nodes(&self) -> Vec<NodeId> { ... }
+        assert!(self.output_node < self.nodes.len());
+        assert!(!self.edges.iter().any(|e| e.from == self.output_node));
 
-    /// Returns the input node IDs for a given node.
-    pub fn inputs_for(&self, node: NodeId) -> Vec<NodeId> { ... }
+        for edge in &self.edges {
+            let from_output = self.nodes[edge.from].output_shape();
+            if let Some(to_input) = self.nodes[edge.to].input_shape() {
+                assert!(from_output == to_input);
+            }
+        }
+
+        // Check acyclicity via topological sort
+        // (standard Kahn's algorithm over self.nodes / self.edges)
+
+        Ok(())
+    }
+
+    pub fn source_nodes(&self) -> Vec<NodeId> {
+        let has_incoming: HashSet<NodeId> = self.edges.iter().map(|e| e.to).collect();
+        (0..self.nodes.len())
+            .filter(|id| !has_incoming.contains(id))
+            .collect()
+    }
+
+    pub fn inputs_for(&self, node: NodeId) -> Vec<NodeId> {
+        self.edges.iter()
+            .filter(|e| e.to == node)
+            .map(|e| e.from)
+            .collect()
+    }
 }
 ```
 
 #### Node Shape Declarations
 
-Used by `validate` to check row shape compatibility between connected nodes:
+| Node                | Input Shape(s) | Output Shape |
+|---------------------|----------------|--------------|
+| PointRead           | (none)         | RawItem      |
+| QueryIdsInSinglePk  | (none)         | RawItem      |
+| QueryIdPkPairs      | (none)         | RawItem      |
+| UnsortedMerge       | RawItem        | RawItem      |
 
-| Node                | Input Shape(s) | Output Shape                             |
-|---------------------|----------------|------------------------------------------|
-| PartitionQuery      | (none)         | OrderBy or RawItem (configured per-plan) |
-| PointRead           | (none)         | RawItem                                  |
-| OrderByMerge        | OrderBy        | RawItem                                  |
-| BufferAndSort       | OrderBy        | RawItem                                  |
-| AggregateAccumulate | Aggregate      | RawItem (final result)                   |
+### Execution Context and Options (`executor.rs`)
 
-### Pipeline Executor (`executor.rs`)
-
-The executor takes a `QueryPlan` + a `CosmosDriver` reference and assembles a
-composed `Stream` by wiring node streams together according to the plan's DAG
-structure. The pipeline is **pull-based**: no tasks are spawned, no channels are
-created. The consumer's `poll_next()` drives all I/O.
+#### ExecutionOptions
 
 ```rust
-pub(crate) struct PipelineExecutor {
-    concurrency_limit: usize,
-}
-
-impl PipelineExecutor {
-    pub fn new(concurrency_limit: usize) -> Self { ... }
-
-    /// Assemble a query plan into a composed stream of batched results.
-    ///
-    /// Walks the plan DAG bottom-up from the output node, constructing each
-    /// node's Stream and passing upstream streams as inputs. Returns the
-    /// output node's stream.
-    pub fn build(
-        &self,
-        plan: QueryPlan,
-        driver: Arc<CosmosDriver>,
-        options: OperationOptions,
-    ) -> PipelineStream { ... }
+pub(crate) struct ExecutionOptions {
+    pub max_concurrent_sources: usize,
 }
 ```
 
+#### ExecutionContext
+
+Bundles the shared resources that every node needs. Cheaply cloneable.
+
+```rust
+#[derive(Clone)]
+pub(crate) struct ExecutionContext {
+    driver: Arc<CosmosDriver>,
+    container: ContainerReference,
+    options: OperationOptions,
+    semaphore: Arc<Semaphore>,
+}
+
+impl ExecutionContext {
+    pub fn driver(&self) -> &CosmosDriver { ... }
+    pub fn container(&self) -> &ContainerReference { ... }
+    pub fn options(&self) -> &OperationOptions { ... }
+
+    pub async fn acquire_io_permit(&self) -> IoPermitGuard {
+        let permit = self.semaphore.acquire_arc().await;
+        IoPermitGuard { _permit: permit }
+    }
+}
+
+pub(crate) struct IoPermitGuard {
+    _permit: SemaphoreGuardArc,
+}
+```
+
+### Pipeline Executor (`executor.rs`)
+
+The executor assembles a `QueryPlan` into a composed `Stream`. The pipeline is
+**pull-based**: no tasks are spawned, no channels are created. The consumer's
+`poll_next()` drives all I/O.
+
+```rust
+pub(crate) struct PipelineExecutor;
+
+impl PipelineExecutor {
+    pub fn build(
+        plan: QueryPlan,
+        driver: Arc<CosmosDriver>,
+        options: OperationOptions,
+        execution_options: ExecutionOptions,
+    ) -> PipelineStream {
+        let ctx = ExecutionContext::new(
+            driver,
+            plan.container.clone(),
+            options,
+            execution_options.max_concurrent_sources,
+        );
+
+        let stream = Self::build_node(plan.output_node, &plan, &ctx);
+        PipelineStream { inner: stream }
+    }
+
+    fn build_node(
+        node_id: NodeId,
+        plan: &QueryPlan,
+        ctx: &ExecutionContext,
+    ) -> BoxedPipelineStream {
+        let inputs: Vec<_> = plan.inputs_for(node_id)
+            .into_iter()
+            .map(|input_id| Self::build_node(input_id, plan, ctx))
+            .collect();
+
+        plan.nodes[node_id].clone().build(inputs, ctx.clone())
+    }
+}
+```
+
+The executor's role is minimal: walk the DAG, collect inputs, delegate to
+`PlanNode::build()`. All node-specific construction logic lives in the node modules.
+
 #### Pull-Based Execution Model
 
-The pipeline uses a pull-based architecture where each node is a `Stream`
-implementation. The consumer's `poll_next()` on the output stream propagates
-through the DAG:
+Each node returns a stream via its `build()` function in its submodule. The
+consumer's `poll_next()` propagates through the DAG:
 
-1. The executor walks the plan DAG from the output node, recursively constructing
-   each node's `Stream`. Source node streams are passed as inputs to their
-   downstream transform/merge node streams.
-2. Each node implements `Stream<Item = Result<PipelineBatch>>`. When polled, a node
-   pulls from its upstream inputs as needed.
-3. Source nodes (`PartitionQuery`, `PointRead`) perform I/O only when polled. Each
-   source acquires a `ConcurrencyLimiter` permit before issuing a request,
-   ensuring bounded concurrent I/O across all sources in the pipeline.
+1. The executor walks the plan DAG from the output node, recursively calling
+   `PlanNode::build()` which delegates to the node's submodule. Source node
+   streams are passed as inputs to their downstream merge node.
+2. Each stream yields `Result<PipelineBatch>`. When polled, a node pulls from its
+   upstream inputs as needed.
+3. Source nodes perform I/O only when polled. Each source calls
+   `ctx.acquire_io_permit()` before issuing a request, limiting how many sources
+   can fetch concurrently.
 4. When the consumer drops the `PipelineStream`, all node state is dropped with
    it — no orphaned tasks, no cleanup needed.
-
-#### Batching
-
-Each node drains as many ready items as possible from its inputs without blocking
-on I/O, then yields the batch downstream. For example, an `OrderByMerge` node:
-
-1. On `poll_next`, tries to pull from each input stream without awaiting I/O
-   (using `poll_next` on each input — returns `Pending` if I/O is needed).
-2. From all currently-buffered head items, determines which items can be emitted
-   (all items that sort before any pending/unknown input).
-3. Yields those items as a `PipelineBatch`.
-4. On the next `poll_next`, awaits I/O for inputs that were `Pending`.
 
 #### Concurrency Model
 
@@ -253,52 +352,42 @@ on I/O, then yields the batch downstream. For example, an `OrderByMerge` node:
 Consumer calls poll_next() on PipelineStream
    │
    ▼
-Output node (e.g., OrderByMerge) Stream
+UnsortedMerge Stream
    │  Polls upstream source streams via FuturesUnordered
+   │  Takes results from the first source to complete,
+   │  re-enqueues that source for its next poll, then
+   │  waits for the next source to complete.
    │
-   ├── PartitionQuery(pkrange1) Stream
-   │     └── poll_next() → acquire semaphore permit → fetch page → yield rows
-   ├── PartitionQuery(pkrange2) Stream
-   │     └── poll_next() → acquire semaphore permit → fetch page → yield rows
-   └── PartitionQuery(pkrange3) Stream
-         └── poll_next() → acquire semaphore permit → fetch page → yield rows
-
-Concurrency is achieved by polling multiple source streams through
-FuturesUnordered. The semaphore bounds how many sources can perform
-I/O simultaneously. When the consumer stops polling, all I/O stops.
+   ├── PointRead(id1, pk1) Stream
+   │     └── poll_next() → ctx.acquire_io_permit() → read item → yield → done
+   ├── QueryIdsInSinglePk(pkrange0, pkA, [id2, id3]) Stream
+   │     └── poll_next() → ctx.acquire_io_permit() → fetch page → yield rows → ...
+   └── QueryIdPkPairs(pkrange1, [(id4,pkB),(id5,pkC)]) Stream
+         └── poll_next() → ctx.acquire_io_permit() → fetch page → yield rows → ...
 ```
 
 **Key properties:**
 
 - **No task spawning** — runtime-agnostic; works on any async executor.
 - **Natural back-pressure** — I/O only happens when the consumer polls.
-- **Partial consumption is efficient** — if the consumer only needs N items,
-  only the sources needed to produce those N items are polled.
+- **Partial consumption is efficient** — if the consumer stops early, remaining
+  sources are never polled.
 - **Cancellation is trivial** — dropping the stream drops all node state.
 
-### Pipeline Stream (`stream.rs`)
+### Pipeline Stream
 
-The consumer-facing output type. This is a type alias (or thin wrapper) for the
-output node's composed `Stream`. Since the pipeline is pull-based, the stream IS
-the pipeline — polling it drives all upstream nodes.
+The consumer-facing output type. A thin wrapper around the output node's composed
+stream. Since the pipeline is pull-based, the stream IS the pipeline — polling it
+drives all upstream nodes.
 
 ```rust
-/// A batch of results from the pipeline.
 pub(crate) struct PipelineBatch {
-    /// The result rows in this batch.
     pub rows: Vec<PipelineRow>,
-    /// Metrics snapshot as of this batch.
     pub metrics: MetricsSnapshot,
 }
 
-/// The output stream from a pipeline execution.
-/// Implements `Stream<Item = Result<PipelineBatch>>`.
-///
-/// The pipeline is pull-based: polling this stream drives all upstream
-/// node I/O. Dropping this stream drops all node state and stops all work.
 pub(crate) struct PipelineStream {
-    /// The composed stream from the output node.
-    inner: Pin<Box<dyn Stream<Item = Result<PipelineBatch>> + Send>>,
+    inner: BoxedPipelineStream,
 }
 
 impl Stream for PipelineStream {
@@ -310,266 +399,192 @@ impl Stream for PipelineStream {
 }
 ```
 
-No `Drop` implementation is needed — when the stream is dropped, all owned node
-state (including source node page buffers, merge heaps, etc.) is dropped with it.
-
 ### Metrics (`metrics.rs`)
 
-Metrics are collected inline by each node as it processes rows. Since the pipeline
-is pull-based and single-threaded from the consumer's perspective (no spawned tasks),
-metrics can be updated with simple mutable state rather than atomics.
+Metrics are collected inline by each node. Since the pipeline is pull-based and
+single-threaded from the consumer's perspective, metrics use simple mutable state.
 
 ```rust
-/// Per-node metrics, updated during execution.
 pub(crate) struct NodeMetrics {
     pub node_id: NodeId,
-    pub node_type: &'static str,  // "PartitionQuery", "OrderByMerge", etc.
+    pub node_type: &'static str,
 
-    // Timing
     pub start_time: Option<Instant>,
     pub end_time: Option<Instant>,
     pub time_waiting_for_input: Duration,
 
-    // Throughput
     pub items_received: u64,
     pub items_emitted: u64,
     pub bytes_received: u64,
     pub bytes_emitted: u64,
 
-    // Source-node specific
     pub pages_fetched: u64,
     pub requests_issued: u64,
     pub request_units_consumed: f64,
     pub throttled_responses: u64,
 }
 
-/// Pipeline-level metrics aggregated from all nodes.
 pub(crate) struct PipelineMetrics {
     pub nodes: Vec<NodeMetrics>,
     pub total_wall_clock: Duration,
     pub total_request_units: f64,
-    pub peak_concurrency: usize,
 }
 
-/// A point-in-time snapshot of pipeline metrics, attached to each batch.
 pub(crate) struct MetricsSnapshot {
     pub total_items_emitted: u64,
     pub total_request_units: f64,
     pub elapsed: Duration,
-    /// Per-node metrics snapshots.
     pub nodes: Vec<NodeMetrics>,
 }
 ```
 
-Each node holds a mutable reference (or owned instance) of its `NodeMetrics` and
-updates it as rows flow through. When producing a `PipelineBatch`, the output node
-collects snapshots from all nodes to build the `MetricsSnapshot`.
+### Node Implementations
 
-### Concurrency Limiter (`concurrency.rs`)
+Each node module exposes a `build()` function that returns
+`impl Stream<Item = Result<PipelineBatch>> + Send`. Nodes are free to use any
+combination of `futures` stream combinators, custom `Stream` structs, or async
+blocks to produce the stream.
+
+#### PointRead (`nodes/point_read.rs`)
+
+A one-shot source. Yields a single `RawItem` and completes.
 
 ```rust
-/// Controls the number of concurrent I/O operations in a pipeline.
-pub(crate) struct ConcurrencyLimiter {
-    semaphore: Arc<Semaphore>,
-    peak: AtomicUsize,
-}
-
-impl ConcurrencyLimiter {
-    pub fn new(max_concurrent: usize) -> Self { ... }
-
-    /// Acquire a permit before performing I/O. Blocks if at limit.
-    pub async fn acquire(&self) -> SemaphorePermit { ... }
-
-    /// Current peak concurrency observed.
-    pub fn peak_concurrency(&self) -> usize { ... }
+pub(super) fn build(
+    item_id: String,
+    partition_key: PartitionKey,
+    ctx: ExecutionContext,
+) -> impl Stream<Item = Result<PipelineBatch>> + Send {
+    futures::stream::once(async move {
+        let _permit = ctx.acquire_io_permit().await;
+        let operation = CosmosOperation::read_item(
+            ctx.container(), &partition_key, &item_id,
+        );
+        let response = ctx.driver().execute_operation(operation, ctx.options().clone()).await?;
+        let raw = RawValue::from_string(String::from_utf8_lossy(response.body()).into_owned())?;
+        Ok(PipelineBatch {
+            rows: vec![PipelineRow::RawItem(raw)],
+            metrics: MetricsSnapshot::default(),
+        })
+    })
 }
 ```
 
-Uses `async_lock::Semaphore` (already a dependency) rather than `tokio::sync::Semaphore`
-to stay runtime-agnostic.
+#### QueryIdsInSinglePk (`nodes/query_ids_in_single_pk.rs`)
 
-### Node Implementation
-
-Rather than a `Node` trait with dynamic dispatch, each node type is a struct that
-implements `Stream<Item = Result<PipelineBatch>>`. The executor constructs the
-appropriate node based on the `PlanNode` variant and composes them:
+Queries items sharing a single logical PK within a physical partition. Pages
+through results via continuation tokens.
 
 ```rust
-// Source node example: PartitionQuery
-pub(crate) struct PartitionQueryStream {
-    query: Query,
+pub(super) fn build(
     pk_range_id: String,
-    driver: Arc<CosmosDriver>,
-    container: ContainerReference,
-    options: OperationOptions,
-    limiter: Arc<ConcurrencyLimiter>,
-    metrics: NodeMetrics,
+    partition_key: PartitionKey,
+    item_ids: Vec<String>,
+    ctx: ExecutionContext,
+) -> impl Stream<Item = Result<PipelineBatch>> + Send {
+    futures::stream::unfold(
+        State { pk_range_id, partition_key, item_ids, ctx, continuation: None, done: false },
+        |mut state| async move {
+            if state.done { return None; }
 
-    // Internal state
-    page_buffer: VecDeque<PipelineRow>,
-    continuation: Option<String>,
-    exhausted: bool,
-    pending_fetch: Option<Pin<Box<dyn Future<Output = Result<CosmosResponse>> + Send>>>,
-}
+            let _permit = state.ctx.acquire_io_permit().await;
+            let query = build_in_list_query(&state.partition_key, &state.item_ids);
+            let response = execute_query(
+                &state.ctx, &state.pk_range_id, query, state.continuation.take(),
+            ).await;
 
-impl Stream for PartitionQueryStream {
-    type Item = Result<PipelineBatch>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // 1. If page_buffer has items, drain and yield a batch
-        // 2. If exhausted (no continuation), return None
-        // 3. If no pending fetch, acquire semaphore permit + start fetch
-        // 4. Poll pending fetch — when ready, parse page, fill buffer, loop
-    }
-}
-
-// Merge node example: OrderByMerge
-pub(crate) struct OrderByMergeStream {
-    sort_orders: Vec<SortOrder>,
-    /// Input source streams, polled concurrently via FuturesUnordered.
-    inputs: Vec<Pin<Box<dyn Stream<Item = Result<PipelineBatch>> + Send>>>,
-    metrics: NodeMetrics,
-
-    // Internal state
-    heap: BinaryHeap<HeapEntry>,  // min-heap of (OrderByRow, source_index)
-    pending_polls: FuturesUnordered<...>,  // concurrent input polling
-}
-
-impl Stream for OrderByMergeStream {
-    type Item = Result<PipelineBatch>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // 1. Poll all pending input futures (FuturesUnordered)
-        // 2. Push newly arrived items into the heap
-        // 3. Drain items from heap that are guaranteed to be in order
-        //    (all inputs must have at least one item buffered, or be exhausted)
-        // 4. Yield drained items as a batch, or Pending if waiting on inputs
-    }
+            match response {
+                Ok((rows, continuation)) => {
+                    state.done = continuation.is_none();
+                    state.continuation = continuation;
+                    Some((Ok(PipelineBatch { rows, metrics: MetricsSnapshot::default() }), state))
+                }
+                Err(e) => {
+                    state.done = true;
+                    Some((Err(e), state))
+                }
+            }
+        },
+    )
 }
 ```
 
-The executor's `build()` method constructs these streams bottom-up:
+#### QueryIdPkPairs (`nodes/query_id_pk_pairs.rs`)
+
+Queries items with different logical PKs within a single physical partition.
+Pages through results via continuation tokens.
 
 ```rust
-// In executor.rs — simplified sketch
-fn build_node_stream(
-    node: PlanNode,
-    inputs: Vec<Pin<Box<dyn Stream<Item = Result<PipelineBatch>> + Send>>>,
-    driver: Arc<CosmosDriver>,
-    container: ContainerReference,
-    options: OperationOptions,
-    limiter: Arc<ConcurrencyLimiter>,
-) -> Pin<Box<dyn Stream<Item = Result<PipelineBatch>> + Send>> {
-    match node {
-        PlanNode::PartitionQuery { query, pk_range_id, continuation } => {
-            Box::pin(PartitionQueryStream::new(
-                query, pk_range_id, continuation,
-                driver, container, options, limiter,
-            ))
-        }
-        PlanNode::PointRead { item_id, partition_key } => {
-            Box::pin(PointReadStream::new(
-                item_id, partition_key,
-                driver, container, options, limiter,
-            ))
-        }
-        PlanNode::OrderByMerge { sort_orders } => {
-            Box::pin(OrderByMergeStream::new(sort_orders, inputs))
-        }
-        PlanNode::BufferAndSort { sort_orders } => {
-            Box::pin(BufferAndSortStream::new(sort_orders, inputs))
-        }
-        PlanNode::AggregateAccumulate { functions } => {
-            Box::pin(AggregateStream::new(functions, inputs))
-        }
-    }
+pub(super) fn build(
+    pk_range_id: String,
+    items: Vec<ItemIdentity>,
+    ctx: ExecutionContext,
+) -> impl Stream<Item = Result<PipelineBatch>> + Send {
+    futures::stream::unfold(
+        State { pk_range_id, items, ctx, continuation: None, done: false },
+        |mut state| async move {
+            if state.done { return None; }
+
+            let _permit = state.ctx.acquire_io_permit().await;
+            let query = build_id_pk_pairs_query(&state.items);
+            let response = execute_query(
+                &state.ctx, &state.pk_range_id, query, state.continuation.take(),
+            ).await;
+
+            match response {
+                Ok((rows, continuation)) => {
+                    state.done = continuation.is_none();
+                    state.continuation = continuation;
+                    Some((Ok(PipelineBatch { rows, metrics: MetricsSnapshot::default() }), state))
+                }
+                Err(e) => {
+                    state.done = true;
+                    Some((Err(e), state))
+                }
+            }
+        },
+    )
 }
 ```
 
-This avoids trait objects for dispatch — the `PlanNode` enum is the single point of
-dispatch and we get exhaustive match checking from the compiler. Each node's stream
-is type-erased into `Pin<Box<dyn Stream + Send>>` only at the composition boundary.
+#### UnsortedMerge (`nodes/unsorted_merge.rs`)
 
-### Ordering Semantics
+Concurrently polls all input sources and yields results in arrival order.
 
-All `OrderByValue` comparisons follow the Cosmos DB type ordering:
+```rust
+pub(super) fn build(
+    inputs: Vec<BoxedPipelineStream>,
+) -> impl Stream<Item = Result<PipelineBatch>> + Send {
+    let indexed: Vec<_> = inputs.into_iter().enumerate().collect();
 
-```text
-null < boolean < number < string < array < object
+    let active: FuturesUnordered<_> = indexed.into_iter()
+        .map(|(i, mut s)| async move { (i, s.next().await, s) })
+        .collect();
+
+    futures::stream::unfold(active, |mut active| async move {
+        loop {
+            let (idx, result, stream) = active.next().await?;
+
+            match result {
+                Some(batch) => {
+                    active.push(async move { (idx, stream.next().await, stream) });
+                    return Some((batch, active));
+                }
+                None => {
+                    if active.is_empty() { return None; }
+                    continue;
+                }
+            }
+        }
+    })
+}
 ```
 
-Within a type, standard comparison rules apply. This is implemented as a custom
-`Ord` on `OrderByValue`. The type of each value is inferred from the raw JSON at
-comparison time — values may be heterogeneous types across partitions.
-
-## Scenario Walkthroughs
-
-### Scenario 1: ReadMany
-
-```text
-User provides: [(id1, pk1), (id2, pk2), (id3, pk3), ...]
-
-Planner:
-  1. Hash each PK → effective partition key
-  2. Map EPK → pkrange via cached routing table
-  3. Group items by pkrange
-  4. For groups with 1 item → PointRead node
-  5. For groups with N items → PartitionQuery node (SELECT ... WHERE id IN ...)
-  6. All sources → OrderByMerge (sort by id + pk, implicit)
-
-Plan DAG:
-  PointRead(id1, pk1) ─┐
-  PartitionQuery(Q1)  ──┤
-  PartitionQuery(Q2)  ──┼── OrderByMerge(asc id, asc pk) → output
-  PointRead(id5, pk5) ──┘
-```
-
-### Scenario 2: Cross-Partition ORDER BY
-
-```text
-User query: SELECT * FROM c ORDER BY c.price ASC
-
-Planner:
-  1. Get all pkranges for the container
-  2. For each pkrange → PartitionQuery node (same query)
-     Backend returns OrderByRow { orderByItems: [price], payload: doc }
-  3. All sources → OrderByMerge(asc)
-
-Plan DAG:
-  PartitionQuery(pkrange1) ──┐
-  PartitionQuery(pkrange2) ──┼── OrderByMerge(asc) → output
-  PartitionQuery(pkrange3) ──┘
-```
-
-### Scenario 3: Vector/Full-Text Query (TOP N)
-
-```text
-User query: SELECT TOP 10 * FROM c ORDER BY VectorDistance(c.embedding, [...])
-
-Planner:
-  1. For each pkrange → PartitionQuery (same query, TOP 10 per partition)
-  2. All sources → BufferAndSort (must collect all before sorting)
-
-Plan DAG:
-  PartitionQuery(pkrange1) ──┐
-  PartitionQuery(pkrange2) ──┼── BufferAndSort(sort by vector distance) → output
-  PartitionQuery(pkrange3) ──┘
-```
-
-### Scenario 4: Aggregate (COUNT)
-
-```text
-User query: SELECT VALUE COUNT(1) FROM c
-
-Planner:
-  1. For each pkrange → PartitionQuery (aggregate query, returns partial count)
-  2. All sources → AggregateAccumulate(Sum) — sum the partial counts
-
-Plan DAG:
-  PartitionQuery(pkrange1) ──┐
-  PartitionQuery(pkrange2) ──┼── AggregateAccumulate(Sum) → output
-  PartitionQuery(pkrange3) ──┘
-```
+On initialization, the merge enqueues a `poll_next` future for every input source
+into `FuturesUnordered`. When any source produces a batch, that batch is yielded to
+the consumer and the source is re-enqueued for its next poll. The `IoPermitGuard` in
+source nodes limits how many can be performing I/O at once, but the merge itself is
+not I/O-bound — it just shuffles results.
 
 ## Design Considerations
 
@@ -577,40 +592,39 @@ Plan DAG:
 
 Source nodes use driver APIs that already handle retries and failover. The pipeline
 only sees terminal failures — when all retry/failover options have been exhausted,
-the entire pipeline fails with the underlying error.
+the source node yields an `Err`, which propagates through the merge to the consumer.
+The entire pipeline fails on the first error.
 
 ### Partition Split Recovery
 
-Source nodes need a mechanism to detect 410 Gone (partition split), refresh the
-routing table, and re-target the new sub-partitions. In the pull-based model, a
-source node that encounters a split can internally replace itself with two child
-streams (or re-query the routing table and restart with the correct pkrange ID).
-Since source nodes own their state and are only accessed via `poll_next`, this
-recovery is local to the source — the merge node upstream is unaware. **Deferred
-for detailed design but the pull-based architecture naturally supports it** — a
-source node can transparently become a fan-out internally.
+Source nodes may encounter 410 Gone (partition split). In the pull-based model, a
+source can internally refresh the routing table and restart with updated pkrange
+IDs. Since source nodes own their state and are only accessed via `poll_next`,
+recovery is local — the merge node is unaware. **Deferred for detailed design but
+the architecture naturally supports it.**
 
 ### Pipeline Resumability
 
-For stateless web apps with pagination, we'll eventually need to serialize enough
-pipeline state (continuation tokens per source, merge position, etc.) to resume later.
-The plan structure + per-node continuation state should be serializable. **Deferred but
-kept in mind** — e.g., `PlanNode::PartitionQuery` already has an optional `continuation`.
+For stateless web apps with pagination, we'll eventually need to serialize pipeline
+state (continuation tokens per source, which sources are exhausted, etc.) to resume
+later. **Deferred but kept in mind** — the query node types already carry
+continuation state internally.
 
 ### Runtime Agnosticism
 
 The pull-based model avoids task spawning entirely. All I/O is driven by the
-consumer's `poll_next()` calls, so the pipeline works on any async executor
-(tokio, async-std, smol, etc.). The only async primitive required is
-`async_lock::Semaphore` for the concurrency limiter, which is already a
-dependency and is runtime-agnostic.
+consumer's `poll_next()` calls. The only async primitive required is
+`async_lock::Semaphore` for the per-plan concurrency limit, which is
+runtime-agnostic.
 
-### Plan Construction
+### Future Node Types
 
-Plans can be constructed in two ways:
+The architecture is designed to support additional nodes for other operations:
 
-1. **Programmatically** — the driver builds a plan directly (e.g., for ReadMany,
-   where the plan shape is known statically).
-2. **From backend query plan** — the backend parses the user's SQL and returns a
-   query plan in a custom JSON format. The driver translates this into a `QueryPlan`.
-   The planner module handles this translation.
+- **OrderByMerge** — streaming k-way merge for cross-partition ORDER BY queries
+- **BufferAndSort** — buffered sort for vector/full-text queries
+- **AggregateAccumulate** — partial aggregate accumulation for COUNT/SUM/etc.
+
+These will introduce additional `PipelineRow` variants and new `PlanNode` variants.
+Each new node adds a variant to the enum in `nodes/mod.rs` and a corresponding
+submodule with its `build()` function.
