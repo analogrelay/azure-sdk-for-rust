@@ -142,6 +142,10 @@ impl PlanNode {
         }
     }
 
+    pub fn is_source(&self) -> bool {
+        self.input_shape().is_none()
+    }
+
     pub fn build(
         self,
         inputs: Vec<BoxedPipelineStream>,
@@ -180,7 +184,8 @@ The plan is a DAG of nodes + edges. `PlanNode` is defined in `nodes/mod.rs`;
 `QueryPlan` is defined here alongside `PlanEdge` and the DAG validation logic.
 
 ```rust
-pub(crate) type NodeId = usize;
+// Derives relevant traits to act as a newtype.
+pub(crate) struct NodeId(usize);
 
 pub(crate) struct PlanEdge {
     pub from: NodeId,
@@ -199,6 +204,7 @@ pub(crate) struct QueryPlan {
 
 ```rust
 impl QueryPlan {
+    // Only called in debug builds
     pub fn validate(&self) -> Result<()> {
         for edge in &self.edges {
             assert!(edge.from < self.nodes.len());
@@ -267,7 +273,7 @@ pub(crate) struct ExecutionContext {
     container: ContainerReference,
     options: OperationOptions,
     execution_options: ExecutionOptions,
-    semaphore: Arc<Semaphore>,
+    semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl ExecutionContext {
@@ -277,7 +283,7 @@ impl ExecutionContext {
         options: OperationOptions,
         execution_options: ExecutionOptions,
     ) -> Self {
-        let semaphore = Arc::new(Semaphore::new(execution_options.max_concurrent_sources));
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(execution_options.max_concurrent_sources));
         Self { driver, container, options, execution_options, semaphore }
     }
 
@@ -287,21 +293,23 @@ impl ExecutionContext {
     pub fn execution_options(&self) -> &ExecutionOptions { ... }
 
     pub async fn acquire_io_permit(&self) -> IoPermitGuard {
-        let permit = self.semaphore.acquire_arc().await;
+        let permit = self.semaphore.clone().acquire_owned().await
+            .expect("semaphore closed");
         IoPermitGuard { _permit: permit }
     }
 }
 
 pub(crate) struct IoPermitGuard {
-    _permit: SemaphoreGuardArc,
+    _permit: tokio::sync::OwnedSemaphorePermit,
 }
 ```
 
 ### Pipeline Executor (`executor.rs`)
 
-The executor assembles a `QueryPlan` into a composed `Stream`. The pipeline is
-**pull-based**: no tasks are spawned, no channels are created. The consumer's
-`poll_next()` drives all I/O.
+The executor assembles a `QueryPlan` into a `PipelineStream`. Source nodes are
+spawned as independent `tokio` tasks for multi-threaded execution, communicating
+results through a bounded `mpsc` channel. The consumer receives results by polling
+the channel's receiver.
 
 ```rust
 pub(crate) struct PipelineExecutor;
@@ -321,7 +329,7 @@ impl PipelineExecutor {
         );
 
         let stream = Self::build_node(plan.output_node, &plan, &ctx);
-        PipelineStream { inner: stream }
+        PipelineStream::new(stream)
     }
 
     fn build_node(
@@ -329,68 +337,87 @@ impl PipelineExecutor {
         plan: &QueryPlan,
         ctx: &ExecutionContext,
     ) -> BoxedPipelineStream {
-        let inputs: Vec<_> = plan.inputs_for(node_id)
-            .into_iter()
-            .map(|input_id| Self::build_node(input_id, plan, ctx))
-            .collect();
+        let node = plan.nodes[node_id].clone();
 
-        plan.nodes[node_id].clone().build(inputs, ctx.clone())
+        if node.is_source() {
+            // Source nodes: build the stream, spawn a task to drain it
+            // into a channel, return the receiver as a stream.
+            let source_stream = node.build(vec![], ctx.clone());
+            Self::spawn_source(source_stream)
+        } else {
+            // Non-source nodes: recursively build inputs, then build this node.
+            let inputs: Vec<_> = plan.inputs_for(node_id)
+                .into_iter()
+                .map(|input_id| Self::build_node(input_id, plan, ctx))
+                .collect();
+            node.build(inputs, ctx.clone())
+        }
+    }
+
+    fn spawn_source(source: BoxedPipelineStream) -> BoxedPipelineStream {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+        let handle = tokio::spawn(async move {
+            let mut source = source;
+            while let Some(batch) = source.next().await {
+                if tx.send(batch).await.is_err() {
+                    break; // receiver dropped, consumer is done
+                }
+            }
+        });
+
+        Box::pin(ReceiverStream::new(rx, handle))
     }
 }
 ```
 
-The executor's role is minimal: walk the DAG, collect inputs, delegate to
-`PlanNode::build()`. All node-specific construction logic lives in the node modules.
-
-#### Pull-Based Execution Model
-
-Each node returns a stream via its `build()` function in its submodule. The
-consumer's `poll_next()` propagates through the DAG:
-
-1. The executor walks the plan DAG from the output node, recursively calling
-   `PlanNode::build()` which delegates to the node's submodule. Source node
-   streams are passed as inputs to their downstream merge node.
-2. Each stream yields `Result<PipelineBatch>`. When polled, a node pulls from its
-   upstream inputs as needed.
-3. Source nodes perform I/O only when polled. Each source calls
-   `ctx.acquire_io_permit()` before issuing a request, limiting how many sources
-   can fetch concurrently.
-4. When the consumer drops the `PipelineStream`, all node state is dropped with
-   it — no orphaned tasks, no cleanup needed.
+The executor distinguishes source nodes (no inputs) from non-source nodes. Source
+nodes get their stream wrapped in a spawned task + channel. Non-source nodes (like
+`UnsortedMerge`) receive already-spawned source streams as inputs.
 
 #### Concurrency Model
 
 ```text
+PipelineExecutor::build()
+   │
+   ├── tokio::spawn ─── PointRead(id1, pk1) task
+   │                       └── acquire_io_permit → read → tx.send(batch)
+   │
+   ├── tokio::spawn ─── QueryIdsInSinglePk(pkrange0, ...) task
+   │                       └── acquire_io_permit → fetch page → tx.send(batch) → loop
+   │
+   ├── tokio::spawn ─── QueryIdPkPairs(pkrange1, ...) task
+   │                       └── acquire_io_permit → fetch page → tx.send(batch) → loop
+   │
+   └── UnsortedMerge (not spawned, runs on consumer's task)
+         └── Receives from all source channels, yields in arrival order
+
 Consumer calls poll_next() on PipelineStream
-   │
-   ▼
-UnsortedMerge Stream
-   │  Polls upstream source streams via FuturesUnordered
-   │  Takes results from the first source to complete,
-   │  re-enqueues that source for its next poll, then
-   │  waits for the next source to complete.
-   │
-   ├── PointRead(id1, pk1) Stream
-   │     └── poll_next() → ctx.acquire_io_permit() → read item → yield → done
-   ├── QueryIdsInSinglePk(pkrange0, pkA, [id2, id3]) Stream
-   │     └── poll_next() → ctx.acquire_io_permit() → fetch page → yield rows → ...
-   └── QueryIdPkPairs(pkrange1, [(id4,pkB),(id5,pkC)]) Stream
-         └── poll_next() → ctx.acquire_io_permit() → fetch page → yield rows → ...
+   → polls UnsortedMerge
+   → gets next batch from whichever source task finished first
 ```
+
+Source tasks run independently on tokio worker threads. The semaphore
+(`max_concurrent_sources`) gates how many can perform I/O at once — others
+park on the semaphore's wait list (not consuming a worker thread). The
+bounded channel (capacity 1) provides back-pressure: if the consumer is
+slow, source tasks block on `tx.send()` after producing one batch.
 
 **Key properties:**
 
-- **No task spawning** — runtime-agnostic; works on any async executor.
-- **Natural back-pressure** — I/O only happens when the consumer polls.
-- **Partial consumption is efficient** — if the consumer stops early, remaining
-  sources are never polled.
-- **Cancellation is trivial** — dropping the stream drops all node state.
+- **Multi-threaded execution** — source tasks run on tokio worker threads,
+  utilizing all available cores for request setup and response parsing.
+- **Back-pressure** — bounded channel prevents sources from racing ahead
+  of the consumer.
+- **Cancellation** — dropping the `PipelineStream` drops the channel
+  receivers, causing source tasks to observe a closed channel and exit.
+- **Semaphore limits I/O** — at most `max_concurrent_sources` HTTP
+  requests in flight, regardless of how many source tasks exist.
 
 ### Pipeline Stream
 
-The consumer-facing output type. A thin wrapper around the output node's composed
-stream. Since the pipeline is pull-based, the stream IS the pipeline — polling it
-drives all upstream nodes.
+The consumer-facing output type. Wraps the output node's stream and owns
+the spawned task handles for cancellation.
 
 ```rust
 pub(crate) struct PipelineBatch {
@@ -411,10 +438,16 @@ impl Stream for PipelineStream {
 }
 ```
 
+`ReceiverStream` (used internally by `spawn_source`) wraps a
+`tokio::sync::mpsc::Receiver` as a `Stream` and aborts its associated
+`JoinHandle` on drop, ensuring spawned tasks are cancelled when the
+consumer drops the pipeline.
+
 ### Metrics (`metrics.rs`)
 
-Metrics are collected inline by each node. Since the pipeline is pull-based and
-single-threaded from the consumer's perspective, metrics use simple mutable state.
+Metrics are collected inline by each node. Since source nodes run on separate tasks,
+per-node metrics must be `Send`. Metrics can be sent alongside batches in the
+channel, or aggregated when the task completes.
 
 ```rust
 pub(crate) struct NodeMetrics {
@@ -561,42 +594,23 @@ pub(super) fn build(
 
 #### UnsortedMerge (`nodes/unsorted_merge.rs`)
 
-Concurrently polls all input sources and yields results in arrival order.
+Concurrently polls all input streams and yields results in arrival order.
+When inputs are channel receivers from spawned source tasks, this effectively
+collects results from all source tasks as they complete.
 
 ```rust
 pub(super) fn build(
     inputs: Vec<BoxedPipelineStream>,
 ) -> impl Stream<Item = Result<PipelineBatch>> + Send {
-    let indexed: Vec<_> = inputs.into_iter().enumerate().collect();
-
-    let active: FuturesUnordered<_> = indexed.into_iter()
-        .map(|(i, mut s)| async move { (i, s.next().await, s) })
-        .collect();
-
-    futures::stream::unfold(active, |mut active| async move {
-        loop {
-            let (idx, result, stream) = active.next().await?;
-
-            match result {
-                Some(batch) => {
-                    active.push(async move { (idx, stream.next().await, stream) });
-                    return Some((batch, active));
-                }
-                None => {
-                    if active.is_empty() { return None; }
-                    continue;
-                }
-            }
-        }
-    })
+    let mut merged = futures::stream::select_all(inputs);
+    futures::stream::poll_fn(move |cx| merged.poll_next_unpin(cx))
 }
 ```
 
-On initialization, the merge enqueues a `poll_next` future for every input source
-into `FuturesUnordered`. When any source produces a batch, that batch is yielded to
-the consumer and the source is re-enqueued for its next poll. The `IoPermitGuard` in
-source nodes limits how many can be performing I/O at once, but the merge itself is
-not I/O-bound — it just shuffles results.
+`select_all` from `futures` merges multiple streams into one, polling all of
+them and yielding items as they become available. Since each input is backed
+by a channel receiver from a spawned source task, this naturally yields
+results in arrival order with no additional coordination.
 
 ## Design Considerations
 
@@ -622,12 +636,11 @@ state (continuation tokens per source, which sources are exhausted, etc.) to res
 later. **Deferred but kept in mind** — the query node types already carry
 continuation state internally.
 
-### Runtime Agnosticism
+### Runtime Dependency
 
-The pull-based model avoids task spawning entirely. All I/O is driven by the
-consumer's `poll_next()` calls. The only async primitive required is
-`async_lock::Semaphore` for the per-plan concurrency limit, which is
-runtime-agnostic.
+The pipeline requires a `tokio` multi-threaded runtime for spawning source tasks.
+A compile-time abstraction using feature flags to support other runtimes is planned
+separately.
 
 ### Future Node Types
 
