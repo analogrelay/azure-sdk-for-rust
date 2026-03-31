@@ -3,22 +3,24 @@
 
 //! Manages background tasks spawned by a client.
 //!
-//! [`BackgroundTaskManager`] holds on to [`tokio::task::JoinHandle`]s returned
-//! by [`tokio::spawn`]. Dropping the manager aborts all stored tasks — unlike
-//! raw `JoinHandle` (which detaches on drop), this manager calls
-//! [`JoinHandle::abort`] to cancel each task.
+//! [`BackgroundTaskManager`] holds on to [`JoinHandle`](crate::async_runtime::JoinHandle)s
+//! returned by [`AsyncRuntime::spawn`](crate::async_runtime::AsyncRuntime::spawn). Dropping
+//! the manager aborts all stored tasks — unlike raw handles (which detach on
+//! drop), this manager calls [`abort`](crate::async_runtime::JoinHandle::abort)
+//! to cancel each task.
 
+use crate::async_runtime::{AsyncRuntime, JoinHandle};
 use futures::FutureExt;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::sync::Mutex;
 use tracing::{debug, error};
 
-/// Manages the lifecycle of background tasks spawned on the tokio runtime.
+/// Manages the lifecycle of background tasks spawned on the async runtime.
 ///
-/// Spawned tasks are kept alive by storing their [`tokio::task::JoinHandle`]s.
+/// Spawned tasks are kept alive by storing their [`JoinHandle`]s.
 /// When the manager is dropped, all handles are aborted, cancelling the
-/// associated tasks (tokio `JoinHandle`s detach on drop rather than cancel,
+/// associated tasks (handles detach on drop rather than cancel,
 /// so explicit abort is required).
 #[allow(dead_code)]
 pub(crate) struct BackgroundTaskManager {
@@ -26,7 +28,7 @@ pub(crate) struct BackgroundTaskManager {
     /// Uses a [`Mutex`] for interior mutability so that [`spawn`](Self::spawn)
     /// can accept `&self`, which is required when the manager lives inside an
     /// `Arc`.
-    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl std::fmt::Debug for BackgroundTaskManager {
@@ -49,7 +51,7 @@ impl BackgroundTaskManager {
         }
     }
 
-    /// Spawns a background task on the tokio runtime and stores the handle.
+    /// Spawns a background task on the async runtime and stores the handle.
     ///
     /// The task will remain alive as long as this manager is alive. When the
     /// manager is dropped, all stored handles are aborted, cancelling the
@@ -61,11 +63,7 @@ impl BackgroundTaskManager {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        // NOTE: We use tokio::spawn directly instead of azure_core::async_runtime
-        // because we need JoinHandle::abort() for correct task cancellation on drop.
-        // The AsyncRuntime::spawn abstraction returns SpawnedTask (a boxed future)
-        // which only detaches on drop — it does not cancel the underlying task.
-        let handle = tokio::spawn(async move {
+        let handle = AsyncRuntime::spawn(async move {
             if let Err(panic_payload) = AssertUnwindSafe(future).catch_unwind().await {
                 let msg = panic_payload
                     .downcast_ref::<&str>()
@@ -124,9 +122,10 @@ impl Drop for BackgroundTaskManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::async_runtime::AsyncRuntime;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
-    use tokio::time::Duration;
+    use std::time::Duration;
 
     #[test]
     fn new_manager_has_no_tasks() {
@@ -159,7 +158,7 @@ mod tests {
             manager.spawn(async move {
                 for _ in 0..5 {
                     counter.fetch_add(1, Ordering::SeqCst);
-                    tokio::task::yield_now().await;
+                    AsyncRuntime::yield_now().await;
                 }
             });
         }
@@ -167,7 +166,7 @@ mod tests {
         // Wait for task completion with timeout instead of fixed sleep
         tokio::time::timeout(Duration::from_secs(5), async {
             while counter.load(Ordering::SeqCst) < 5 {
-                tokio::task::yield_now().await;
+                AsyncRuntime::yield_now().await;
             }
         })
         .await
@@ -189,7 +188,7 @@ mod tests {
                 started.store(true, Ordering::SeqCst);
                 // Simulate long-running work — will be aborted before finishing
                 for _ in 0..1_000_000 {
-                    tokio::task::yield_now().await;
+                    AsyncRuntime::yield_now().await;
                 }
                 completed.store(true, Ordering::SeqCst);
             });
@@ -198,7 +197,7 @@ mod tests {
         // Wait for task to start with timeout instead of fixed sleep
         tokio::time::timeout(Duration::from_secs(5), async {
             while !started.load(Ordering::SeqCst) {
-                tokio::task::yield_now().await;
+                AsyncRuntime::yield_now().await;
             }
         })
         .await
@@ -207,7 +206,7 @@ mod tests {
         drop(manager);
 
         // Give the scheduler a chance to process the abort
-        tokio::task::yield_now().await;
+        AsyncRuntime::yield_now().await;
 
         assert!(
             !completed.load(Ordering::SeqCst),
@@ -225,14 +224,14 @@ mod tests {
             manager.spawn(async move {
                 started.store(true, Ordering::SeqCst);
                 for _ in 0..1_000_000 {
-                    tokio::task::yield_now().await;
+                    AsyncRuntime::yield_now().await;
                 }
             });
         }
 
         tokio::time::timeout(Duration::from_secs(5), async {
             while !started.load(Ordering::SeqCst) {
-                tokio::task::yield_now().await;
+                AsyncRuntime::yield_now().await;
             }
         })
         .await
@@ -264,7 +263,7 @@ mod tests {
                 if all_done {
                     break;
                 }
-                tokio::task::yield_now().await;
+                AsyncRuntime::yield_now().await;
             }
         })
         .await
@@ -285,7 +284,7 @@ mod tests {
         for _ in 0..20 {
             let mgr = Arc::clone(&manager);
             let done_count = Arc::clone(&done_count);
-            spawner_handles.push(tokio::spawn(async move {
+            spawner_handles.push(AsyncRuntime::spawn(async move {
                 mgr.spawn(async move {
                     done_count.fetch_add(1, Ordering::SeqCst);
                 });
@@ -299,7 +298,7 @@ mod tests {
         // Wait for all background tasks to complete
         tokio::time::timeout(Duration::from_secs(5), async {
             while done_count.load(Ordering::SeqCst) < 20 {
-                tokio::task::yield_now().await;
+                AsyncRuntime::yield_now().await;
             }
         })
         .await

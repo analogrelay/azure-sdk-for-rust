@@ -170,7 +170,9 @@ impl ShardedHttpTransport {
 
     #[cfg(feature = "tokio")]
     fn spawn_health_sweep(&self) {
-        if tokio::runtime::Handle::try_current().is_err() {
+        use crate::async_runtime::{AsyncRuntime, MissedTickBehavior};
+
+        if !AsyncRuntime::is_available() {
             return;
         }
 
@@ -178,8 +180,8 @@ impl ShardedHttpTransport {
         let pools = Arc::clone(&self.pools);
 
         self.background_tasks.spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut ticker = AsyncRuntime::interval(interval);
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
             loop {
                 ticker.tick().await;
@@ -1240,11 +1242,11 @@ mod tests {
         // Advance time past the health check interval so the background
         // sweep fires and evicts the failed shard.
         tokio::time::advance(health_interval * 3).await;
-        tokio::task::yield_now().await;
+        crate::async_runtime::AsyncRuntime::yield_now().await;
 
         // Give the spawned task a chance to run.
         tokio::time::advance(health_interval).await;
-        tokio::task::yield_now().await;
+        crate::async_runtime::AsyncRuntime::yield_now().await;
 
         let shard_ids: Vec<u64> = pool.shards.load().iter().map(|s| s.id).collect();
 

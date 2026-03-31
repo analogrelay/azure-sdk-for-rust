@@ -21,6 +21,7 @@
 //! raw bytes (`&[u8]`) and return buffered responses (`Vec<u8>`). Serialization is handled by
 //! the consuming SDK in its native language.
 
+pub(crate) mod async_runtime;
 pub mod diagnostics;
 pub mod driver;
 #[cfg(feature = "fault_injection")]
