@@ -43,6 +43,10 @@ pub struct DriverOptions {
     account: AccountReference,
     /// Driver-level operation options (e.g., consistency, excluded regions, failover, session retry).
     operation_options: Arc<OperationOptions>,
+    /// Optional tracer provider for OpenTelemetry distributed tracing.
+    ///
+    /// When set, overrides the runtime-level tracer provider for this driver.
+    tracer_provider: Option<Arc<dyn azure_core::tracing::TracerProvider>>,
 }
 
 impl DriverOptions {
@@ -62,6 +66,11 @@ impl DriverOptions {
     pub fn operation_options(&self) -> &Arc<OperationOptions> {
         &self.operation_options
     }
+
+    /// Returns the driver-level tracer provider, if configured.
+    pub fn tracer_provider(&self) -> Option<&Arc<dyn azure_core::tracing::TracerProvider>> {
+        self.tracer_provider.as_ref()
+    }
 }
 
 /// Builder for creating [`DriverOptions`].
@@ -73,6 +82,7 @@ impl DriverOptions {
 pub struct DriverOptionsBuilder {
     account: AccountReference,
     operation_options: Option<OperationOptions>,
+    tracer_provider: Option<Arc<dyn azure_core::tracing::TracerProvider>>,
 }
 
 impl DriverOptionsBuilder {
@@ -81,6 +91,7 @@ impl DriverOptionsBuilder {
         Self {
             account,
             operation_options: None,
+            tracer_provider: None,
         }
     }
 
@@ -90,11 +101,25 @@ impl DriverOptionsBuilder {
         self
     }
 
+    /// Sets the OpenTelemetry tracer provider for this driver.
+    ///
+    /// When configured, this driver will create a
+    /// [`Tracer`](azure_core::tracing::Tracer) at construction time and emit
+    /// database operation spans. Overrides any runtime-level tracer provider.
+    pub fn with_tracer_provider(
+        mut self,
+        provider: Arc<dyn azure_core::tracing::TracerProvider>,
+    ) -> Self {
+        self.tracer_provider = Some(provider);
+        self
+    }
+
     /// Builds the [`DriverOptions`].
     pub fn build(self) -> DriverOptions {
         DriverOptions {
             account: self.account,
             operation_options: Arc::new(self.operation_options.unwrap_or_default()),
+            tracer_provider: self.tracer_provider,
         }
     }
 }

@@ -42,7 +42,6 @@ use super::{
 /// The driver handles executing operations against Cosmos DB, merging options from
 /// operation, driver, and runtime levels.
 #[non_exhaustive]
-#[derive(Debug)]
 pub struct CosmosDriver {
     /// Reference to the parent runtime.
     runtime: Arc<CosmosDriverRuntime>,
@@ -62,6 +61,23 @@ pub struct CosmosDriver {
     /// initialization. In normal usage `get_or_create_driver` awaits `initialize()`
     /// before returning, so this guard only catches misuse.
     initialized: AtomicBool,
+    /// Optional OpenTelemetry tracer for emitting database operation spans.
+    ///
+    /// Created at driver construction time from the effective `TracerProvider`
+    /// (driver-level overrides runtime-level). When `Some`, `execute_operation`
+    /// creates a `CLIENT` span per the Cosmos DB OTEL semantic conventions.
+    tracer: Option<Arc<dyn azure_core::tracing::Tracer>>,
+}
+
+impl std::fmt::Debug for CosmosDriver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CosmosDriver")
+            .field("runtime", &self.runtime)
+            .field("options", &self.options)
+            .field("initialized", &self.initialized)
+            .field("tracer", &self.tracer)
+            .finish_non_exhaustive()
+    }
 }
 
 impl CosmosDriver {
@@ -581,6 +597,18 @@ impl CosmosDriver {
             endpoint_unavailability_ttl,
         ));
 
+        // Resolve tracer: driver-level TracerProvider overrides runtime-level.
+        let tracer = options
+            .tracer_provider()
+            .or_else(|| runtime.tracer_provider())
+            .map(|provider| {
+                provider.get_tracer(
+                    Some("Microsoft.DocumentDB"),
+                    env!("CARGO_PKG_NAME"),
+                    Some(env!("CARGO_PKG_VERSION")),
+                )
+            });
+
         Self {
             runtime,
             options,
@@ -588,6 +616,7 @@ impl CosmosDriver {
             location_state_store,
             session_manager: SessionManager::new(),
             initialized: AtomicBool::new(false),
+            tracer,
         }
     }
 
@@ -791,6 +820,96 @@ impl CosmosDriver {
         }
         tracing::debug!("operation started");
 
+        // Resolve effective OTEL tracer: operation-level > driver-level > None.
+        let effective_tracer = options.tracer.as_ref().or(self.tracer.as_ref());
+
+        // Create OTEL span if a tracer is configured.
+        let otel_span = effective_tracer.map(|tracer| {
+            let otel_op_name = operation.otel_operation_name();
+
+            // Build span name: "{operation_name} {collection_name}" or just "{operation_name}"
+            let span_name = if let Some(collection) = operation.container_name() {
+                std::borrow::Cow::Owned(format!("{otel_op_name} {collection}"))
+            } else {
+                std::borrow::Cow::Borrowed(otel_op_name)
+            };
+
+            // Build creation-time attributes per Cosmos DB OTEL semconv.
+            let account = operation.resource_reference().account();
+            let mut attributes = vec![
+                azure_core::tracing::Attribute {
+                    key: "db.system.name".into(),
+                    value: azure_core::tracing::AttributeValue::String(
+                        "azure.cosmosdb".to_string(),
+                    ),
+                },
+                azure_core::tracing::Attribute {
+                    key: "db.operation.name".into(),
+                    value: azure_core::tracing::AttributeValue::String(otel_op_name.to_string()),
+                },
+                azure_core::tracing::Attribute {
+                    key: "azure.client.id".into(),
+                    value: azure_core::tracing::AttributeValue::String(
+                        self.runtime.id().to_string(),
+                    ),
+                },
+                azure_core::tracing::Attribute {
+                    key: "azure.resource_provider.namespace".into(),
+                    value: azure_core::tracing::AttributeValue::String(
+                        "Microsoft.DocumentDB".to_string(),
+                    ),
+                },
+                azure_core::tracing::Attribute {
+                    key: "server.address".into(),
+                    value: azure_core::tracing::AttributeValue::String(
+                        account.endpoint().host_str().unwrap_or("").to_string(),
+                    ),
+                },
+                azure_core::tracing::Attribute {
+                    key: "azure.cosmosdb.connection.mode".into(),
+                    value: azure_core::tracing::AttributeValue::String("gateway".to_string()),
+                },
+            ];
+
+            // Add server.port only if non-default (not 443).
+            if let Some(port) = account.endpoint().port() {
+                if port != 443 {
+                    attributes.push(azure_core::tracing::Attribute {
+                        key: "server.port".into(),
+                        value: azure_core::tracing::AttributeValue::I64(port as i64),
+                    });
+                }
+            }
+
+            // Add db.namespace (database name) if available.
+            if let Some(db_name) = operation.database_name() {
+                attributes.push(azure_core::tracing::Attribute {
+                    key: "db.namespace".into(),
+                    value: azure_core::tracing::AttributeValue::String(db_name.to_string()),
+                });
+            }
+
+            // Add db.collection.name if available.
+            if let Some(collection_name) = operation.container_name() {
+                attributes.push(azure_core::tracing::Attribute {
+                    key: "db.collection.name".into(),
+                    value: azure_core::tracing::AttributeValue::String(collection_name.to_string()),
+                });
+            }
+
+            // Create span with or without explicit parent.
+            if let Some(parent) = options.parent_span.as_ref() {
+                tracer.start_span_with_parent(
+                    span_name,
+                    azure_core::tracing::SpanKind::Client,
+                    attributes,
+                    Arc::clone(parent),
+                )
+            } else {
+                tracer.start_span(span_name, azure_core::tracing::SpanKind::Client, attributes)
+            }
+        });
+
         // Step 1: Build the single OperationOptionsView for layered resolution.
         let effective_options = self.operation_options_view(&options);
 
@@ -865,7 +984,7 @@ impl CosmosDriver {
         );
 
         // Step 7: Execute via the new operation pipeline
-        super::pipeline::operation_pipeline::execute_operation_pipeline(
+        let result = super::pipeline::operation_pipeline::execute_operation_pipeline(
             &operation,
             &effective_options,
             options.custom_headers(),
@@ -883,7 +1002,95 @@ impl CosmosDriver {
                 .user_consistency_policy
                 .default_consistency_level,
         )
-        .await
+        .await;
+
+        // Step 8: Complete the OTEL span with response attributes.
+        if let Some(ref span) = otel_span {
+            // Set user_agent.original on the span.
+            span.set_attribute(
+                "user_agent.original",
+                azure_core::tracing::AttributeValue::String(
+                    self.runtime.user_agent().as_str().to_string(),
+                ),
+            );
+
+            match &result {
+                Ok(response) => {
+                    // Set response status code.
+                    let status_code_u16: u16 = response.status().status_code().into();
+                    span.set_attribute(
+                        "db.response.status_code",
+                        azure_core::tracing::AttributeValue::String(status_code_u16.to_string()),
+                    );
+
+                    // Set sub-status code if present.
+                    if let Some(sub_status) = response.status().sub_status() {
+                        span.set_attribute(
+                            "azure.cosmosdb.response.sub_status_code",
+                            azure_core::tracing::AttributeValue::I64(sub_status.value() as i64),
+                        );
+                    }
+
+                    // Set request charge if present.
+                    if let Some(charge) = response.headers().request_charge {
+                        span.set_attribute(
+                            "azure.cosmosdb.operation.request_charge",
+                            azure_core::tracing::AttributeValue::F64(charge.value()),
+                        );
+                    }
+
+                    // Set item count if present.
+                    if let Some(count) = response.headers().item_count {
+                        span.set_attribute(
+                            "db.response.returned_rows",
+                            azure_core::tracing::AttributeValue::I64(count as i64),
+                        );
+                    }
+
+                    // Set request body size if body was present.
+                    if let Some(body) = operation.body() {
+                        span.set_attribute(
+                            "azure.cosmosdb.request.body.size",
+                            azure_core::tracing::AttributeValue::I64(body.len() as i64),
+                        );
+                    }
+
+                    // Set error status for 4xx/5xx responses.
+                    if !response.status().is_success() {
+                        span.set_attribute(
+                            "error.type",
+                            azure_core::tracing::AttributeValue::String(
+                                status_code_u16.to_string(),
+                            ),
+                        );
+                        span.set_status(azure_core::tracing::SpanStatus::Error {
+                            description: format!(
+                                "Cosmos DB operation failed with status {}",
+                                status_code_u16,
+                            ),
+                        });
+                    }
+                }
+                Err(error) => {
+                    // Set error.type from the error kind.
+                    let error_type = format!("{:?}", error.kind());
+                    span.set_attribute(
+                        "error.type",
+                        azure_core::tracing::AttributeValue::String(error_type),
+                    );
+                    span.set_status(azure_core::tracing::SpanStatus::Error {
+                        description: error.to_string(),
+                    });
+                    // record_error expects &dyn std::error::Error; azure_core::Error
+                    // implements std::error::Error.
+                    span.record_error(error as &dyn std::error::Error);
+                }
+            }
+
+            span.end();
+        }
+
+        result
     }
 
     /// Resolves a container by database and container name.

@@ -166,6 +166,12 @@ pub struct CosmosDriverRuntime {
 
     /// Proxy configuration snapshot for diagnostics.
     proxy_configuration: ProxyConfiguration,
+
+    /// Optional tracer provider for OpenTelemetry distributed tracing.
+    ///
+    /// When set, drivers created from this runtime will create a `Tracer` at
+    /// construction time for emitting database operation spans.
+    tracer_provider: Option<Arc<dyn azure_core::tracing::TracerProvider>>,
 }
 
 impl CosmosDriverRuntime {
@@ -230,6 +236,11 @@ impl CosmosDriverRuntime {
     /// values at client creation time, for diagnostic purposes.
     pub fn proxy_configuration(&self) -> &ProxyConfiguration {
         &self.proxy_configuration
+    }
+
+    /// Returns the tracer provider, if configured.
+    pub fn tracer_provider(&self) -> Option<&Arc<dyn azure_core::tracing::TracerProvider>> {
+        self.tracer_provider.as_ref()
     }
 
     /// Returns the environment-level operation options (populated from env vars at build time).
@@ -440,6 +451,7 @@ pub struct CosmosDriverRuntimeBuilder {
     fault_injection_rules: Option<Vec<std::sync::Arc<crate::fault_injection::FaultInjectionRule>>>,
     #[cfg(test)]
     http_client_factory: Option<Arc<dyn HttpClientFactory>>,
+    tracer_provider: Option<Arc<dyn azure_core::tracing::TracerProvider>>,
 }
 
 impl CosmosDriverRuntimeBuilder {
@@ -520,6 +532,22 @@ impl CosmosDriverRuntimeBuilder {
     /// Valid range: 1000–60000 ms (1–60 seconds).
     pub fn with_cpu_refresh_interval(mut self, interval: Duration) -> Self {
         self.cpu_refresh_interval = Some(interval);
+        self
+    }
+
+    /// Sets the OpenTelemetry tracer provider for distributed tracing.
+    ///
+    /// When configured, drivers created from this runtime will create a
+    /// [`Tracer`](azure_core::tracing::Tracer) at construction time and emit
+    /// database operation spans per the Cosmos DB OTEL semantic conventions.
+    ///
+    /// This can be overridden per-driver via
+    /// [`DriverOptionsBuilder::with_tracer_provider()`](crate::options::DriverOptionsBuilder::with_tracer_provider).
+    pub fn with_tracer_provider(
+        mut self,
+        provider: Arc<dyn azure_core::tracing::TracerProvider>,
+    ) -> Self {
+        self.tracer_provider = Some(provider);
         self
     }
 
@@ -710,6 +738,7 @@ impl CosmosDriverRuntimeBuilder {
             machine_id: Arc::new(vm_metadata.machine_id().to_owned()),
             fault_injection_enabled,
             proxy_configuration,
+            tracer_provider: self.tracer_provider,
         }))
     }
 }

@@ -4,6 +4,7 @@
 //! Operation options that participate in runtime/account/operation resolution.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use azure_core::http::headers::{HeaderName, HeaderValue};
@@ -35,7 +36,7 @@ use crate::{
 ///
 /// A field set to `None` means "inherit from a lower-priority level."
 /// A field set to `Some(value)` overrides all lower levels.
-#[derive(CosmosOptions, Clone, Debug)]
+#[derive(CosmosOptions, Clone)]
 #[options(layers(runtime, account, operation))]
 #[non_exhaustive]
 pub struct OperationOptions {
@@ -87,6 +88,47 @@ pub struct OperationOptions {
     // Additional headers beyond those natively supported by the driver.
     // May be removed in the future as we analyze exactly what options are needed.
     custom_headers: Option<HashMap<HeaderName, HeaderValue>>,
+
+    /// Optional tracer override for this operation.
+    ///
+    /// When set, this tracer is used instead of the driver's tracer to create
+    /// the database operation span. Although this field participates in layered
+    /// resolution, it is intended to be set only at the operation level.
+    pub tracer: Option<Arc<dyn azure_core::tracing::Tracer>>,
+
+    /// Optional parent span for this operation.
+    ///
+    /// When set, the database operation span is created as a child of this span.
+    /// Although this field participates in layered resolution, it is intended
+    /// to be set only at the operation level.
+    pub parent_span: Option<Arc<dyn azure_core::tracing::Span>>,
+}
+
+impl std::fmt::Debug for OperationOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperationOptions")
+            .field("read_consistency_strategy", &self.read_consistency_strategy)
+            .field("excluded_regions", &self.excluded_regions)
+            .field("content_response_on_write", &self.content_response_on_write)
+            .field(
+                "throughput_control_group_name",
+                &self.throughput_control_group_name,
+            )
+            .field("end_to_end_latency_policy", &self.end_to_end_latency_policy)
+            .field("max_failover_retry_count", &self.max_failover_retry_count)
+            .field(
+                "endpoint_unavailability_ttl",
+                &self.endpoint_unavailability_ttl,
+            )
+            .field(
+                "session_capturing_disabled",
+                &self.session_capturing_disabled,
+            )
+            .field("max_session_retry_count", &self.max_session_retry_count)
+            .field("tracer", &self.tracer)
+            .field("parent_span", &self.parent_span.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl OperationOptions {

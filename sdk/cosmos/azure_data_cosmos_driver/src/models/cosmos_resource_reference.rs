@@ -60,6 +60,12 @@ impl CosmosResourceReference {
         &self.account
     }
 
+    /// Returns the database reference, if this operation targets a database-level
+    /// or child resource.
+    pub fn database(&self) -> Option<&DatabaseReference> {
+        self.database.as_ref()
+    }
+
     /// Returns the container reference, if this operation targets a container-level
     /// or child resource.
     pub fn container(&self) -> Option<&ContainerReference> {

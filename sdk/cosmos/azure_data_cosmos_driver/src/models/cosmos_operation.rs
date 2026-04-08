@@ -543,6 +543,87 @@ impl CosmosOperation {
     pub fn is_idempotent(&self) -> bool {
         self.operation_type.is_idempotent()
     }
+
+    /// Returns the OpenTelemetry-compliant operation name for this operation.
+    ///
+    /// Maps `(OperationType, ResourceType)` to the well-known names defined in the
+    /// [Cosmos DB OTEL Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/db/cosmosdb/#spans).
+    pub fn otel_operation_name(&self) -> &'static str {
+        use OperationType::*;
+        use ResourceType::*;
+        match (self.operation_type, self.resource_type) {
+            // Database operations
+            (Create, Database) => "create_database",
+            (Read, Database) => "read_database",
+            (ReadFeed, Database) => "read_all_databases",
+            (Query, Database) => "query_databases",
+            (Delete, Database) => "delete_database",
+            (Replace, Database) => "replace_database",
+
+            // Container operations
+            (Create, DocumentCollection) => "create_container",
+            (Read, DocumentCollection) => "read_container",
+            (ReadFeed, DocumentCollection) => "read_all_containers",
+            (Query, DocumentCollection) => "query_containers",
+            (Delete, DocumentCollection) => "delete_container",
+            (Replace, DocumentCollection) => "replace_container",
+
+            // Item operations
+            (Create, Document) => "create_item",
+            (Read, Document) => "read_item",
+            (ReadFeed, Document) => "read_all_items",
+            (Query, Document) => "query_items",
+            (SqlQuery, Document) => "query_items",
+            (Replace, Document) => "replace_item",
+            (Delete, Document) => "delete_item",
+            (Upsert, Document) => "upsert_item",
+            (Batch, Document) => "execute_batch",
+
+            // Stored procedure operations
+            (Create, StoredProcedure) => "create_stored_procedure",
+            (Read, StoredProcedure) => "read_stored_procedure",
+            (ReadFeed, StoredProcedure) => "read_all_stored_procedures",
+            (Query, StoredProcedure) => "query_stored_procedures",
+            (Delete, StoredProcedure) => "delete_stored_procedure",
+            (Replace, StoredProcedure) => "replace_stored_procedure",
+            (Execute, StoredProcedure) => "execute_stored_procedure",
+
+            // Trigger operations
+            (Create, Trigger) => "create_trigger",
+            (Read, Trigger) => "read_trigger",
+            (ReadFeed, Trigger) => "read_all_triggers",
+            (Query, Trigger) => "query_triggers",
+            (Delete, Trigger) => "delete_trigger",
+            (Replace, Trigger) => "replace_trigger",
+
+            // UDF operations
+            (Create, UserDefinedFunction) => "create_user_defined_function",
+            (Read, UserDefinedFunction) => "read_user_defined_function",
+            (ReadFeed, UserDefinedFunction) => "read_all_user_defined_functions",
+            (Query, UserDefinedFunction) => "query_user_defined_functions",
+            (Delete, UserDefinedFunction) => "delete_user_defined_function",
+
+            // Fallback: combine operation_type and resource_type
+            _ => self.operation_type.as_str(),
+        }
+    }
+
+    /// Returns the database name for this operation, if available.
+    ///
+    /// Used for the `db.namespace` span attribute.
+    pub fn database_name(&self) -> Option<&str> {
+        self.resource_reference
+            .container()
+            .map(|c| c.database_name())
+            .or_else(|| self.resource_reference.database().and_then(|d| d.name()))
+    }
+
+    /// Returns the container name for this operation, if available.
+    ///
+    /// Used for the `db.collection.name` span attribute.
+    pub fn container_name(&self) -> Option<&str> {
+        self.resource_reference.container().map(|c| c.name())
+    }
 }
 
 #[cfg(test)]
@@ -653,5 +734,120 @@ mod tests {
 
         assert!(!op.is_read_only());
         assert!(!op.is_idempotent());
+    }
+
+    // ===== OTEL Operation Name Tests =====
+
+    #[test]
+    fn otel_operation_name_database_operations() {
+        let account = test_account();
+        assert_eq!(
+            CosmosOperation::create_database(account.clone()).otel_operation_name(),
+            "create_database"
+        );
+        assert_eq!(
+            CosmosOperation::read_all_databases(account.clone()).otel_operation_name(),
+            "read_all_databases"
+        );
+        assert_eq!(
+            CosmosOperation::query_databases(account.clone()).otel_operation_name(),
+            "query_databases"
+        );
+        let db = DatabaseReference::from_name(account.clone(), "mydb");
+        assert_eq!(
+            CosmosOperation::read_database(db.clone()).otel_operation_name(),
+            "read_database"
+        );
+        assert_eq!(
+            CosmosOperation::delete_database(db).otel_operation_name(),
+            "delete_database"
+        );
+    }
+
+    #[test]
+    fn otel_operation_name_container_operations() {
+        let db = DatabaseReference::from_name(test_account(), "mydb");
+        assert_eq!(
+            CosmosOperation::create_container(db.clone()).otel_operation_name(),
+            "create_container"
+        );
+        assert_eq!(
+            CosmosOperation::read_all_containers(db.clone()).otel_operation_name(),
+            "read_all_containers"
+        );
+        assert_eq!(
+            CosmosOperation::query_containers(db.clone()).otel_operation_name(),
+            "query_containers"
+        );
+        let container = test_container();
+        assert_eq!(
+            CosmosOperation::read_container(container.clone()).otel_operation_name(),
+            "read_container"
+        );
+        assert_eq!(
+            CosmosOperation::delete_container(container).otel_operation_name(),
+            "delete_container"
+        );
+    }
+
+    #[test]
+    fn otel_operation_name_item_operations() {
+        let container = test_container();
+        let pk = PartitionKey::from("pk1");
+        assert_eq!(
+            CosmosOperation::create_item(container.clone(), pk.clone()).otel_operation_name(),
+            "create_item"
+        );
+        assert_eq!(
+            CosmosOperation::read_all_items(container.clone(), pk.clone()).otel_operation_name(),
+            "read_all_items"
+        );
+        assert_eq!(
+            CosmosOperation::query_items(container.clone(), pk.clone()).otel_operation_name(),
+            "query_items"
+        );
+        assert_eq!(
+            CosmosOperation::query_items_cross_partition(container.clone()).otel_operation_name(),
+            "query_items"
+        );
+
+        let item = ItemReference::from_name(&container, pk.clone(), "doc1");
+        assert_eq!(
+            CosmosOperation::read_item(item.clone()).otel_operation_name(),
+            "read_item"
+        );
+        assert_eq!(
+            CosmosOperation::delete_item(item.clone()).otel_operation_name(),
+            "delete_item"
+        );
+        assert_eq!(
+            CosmosOperation::replace_item(item.clone()).otel_operation_name(),
+            "replace_item"
+        );
+        assert_eq!(
+            CosmosOperation::upsert_item(item).otel_operation_name(),
+            "upsert_item"
+        );
+    }
+
+    #[test]
+    fn otel_database_name_and_container_name() {
+        // Database-level operations have database_name but no container_name
+        let db = DatabaseReference::from_name(test_account(), "mydb");
+        let op = CosmosOperation::read_database(db);
+        assert_eq!(op.database_name(), Some("mydb"));
+        assert_eq!(op.container_name(), None);
+
+        // Container-level operations have both
+        let container = test_container();
+        let pk = PartitionKey::from("pk1");
+        let op = CosmosOperation::create_item(container, pk);
+        assert_eq!(op.database_name(), Some("testdb"));
+        assert_eq!(op.container_name(), Some("testcontainer"));
+
+        // Account-level operations have neither
+        let op = CosmosOperation::read_all_databases(test_account());
+        assert_eq!(op.database_name(), None);
+        assert_eq!(op.container_name(), None);
     }
 }
