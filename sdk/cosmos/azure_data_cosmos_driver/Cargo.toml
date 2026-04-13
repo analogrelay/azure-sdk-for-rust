@@ -76,3 +76,4 @@ reqwest_native_tls = [
   "azure_core/reqwest_native_tls",
 ]
 fault_injection = ["dep:rand"]
+__internal_mocking = []
