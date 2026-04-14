@@ -426,7 +426,6 @@ dependencies = [
  "async-trait",
  "azure_core",
  "azure_data_cosmos_driver",
- "bytes",
  "criterion",
  "dhat",
  "pprof",
