@@ -4,7 +4,7 @@
 //! Cosmos DB operation result types.
 
 use crate::diagnostics::DiagnosticsContext;
-use crate::models::{CosmosResponseHeaders, CosmosStatus};
+use crate::models::{CosmosResponseHeaders, CosmosStatus, ResponseBody};
 use std::sync::Arc;
 
 /// Result of a Cosmos DB operation.
@@ -34,8 +34,8 @@ use std::sync::Arc;
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct CosmosResponse {
-    /// Raw response body (UTF-8 JSON or Cosmos binary encoding).
-    body: Vec<u8>,
+    /// Response body. Variant depends on operation type.
+    body: ResponseBody,
 
     /// Extracted Cosmos-specific headers.
     headers: CosmosResponseHeaders,
@@ -48,7 +48,7 @@ pub struct CosmosResponse {
 }
 
 impl CosmosResponse {
-    /// Creates a new `CosmosResponse`.
+    /// Creates a new `CosmosResponse` from raw body bytes.
     ///
     /// This is typically called by the driver after completing an operation.
     pub(crate) fn new(
@@ -58,24 +58,32 @@ impl CosmosResponse {
         diagnostics: Arc<DiagnosticsContext>,
     ) -> Self {
         Self {
-            body,
+            body: ResponseBody::Bytes(body),
             headers,
             status,
             diagnostics,
         }
     }
 
-    /// Returns a reference to the response body.
+    /// Returns a reference to the response body bytes.
     ///
-    /// The body is raw bytes - typically UTF-8 JSON but may be Cosmos binary
+    /// Returns an empty slice when the response has no body.
+    /// The body is raw bytes — typically UTF-8 JSON but may be Cosmos binary
     /// encoding for certain operations. The higher-level SDK handles parsing.
     pub fn body(&self) -> &[u8] {
+        self.body.as_bytes()
+    }
+
+    /// Returns the typed [`ResponseBody`] for this response.
+    pub fn response_body(&self) -> &ResponseBody {
         &self.body
     }
 
-    /// Consumes the result and returns the body.
+    /// Consumes the response and returns the body bytes.
+    ///
+    /// Returns an empty `Vec` when the response has no body.
     pub fn into_body(self) -> Vec<u8> {
-        self.body
+        self.body.into_bytes()
     }
 
     /// Returns a reference to the extracted headers.

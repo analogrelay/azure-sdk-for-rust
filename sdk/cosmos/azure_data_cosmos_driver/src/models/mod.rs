@@ -20,6 +20,9 @@ mod cosmos_response;
 mod cosmos_status;
 mod etag;
 mod finite_f64;
+mod operation_payload;
+mod operation_target;
+mod response_body;
 pub(crate) use finite_f64::FiniteF64;
 mod partition_key;
 mod request_charge;
@@ -53,6 +56,8 @@ pub use cosmos_response::CosmosResponse;
 pub use cosmos_status::CosmosStatus;
 pub use cosmos_status::SubStatusCode;
 pub use etag::{ETag, Precondition};
+pub use operation_payload::OperationPayload;
+pub use operation_target::OperationTarget;
 pub use partition_key::{PartitionKey, PartitionKeyValue};
 pub use request_charge::RequestCharge;
 pub use resource_reference::ContainerReference;
@@ -60,6 +65,7 @@ pub use resource_reference::{DatabaseReference, ItemReference};
 pub use resource_reference::{
     PartitionKeyRangeReference, StoredProcedureReference, TriggerReference, UdfReference,
 };
+pub use response_body::ResponseBody;
 pub use session_token_segment::SessionTokenSegment;
 pub use user_agent::UserAgent;
 

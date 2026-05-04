@@ -972,30 +972,18 @@ impl CosmosDriver {
         }
         tracing::debug!("operation started");
 
-        // Step 1: Build the single OperationOptionsView for layered resolution.
-        let effective_options = self.operation_options_view(&options);
-
-        // Step 2: Resolve effective throughput control group (if any).
-        let effective_control_group = match operation.container() {
-            Some(container) => {
-                self.effective_throughput_control_group(&effective_options, container)?
-            }
-            None => None,
-        };
-
-        // Step 3: Initialize operation activity id
+        // Step 1: Initialize operation activity id.
         let activity_id = ActivityId::new_uuid();
 
-        // Step 4: Get authentication (guaranteed to be present by AccountReference)
+        // Step 2: Resolve account metadata and select write-region endpoint.
+        let account_endpoint_meta = AccountEndpoint::from(operation.resource_reference().account());
         let account = operation.resource_reference().account();
-        let auth = account.auth();
-
-        // Step 4.1: Resolve account metadata and select write-region endpoint.
-        let account_endpoint = AccountEndpoint::from(account);
         let account_properties = self
             .runtime
             .account_metadata_cache()
-            .get_or_fetch(account_endpoint, || self.fetch_account_properties(account))
+            .get_or_fetch(account_endpoint_meta, || {
+                self.fetch_account_properties(account)
+            })
             .await?;
 
         // Keep the operation routing snapshot in sync with current account metadata.
@@ -1007,14 +995,16 @@ impl CosmosDriver {
         );
 
         let write_region = account_properties.write_account_region();
-        let endpoint = Self::endpoint_for_write_region(account, write_region);
+        let endpoint =
+            Self::endpoint_for_write_region(operation.resource_reference().account(), write_region);
 
-        // Step 5: Select the adaptive transport context for the chosen pipeline
+        // Step 3: Select the adaptive transport context for the chosen pipeline.
         let transport = self.transport();
         let operation_type = operation.operation_type();
         let resource_type = operation.resource_type();
         let is_dataplane = uses_dataplane_pipeline(resource_type, operation_type);
-        // Step 6: Initialize diagnostics
+
+        // Step 4: Initialize diagnostics.
         let mut diagnostics_builder = DiagnosticsContextBuilder::new(
             activity_id.clone(),
             std::sync::Arc::new(DiagnosticsOptions::default()),
@@ -1046,27 +1036,39 @@ impl CosmosDriver {
             self.runtime.user_agent().as_str().to_owned(),
         );
 
-        // Step 7: Execute via the new operation pipeline
-        super::pipeline::operation_pipeline::execute_operation_pipeline(
-            &operation,
-            &effective_options,
-            options.custom_headers(),
-            self.location_state_store.as_ref(),
-            &transport,
-            &endpoint,
-            auth,
-            &user_agent,
-            &activity_id,
-            pipeline_type,
-            transport_security,
-            diagnostics_builder,
-            &self.session_manager,
-            account_properties
-                .user_consistency_policy
-                .default_consistency_level,
-            effective_control_group.as_ref(),
-        )
-        .await
+        // Step 5: Resolve composite-wide invariants (effective options view,
+        // throughput control, custom headers). These don't change across plan
+        // nodes, so they live on the executor context — not on each node.
+        let effective_options = self.operation_options_view(&options);
+        let throughput_control = match operation.container() {
+            Some(container) => {
+                self.effective_throughput_control_group(&effective_options, container)?
+            }
+            None => None,
+        };
+        let custom_headers = options.custom_headers();
+
+        // Step 6: Plan and execute via the plan pipeline.
+        let plan = super::plan::Planner::plan(operation);
+        let exec_ctx = super::plan::PlanExecutionContext {
+            operation_context: super::pipeline::operation_pipeline::OperationContext {
+                effective_options: &effective_options,
+                custom_headers,
+                location_state_store: self.location_state_store.as_ref(),
+                transport: &transport,
+                account_endpoint: &endpoint,
+                user_agent: &user_agent,
+                activity_id: &activity_id,
+                pipeline_type,
+                transport_security,
+                session_manager: &self.session_manager,
+                account_default_consistency: account_properties
+                    .user_consistency_policy
+                    .default_consistency_level,
+                throughput_control: throughput_control.as_ref(),
+            },
+        };
+        super::plan::PlanExecutor::execute(plan, exec_ctx, diagnostics_builder).await
     }
 
     /// Resolves a container by database and container name.

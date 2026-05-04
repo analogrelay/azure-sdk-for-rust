@@ -5,7 +5,8 @@
 
 use crate::models::{
     AccountReference, ContainerReference, CosmosRequestHeaders, CosmosResourceReference,
-    DatabaseReference, ItemReference, OperationType, PartitionKey, Precondition, ResourceType,
+    DatabaseReference, ItemReference, OperationPayload, OperationTarget, OperationType,
+    PartitionKey, Precondition, ResourceType,
 };
 use std::borrow::Cow;
 
@@ -62,12 +63,12 @@ pub struct CosmosOperation {
     resource_type: ResourceType,
     /// Reference to the resource being operated on.
     resource_reference: CosmosResourceReference,
-    /// Optional partition key for data plane operations.
-    partition_key: Option<PartitionKey>,
+    /// How this operation is targeted to partitions.
+    target: OperationTarget,
     /// Additional request headers to include in the request.
     request_headers: CosmosRequestHeaders,
-    /// Optional request body (raw bytes, schema-agnostic).
-    body: Option<Vec<u8>>,
+    /// Variant-specific request payload.
+    payload: OperationPayload,
 }
 
 impl CosmosOperation {
@@ -113,7 +114,12 @@ impl CosmosOperation {
 
     /// Returns the partition key, if set.
     pub fn partition_key(&self) -> Option<&PartitionKey> {
-        self.partition_key.as_ref()
+        self.target.as_partition_key()
+    }
+
+    /// Returns the operation's targeting.
+    pub fn target(&self) -> &OperationTarget {
+        &self.target
     }
 
     /// Returns the request headers.
@@ -123,12 +129,23 @@ impl CosmosOperation {
 
     /// Returns the request body, if set.
     pub fn body(&self) -> Option<&[u8]> {
-        self.body.as_deref()
+        self.payload.as_body()
+    }
+
+    /// Returns the operation's request payload.
+    pub fn payload(&self) -> &OperationPayload {
+        &self.payload
+    }
+
+    /// Sets the targeting for the operation.
+    pub fn with_target(mut self, target: OperationTarget) -> Self {
+        self.target = target;
+        self
     }
 
     /// Sets the partition key for the operation.
     pub fn with_partition_key(mut self, partition_key: impl Into<PartitionKey>) -> Self {
-        self.partition_key = Some(partition_key.into());
+        self.target = OperationTarget::PartitionKey(partition_key.into());
         self
     }
 
@@ -166,7 +183,13 @@ impl CosmosOperation {
 
     /// Sets the request body.
     pub fn with_body(mut self, body: Vec<u8>) -> Self {
-        self.body = Some(body);
+        self.payload = OperationPayload::Body(body);
+        self
+    }
+
+    /// Sets the request payload.
+    pub fn with_payload(mut self, payload: OperationPayload) -> Self {
+        self.payload = payload;
         self
     }
 
@@ -183,9 +206,9 @@ impl CosmosOperation {
             operation_type,
             resource_type,
             resource_reference,
-            partition_key: None,
+            target: OperationTarget::None,
             request_headers: CosmosRequestHeaders::new(),
-            body: None,
+            payload: OperationPayload::None,
         }
     }
 

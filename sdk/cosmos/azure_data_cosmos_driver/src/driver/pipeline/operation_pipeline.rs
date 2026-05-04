@@ -38,30 +38,40 @@ use crate::driver::transport::{
     AuthorizationContext, CosmosTransport,
 };
 
+/// Bundle of context values that are constant for the duration of one
+/// composite operation.
+///
+/// This is the parameter bundle for [`execute_single_operation`]. The
+/// driver builds it once per top-level call, and the executor reuses the
+/// same context for every node in a multi-node plan.
+pub(crate) struct OperationContext<'a> {
+    pub effective_options: &'a OperationOptionsView<'a>,
+    pub custom_headers: Option<&'a std::collections::HashMap<HeaderName, HeaderValue>>,
+    pub location_state_store: &'a LocationStateStore,
+    pub transport: &'a CosmosTransport,
+    pub account_endpoint: &'a AccountEndpoint,
+    pub user_agent: &'a HeaderValue,
+    pub activity_id: &'a ActivityId,
+    pub pipeline_type: PipelineType,
+    pub transport_security: TransportSecurity,
+    pub session_manager: &'a SessionManager,
+    pub account_default_consistency: DefaultConsistencyLevel,
+    pub throughput_control: Option<&'a ThroughputControlGroupSnapshot>,
+}
+
 /// Executes a Cosmos DB operation through the new pipeline architecture.
 ///
-/// This is the entry point called by `CosmosDriver::execute_operation`.
-/// It orchestrates the 7-stage operation loop described in the spec.
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn execute_operation_pipeline(
+/// This is the entry point called by the plan executor. It orchestrates
+/// the 7-stage operation loop described in the spec.
+pub(crate) async fn execute_single_operation(
     operation: &CosmosOperation,
-    options: &OperationOptionsView<'_>,
-    custom_headers: Option<&std::collections::HashMap<HeaderName, HeaderValue>>,
-    location_state_store: &LocationStateStore,
-    transport: &CosmosTransport,
-    account_endpoint: &AccountEndpoint,
     credential: &Credential,
-    user_agent: &azure_core::http::headers::HeaderValue,
-    activity_id: &ActivityId,
-    pipeline_type: PipelineType,
-    transport_security: TransportSecurity,
+    op_ctx: &OperationContext<'_>,
     diagnostics: DiagnosticsContextBuilder,
-    session_manager: &SessionManager,
-    account_default_consistency: DefaultConsistencyLevel,
-    throughput_control: Option<&ThroughputControlGroupSnapshot>,
 ) -> azure_core::Result<CosmosResponse> {
     let mut diagnostics = diagnostics;
-    let location_snapshot = location_state_store.snapshot();
+    let options = op_ctx.effective_options;
+    let location_snapshot = op_ctx.location_state_store.snapshot();
     let max_failover_retries = options.max_failover_retry_count().copied().unwrap_or(3);
 
     // Determine if session consistency is active for this operation.
@@ -74,7 +84,7 @@ pub(crate) async fn execute_operation_pipeline(
         .copied()
         .unwrap_or(ReadConsistencyStrategy::Default);
     let session_consistency_active = !session_capturing_disabled
-        && read_consistency_strategy.is_session_effective(account_default_consistency);
+        && read_consistency_strategy.is_session_effective(op_ctx.account_default_consistency);
     let max_session_retries = options
         .max_session_retry_count()
         .copied()
@@ -109,15 +119,15 @@ pub(crate) async fn execute_operation_pipeline(
 
     loop {
         // ── STAGE 1: Acquire LocationSnapshot ──────────────────────────
-        let location = location_state_store.snapshot();
+        let location = op_ctx.location_state_store.snapshot();
 
         // ── STAGE 2: Resolve endpoint ──────────────────────────────────
         let routing = resolve_endpoint(
             operation,
             &retry_state,
             &location,
-            pipeline_type == PipelineType::DataPlane,
-            location_state_store.endpoint_unavailability_ttl(),
+            op_ctx.pipeline_type == PipelineType::DataPlane,
+            op_ctx.location_state_store.endpoint_unavailability_ttl(),
         );
 
         // ── STAGE 3: Build transport request ───────────────────────────
@@ -132,22 +142,23 @@ pub(crate) async fn execute_operation_pipeline(
         };
         tracing::debug!(routing_decision = %routing, "routing decision made");
 
-        let ctx = TransportRequestContext {
+        let req_ctx = TransportRequestContext {
             routing: &routing,
-            activity_id,
+            activity_id: op_ctx.activity_id,
             execution_context,
             deadline,
             resolved_session_token: session_consistency_active
                 .then(|| {
-                    session_manager.resolve_session_token(
+                    op_ctx.session_manager.resolve_session_token(
                         operation,
                         operation.request_headers().session_token.as_ref(),
                     )
                 })
                 .flatten(),
-            throughput_control,
+            throughput_control: op_ctx.throughput_control,
         };
-        let mut transport_request = build_transport_request(operation, custom_headers, &ctx)?;
+        let mut transport_request =
+            build_transport_request(operation, op_ctx.custom_headers, &req_ctx)?;
 
         // Apply content-response-on-write preference.
         // By default, (None or Disabled), suppress the response body for write
@@ -181,11 +192,13 @@ pub(crate) async fn execute_operation_pipeline(
             url = %transport_request.url,
         "transport request created");
 
-        let selected_transport = match pipeline_type {
-            PipelineType::DataPlane => {
-                transport.get_dataplane_transport(account_endpoint, routing.transport_mode)?
-            }
-            PipelineType::Metadata => transport.get_metadata_transport(account_endpoint)?,
+        let selected_transport = match op_ctx.pipeline_type {
+            PipelineType::DataPlane => op_ctx
+                .transport
+                .get_dataplane_transport(op_ctx.account_endpoint, routing.transport_mode)?,
+            PipelineType::Metadata => op_ctx
+                .transport
+                .get_metadata_transport(op_ctx.account_endpoint)?,
         };
 
         // ── STAGE 4: Execute via transport pipeline ────────────────────
@@ -196,9 +209,9 @@ pub(crate) async fn execute_operation_pipeline(
                 transport: &selected_transport,
                 allow_sent_transport_retry: operation.is_read_only() || operation.is_idempotent(),
                 credential,
-                user_agent,
-                pipeline_type,
-                transport_security,
+                user_agent: op_ctx.user_agent,
+                pipeline_type: op_ctx.pipeline_type,
+                transport_security: op_ctx.transport_security,
                 endpoint_key: routing.endpoint.endpoint_key(),
             },
             &mut diagnostics,
@@ -222,7 +235,9 @@ pub(crate) async fn execute_operation_pipeline(
                     cosmos_headers.substatus.as_ref(),
                     &result.outcome,
                 ) {
-                    session_manager.capture_session_token(operation, cosmos_headers);
+                    op_ctx
+                        .session_manager
+                        .capture_session_token(operation, cosmos_headers);
                 }
             }
         }
@@ -232,7 +247,7 @@ pub(crate) async fn execute_operation_pipeline(
             evaluate_transport_result(operation, &routing.endpoint, result, &retry_state);
 
         // ── STAGE 6: Apply location effects ────────────────────────────
-        location_state_store.apply(&effects).await;
+        op_ctx.location_state_store.apply(&effects).await;
 
         // ── STAGE 7: Act on the control-flow decision ──────────────────
         match action {
@@ -248,7 +263,7 @@ pub(crate) async fn execute_operation_pipeline(
                     }
                 }
 
-                let next_location = location_state_store.snapshot();
+                let next_location = op_ctx.location_state_store.snapshot();
                 let endpoints_len = preferred_endpoints_for_attempt(
                     next_location.account.as_ref(),
                     &new_state,
@@ -286,7 +301,7 @@ pub(crate) async fn execute_operation_pipeline(
                 // will be addressed via deterministic RID comparison in
                 // a future change.
 
-                let next_location = location_state_store.snapshot();
+                let next_location = op_ctx.location_state_store.snapshot();
                 let endpoints_len = preferred_endpoints_for_attempt(
                     next_location.account.as_ref(),
                     &new_state,
