@@ -657,7 +657,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://example.documents.azure.com:443/").unwrap(),
             "test-key",
-        );
+        )
+        .unwrap();
         let partition_key: PartitionKeyDefinition =
             serde_json::from_str(r#"{"paths":["/tenantId"]}"#).unwrap();
         let container_properties = ContainerProperties {

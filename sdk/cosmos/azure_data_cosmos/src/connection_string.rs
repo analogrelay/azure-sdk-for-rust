@@ -59,6 +59,26 @@ impl FromStr for ConnectionString {
             ));
         };
 
+        // Reject any non-HTTPS endpoint so that credentials cannot be leaked
+        // over an unencrypted channel. Cosmos DB (service and emulator) only
+        // ever serves over HTTPS.
+        let parsed = url::Url::parse(&endpoint).map_err(|e| {
+            Error::with_message(
+                azure_core::error::ErrorKind::Other,
+                format!("invalid connection string 'AccountEndpoint' URL '{endpoint}': {e}"),
+            )
+        })?;
+        if !parsed.scheme().eq_ignore_ascii_case("https") {
+            return Err(Error::with_message(
+                azure_core::error::ErrorKind::Other,
+                format!(
+                    "Cosmos DB account endpoints must use the 'https' scheme; got '{}' for '{}'",
+                    parsed.scheme(),
+                    parsed
+                ),
+            ));
+        }
+
         let Some(key) = account_key else {
             return Err(Error::new(
                 azure_core::error::ErrorKind::Other,
@@ -146,11 +166,45 @@ mod tests {
         );
     }
 
+    #[test]
+    pub fn test_connection_string_rejects_http_endpoint() {
+        test_bad_connection_string_contains(
+            "AccountEndpoint=http://accountname.documents.azure.com:443/;AccountKey=key",
+            "must use the 'https' scheme",
+        );
+    }
+
+    #[test]
+    pub fn test_connection_string_rejects_http_localhost() {
+        test_bad_connection_string_contains(
+            "AccountEndpoint=http://localhost:8081/;AccountKey=key",
+            "must use the 'https' scheme",
+        );
+    }
+
+    #[test]
+    pub fn test_connection_string_rejects_invalid_endpoint_url() {
+        test_bad_connection_string_contains(
+            "AccountEndpoint=not-a-url;AccountKey=key",
+            "invalid connection string 'AccountEndpoint' URL",
+        );
+    }
+
     fn test_bad_connection_string(connection_string: &str, expected_error_message: &str) {
         let secret = Secret::new(connection_string.to_owned());
         let connection_str = ConnectionString::try_from(&secret);
         let err = connection_str.unwrap_err();
         let actual_error_message = format!("{}", err);
         assert_eq!(expected_error_message, actual_error_message.as_str())
+    }
+
+    fn test_bad_connection_string_contains(connection_string: &str, expected_fragment: &str) {
+        let secret = Secret::new(connection_string.to_owned());
+        let err = ConnectionString::try_from(&secret).unwrap_err();
+        let actual = format!("{}", err);
+        assert!(
+            actual.contains(expected_fragment),
+            "expected error to contain '{expected_fragment}', got: {actual}"
+        );
     }
 }

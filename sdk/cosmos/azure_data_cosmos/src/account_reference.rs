@@ -97,11 +97,13 @@ impl<C: Into<CosmosCredential>> From<(CosmosAccountEndpoint, C)> for CosmosAccou
     }
 }
 
-impl<C: Into<CosmosCredential>> From<(Url, C)> for CosmosAccountReference {
-    fn from((url, credential): (Url, C)) -> Self {
-        Self {
-            endpoint: CosmosAccountEndpoint::from(url),
+impl<C: Into<CosmosCredential>> TryFrom<(Url, C)> for CosmosAccountReference {
+    type Error = azure_core::Error;
+
+    fn try_from((url, credential): (Url, C)) -> Result<Self, Self::Error> {
+        Ok(Self {
+            endpoint: CosmosAccountEndpoint::try_from(url)?,
             credential: credential.into(),
-        }
+        })
     }
 }

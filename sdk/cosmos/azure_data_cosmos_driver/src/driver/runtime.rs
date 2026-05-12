@@ -68,7 +68,7 @@ use super::{
 /// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 ///     "my-key",
-/// );
+/// ).unwrap();
 ///
 /// let driver = cosmos_runtime.get_or_create_driver(account, None).await?;
 ///
@@ -350,7 +350,7 @@ impl CosmosDriverRuntime {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// // First call creates the driver
     /// let driver = runtime.get_or_create_driver(account.clone(), None).await?;
@@ -555,7 +555,7 @@ impl CosmosDriverRuntimeBuilder {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// // Build the runtime first, then resolve the container via the driver.
     /// let runtime = CosmosDriverRuntimeBuilder::new().build().await?;
@@ -783,7 +783,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "***not-base64***",
-        );
+        )
+        .unwrap();
 
         let error = runtime
             .get_or_create_driver(account.clone(), None)

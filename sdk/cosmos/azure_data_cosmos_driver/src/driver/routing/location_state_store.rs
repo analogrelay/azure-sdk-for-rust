@@ -519,7 +519,7 @@ mod tests {
     use super::*;
 
     fn test_endpoint() -> AccountEndpoint {
-        AccountEndpoint::from(url::Url::parse("https://test.documents.azure.com:443/").unwrap())
+        AccountEndpoint::try_from("https://test.documents.azure.com:443/").unwrap()
     }
 
     fn test_refresh_payload() -> AccountProperties {

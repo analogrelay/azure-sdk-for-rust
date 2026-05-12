@@ -6,6 +6,7 @@
 
 ### Breaking Changes
 
+- Cosmos DB account endpoints are now required to use the `https` scheme. Constructing a `CosmosAccountEndpoint` from a URL with any other scheme (including `http://localhost`) — via `FromStr`, `TryFrom<Url>`, or by parsing a Cosmos `ConnectionString` — returns an error. `From<Url> for CosmosAccountEndpoint` was replaced with `TryFrom<Url>`, and `From<(Url, _)> for CosmosAccountReference` was replaced with `TryFrom<(Url, _)>`. The `(CosmosAccountEndpoint, _) -> CosmosAccountReference` conversion remains infallible because the endpoint type is already validated. This prevents accidental transmission of master keys or Entra ID tokens over an unencrypted channel; the Cosmos DB service and emulator both serve over HTTPS only. ([Unreleased — PR TBD](#))
 - `CosmosClientBuilder::with_user_agent_suffix` (and `CosmosClientOptions::with_user_agent_suffix`) now take `UserAgentSuffix` instead of `impl Into<String>`. Callers passing a `&str` or `String` must construct the value explicitly via `UserAgentSuffix::new` (panics on invalid input) or `UserAgentSuffix::try_new` (returns `Option`). Validation rules (max 25 characters, HTTP-header-safe) are now enforced at the construction site instead of being applied silently inside the builder. ([#4368](https://github.com/Azure/azure-sdk-for-rust/pull/4368))
 
 ### Bugs Fixed

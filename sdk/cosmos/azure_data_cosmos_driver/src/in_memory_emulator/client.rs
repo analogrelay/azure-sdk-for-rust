@@ -77,7 +77,7 @@ impl InMemoryEmulatorHttpClient {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://eastus.emulator.local").unwrap(),
     ///     "emulator-key",
-    /// );
+    /// ).unwrap();
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     /// # Ok(())
     /// # }

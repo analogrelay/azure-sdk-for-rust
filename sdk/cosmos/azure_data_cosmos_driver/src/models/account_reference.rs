@@ -7,18 +7,44 @@ use azure_core::credentials::{Secret, TokenCredential};
 use std::{hash::Hash, sync::Arc};
 use url::Url;
 
+/// Validates that a Cosmos DB account endpoint URL uses the `https` scheme.
+///
+/// Cosmos DB service and the Cosmos DB Emulator both serve over HTTPS.
+/// Allowing `http://` would risk leaking master keys or Entra ID tokens over
+/// an unencrypted channel, so any non-`https` scheme is rejected — including
+/// `http://localhost` and `http://127.0.0.1`.
+pub(crate) fn require_https(url: &Url) -> azure_core::Result<()> {
+    if url.scheme().eq_ignore_ascii_case("https") {
+        Ok(())
+    } else {
+        Err(azure_core::Error::with_message(
+            azure_core::error::ErrorKind::Other,
+            format!(
+                "Cosmos DB account endpoints must use the 'https' scheme; got '{}' for '{}'",
+                url.scheme(),
+                url
+            ),
+        ))
+    }
+}
+
 /// An account endpoint URL used as a cache key.
 ///
 /// This is a newtype wrapper around `Url` that implements `Hash` and `Eq`
 /// based on the URL only (ignoring authentication). Used as a key in
 /// account-scoped caches.
+///
+/// Construction is fallible: only `https://` URLs are accepted. Cosmos DB
+/// service and emulator both serve HTTPS — using plain HTTP would risk
+/// leaking tokens.
 #[derive(Clone, Debug)]
 pub(crate) struct AccountEndpoint(Url);
 
 impl AccountEndpoint {
-    /// Creates a new account endpoint from a URL.
-    pub(crate) fn new(url: Url) -> Self {
-        Self(url)
+    /// Creates a new account endpoint from a URL, validating the scheme.
+    pub(crate) fn try_new(url: Url) -> azure_core::Result<Self> {
+        require_https(&url)?;
+        Ok(Self(url))
     }
 
     /// Returns the endpoint URL.
@@ -73,17 +99,21 @@ impl Hash for AccountEndpoint {
     }
 }
 
-impl From<Url> for AccountEndpoint {
-    fn from(url: Url) -> Self {
-        Self::new(url)
+impl TryFrom<Url> for AccountEndpoint {
+    type Error = azure_core::Error;
+
+    fn try_from(url: Url) -> Result<Self, Self::Error> {
+        Self::try_new(url)
     }
 }
 
 impl TryFrom<&str> for AccountEndpoint {
-    type Error = url::ParseError;
+    type Error = azure_core::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Self::new(Url::parse(value)?))
+        let url = Url::parse(value)
+            .map_err(|e| azure_core::Error::new(azure_core::error::ErrorKind::Other, e))?;
+        Self::try_new(url)
     }
 }
 
@@ -96,9 +126,8 @@ impl From<&AccountReference> for AccountEndpoint {
 impl<'de> serde::Deserialize<'de> for AccountEndpoint {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        Url::parse(&s)
-            .map(Self::new)
-            .map_err(serde::de::Error::custom)
+        let url = Url::parse(&s).map_err(serde::de::Error::custom)?;
+        Self::try_new(url).map_err(serde::de::Error::custom)
     }
 }
 
@@ -140,6 +169,13 @@ impl From<Arc<dyn TokenCredential>> for Credential {
 /// Contains the service endpoint and authentication credentials. Authentication
 /// is required - use [`AccountReferenceBuilder`] to construct an instance.
 ///
+/// # Endpoint scheme
+///
+/// Cosmos DB account endpoints must use the `https` scheme. Any other scheme
+/// (including `http://localhost` and `http://127.0.0.1`) is rejected to avoid
+/// leaking tokens or master keys over an unencrypted channel. The Cosmos DB
+/// service and the Cosmos DB Emulator both serve HTTPS.
+///
 /// # Examples
 ///
 /// ```
@@ -158,7 +194,8 @@ impl From<Arc<dyn TokenCredential>> for Credential {
 /// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 ///     "my-master-key",
-/// );
+/// )
+/// .unwrap();
 /// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -202,23 +239,34 @@ impl AccountReference {
     /// Creates a new account reference with master key authentication.
     ///
     /// This is a convenience method for the common case of key-based auth.
-    pub fn with_master_key(endpoint: Url, key: impl Into<Secret>) -> Self {
-        Self {
-            endpoint: AccountEndpoint::from(endpoint),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `endpoint` does not use the `https` scheme.
+    pub fn with_master_key(endpoint: Url, key: impl Into<Secret>) -> azure_core::Result<Self> {
+        Ok(Self {
+            endpoint: AccountEndpoint::try_new(endpoint)?,
             credential: Credential::MasterKey(key.into()),
             backup_endpoints: Vec::new(),
-        }
+        })
     }
 
     /// Creates a new account reference with token credential authentication.
     ///
     /// This is a convenience method for token-based auth (e.g., managed identity).
-    pub fn with_credential(endpoint: Url, credential: Arc<dyn TokenCredential>) -> Self {
-        Self {
-            endpoint: AccountEndpoint::from(endpoint),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `endpoint` does not use the `https` scheme.
+    pub fn with_credential(
+        endpoint: Url,
+        credential: Arc<dyn TokenCredential>,
+    ) -> azure_core::Result<Self> {
+        Ok(Self {
+            endpoint: AccountEndpoint::try_new(endpoint)?,
             credential: Credential::TokenCredential(credential),
             backup_endpoints: Vec::new(),
-        }
+        })
     }
 
     /// Returns the service endpoint URL.
@@ -246,9 +294,16 @@ impl AccountReference {
     /// was created via a convenience constructor (`with_master_key`,
     /// `with_credential`) and backup endpoints need to be attached without
     /// going through the full builder.
-    pub fn with_backup_endpoints(mut self, endpoints: Vec<Url>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any backup endpoint does not use the `https` scheme.
+    pub fn with_backup_endpoints(mut self, endpoints: Vec<Url>) -> azure_core::Result<Self> {
+        for ep in &endpoints {
+            require_https(ep)?;
+        }
         self.backup_endpoints = endpoints;
-        self
+        Ok(self)
     }
 }
 
@@ -272,16 +327,18 @@ impl AccountReference {
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct AccountReferenceBuilder {
-    endpoint: AccountEndpoint,
+    endpoint: Url,
     credential: Option<Credential>,
     backup_endpoints: Vec<Url>,
 }
 
 impl AccountReferenceBuilder {
     /// Creates a new builder with the specified endpoint.
+    ///
+    /// The endpoint's scheme is validated during [`build()`](Self::build).
     pub fn new(endpoint: Url) -> Self {
         Self {
-            endpoint: AccountEndpoint::from(endpoint),
+            endpoint,
             credential: None,
             backup_endpoints: Vec::new(),
         }
@@ -289,7 +346,7 @@ impl AccountReferenceBuilder {
 
     /// Sets the service endpoint URL.
     pub fn endpoint(mut self, endpoint: Url) -> Self {
-        self.endpoint = AccountEndpoint::from(endpoint);
+        self.endpoint = endpoint;
         self
     }
 
@@ -321,7 +378,9 @@ impl AccountReferenceBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if authentication has not been configured.
+    /// Returns an error if:
+    /// - authentication has not been configured, or
+    /// - the primary endpoint or any backup endpoint does not use the `https` scheme.
     pub fn build(self) -> azure_core::Result<AccountReference> {
         let credential = self.credential.ok_or_else(|| {
             azure_core::Error::with_message(
@@ -330,8 +389,13 @@ impl AccountReferenceBuilder {
             )
         })?;
 
+        let endpoint = AccountEndpoint::try_new(self.endpoint)?;
+        for ep in &self.backup_endpoints {
+            require_https(ep)?;
+        }
+
         Ok(AccountReference {
-            endpoint: self.endpoint,
+            endpoint,
             credential,
             backup_endpoints: self.backup_endpoints,
         })
@@ -419,7 +483,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "my-secret-key",
-        );
+        )
+        .unwrap();
 
         match account.auth() {
             Credential::MasterKey(key) => assert_eq!(key.secret(), "my-secret-key"),
@@ -442,16 +507,56 @@ mod tests {
     }
 
     #[test]
+    fn account_endpoint_deserialize_rejects_http() {
+        let result: serde_json::Result<AccountEndpoint> =
+            serde_json::from_str(r#""http://myaccount.documents.azure.com/""#);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn account_endpoint_try_from_url_rejects_http() {
+        let url = Url::parse("http://myaccount.documents.azure.com/").unwrap();
+        let err = AccountEndpoint::try_from(url).unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn account_endpoint_try_from_str_rejects_http_localhost() {
+        let err = AccountEndpoint::try_from("http://localhost:8081/").unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn account_endpoint_try_from_str_rejects_http_loopback_ipv4() {
+        let err = AccountEndpoint::try_from("http://127.0.0.1:8081/").unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn account_endpoint_try_from_str_rejects_non_http_schemes() {
+        let err = AccountEndpoint::try_from("file:///etc/passwd").unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn account_endpoint_try_from_str_accepts_https_localhost() {
+        let endpoint = AccountEndpoint::try_from("https://localhost:8081/").unwrap();
+        assert_eq!(endpoint.host(), "localhost");
+    }
+
+    #[test]
     fn account_reference_equality_ignores_auth() {
         let account1 = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key1",
-        );
+        )
+        .unwrap();
 
         let account2 = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key2",
-        );
+        )
+        .unwrap();
 
         // Same endpoint, different keys - should be equal
         assert_eq!(account1, account2);
@@ -462,8 +567,80 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key",
-        );
+        )
+        .unwrap();
         assert!(account.backup_endpoints().is_empty());
+    }
+
+    #[test]
+    fn shorthand_rejects_http_endpoint() {
+        let err = AccountReference::with_master_key(
+            Url::parse("http://test.documents.azure.com/").unwrap(),
+            "key",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn with_credential_rejects_http_endpoint() {
+        // Use a no-op token credential just to exercise the path.
+        #[derive(Debug)]
+        struct FakeCred;
+        #[async_trait::async_trait]
+        impl TokenCredential for FakeCred {
+            async fn get_token(
+                &self,
+                _scopes: &[&str],
+                _options: Option<azure_core::credentials::TokenRequestOptions<'_>>,
+            ) -> azure_core::Result<azure_core::credentials::AccessToken> {
+                unimplemented!()
+            }
+        }
+        let cred: Arc<dyn TokenCredential> = Arc::new(FakeCred);
+        let err = AccountReference::with_credential(
+            Url::parse("http://test.documents.azure.com/").unwrap(),
+            cred,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn builder_rejects_http_endpoint() {
+        let err =
+            AccountReference::builder(Url::parse("http://test.documents.azure.com/").unwrap())
+                .master_key("key")
+                .build()
+                .unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn builder_rejects_http_backup_endpoint() {
+        let err =
+            AccountReference::builder(Url::parse("https://test.documents.azure.com/").unwrap())
+                .master_key("key")
+                .with_backup_endpoints(vec![
+                    Url::parse("http://backup.documents.azure.com/").unwrap()
+                ])
+                .build()
+                .unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
+    }
+
+    #[test]
+    fn with_backup_endpoints_rejects_http() {
+        let err = AccountReference::with_master_key(
+            Url::parse("https://test.documents.azure.com/").unwrap(),
+            "key",
+        )
+        .unwrap()
+        .with_backup_endpoints(vec![
+            Url::parse("http://backup.documents.azure.com/").unwrap()
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("https"), "got: {err}");
     }
 
     #[test]

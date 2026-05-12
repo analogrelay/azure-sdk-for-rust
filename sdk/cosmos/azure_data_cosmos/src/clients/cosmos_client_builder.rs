@@ -521,7 +521,7 @@ impl CosmosClientBuilder {
         // should be shared across clients targeting the same account to avoid duplicate
         // background tasks and connection pools. See https://github.com/Azure/azure-sdk-for-rust/issues/3908
         let driver_account =
-            build_driver_account(endpoint, driver_credential, self.backup_endpoints);
+            build_driver_account(endpoint, driver_credential, self.backup_endpoints)?;
         #[cfg(feature = "__internal_in_memory_emulator")]
         let mut driver_runtime_builder = self.driver_runtime_builder.unwrap_or_default();
         #[cfg(not(feature = "__internal_in_memory_emulator"))]
@@ -581,14 +581,14 @@ fn build_driver_account(
     endpoint: azure_core::http::Url,
     credential: CosmosCredential,
     backup_endpoints: Vec<azure_core::http::Url>,
-) -> azure_data_cosmos_driver::models::AccountReference {
+) -> azure_core::Result<azure_data_cosmos_driver::models::AccountReference> {
     let base = match credential {
         CosmosCredential::TokenCredential(tc) => {
-            azure_data_cosmos_driver::models::AccountReference::with_credential(endpoint, tc)
+            azure_data_cosmos_driver::models::AccountReference::with_credential(endpoint, tc)?
         }
         #[cfg(feature = "key_auth")]
         CosmosCredential::MasterKey(key) => {
-            azure_data_cosmos_driver::models::AccountReference::with_master_key(endpoint, key)
+            azure_data_cosmos_driver::models::AccountReference::with_master_key(endpoint, key)?
         }
     };
     base.with_backup_endpoints(backup_endpoints)

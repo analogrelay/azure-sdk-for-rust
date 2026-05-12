@@ -96,6 +96,26 @@ impl FromStr for ConnectionString {
             ));
         };
 
+        // Reject any non-HTTPS endpoint so that credentials cannot be leaked
+        // over an unencrypted channel. Cosmos DB (service and emulator) only
+        // ever serves over HTTPS.
+        let parsed = url::Url::parse(&endpoint).map_err(|e| {
+            Error::with_message(
+                azure_core::error::ErrorKind::Other,
+                format!("invalid connection string 'AccountEndpoint' URL '{endpoint}': {e}"),
+            )
+        })?;
+        if !parsed.scheme().eq_ignore_ascii_case("https") {
+            return Err(Error::with_message(
+                azure_core::error::ErrorKind::Other,
+                format!(
+                    "Cosmos DB account endpoints must use the 'https' scheme; got '{}' for '{}'",
+                    parsed.scheme(),
+                    parsed
+                ),
+            ));
+        }
+
         let Some(key) = account_key else {
             return Err(Error::new(
                 azure_core::error::ErrorKind::Other,
@@ -180,6 +200,30 @@ mod tests {
         test_bad_connection_string(
             "AccountEndpoint=https://accountname.documents.azure.com:443/;",
             "invalid connection string, missing 'AccountKey'",
+        );
+    }
+
+    #[test]
+    fn connection_string_rejects_http_endpoint() {
+        test_bad_connection_string(
+            "AccountEndpoint=http://accountname.documents.azure.com:443/;AccountKey=key",
+            "must use the 'https' scheme",
+        );
+    }
+
+    #[test]
+    fn connection_string_rejects_http_localhost() {
+        test_bad_connection_string(
+            "AccountEndpoint=http://localhost:8081/;AccountKey=key",
+            "must use the 'https' scheme",
+        );
+    }
+
+    #[test]
+    fn connection_string_rejects_invalid_endpoint_url() {
+        test_bad_connection_string(
+            "AccountEndpoint=not-a-url;AccountKey=key",
+            "invalid connection string 'AccountEndpoint' URL",
         );
     }
 

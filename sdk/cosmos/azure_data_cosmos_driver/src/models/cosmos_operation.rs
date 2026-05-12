@@ -39,7 +39,7 @@ use std::borrow::Cow;
 /// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 ///     "my-key",
-/// );
+/// ).unwrap();
 /// let driver = runtime.get_or_create_driver(account, None).await?;
 ///
 /// // 2. Resolve the container (reads database + container from service, caches result)
@@ -207,7 +207,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// let operation = CosmosOperation::create_database(account)
     ///     .with_body(br#"{"id": "my-database"}"#.to_vec());
@@ -252,7 +252,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// let database = DatabaseReference::from_name(account, "my-database");
     /// let operation = CosmosOperation::delete_database(database);
@@ -289,7 +289,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// let database = DatabaseReference::from_name(account, "my-database");
     /// let operation = CosmosOperation::create_container(database)
@@ -339,7 +339,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
@@ -423,7 +423,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
@@ -464,7 +464,7 @@ impl CosmosOperation {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     /// let container = driver.resolve_container("my-database", "my-container").await?;
     ///
@@ -654,6 +654,7 @@ mod tests {
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         )
+        .unwrap()
     }
 
     fn test_partition_key_definition(path: &str) -> PartitionKeyDefinition {

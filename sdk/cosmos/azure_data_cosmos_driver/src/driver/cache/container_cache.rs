@@ -251,6 +251,7 @@ mod tests {
             Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
             "test-key",
         )
+        .unwrap()
     }
 
     const ACCOUNT_ENDPOINT: &str = "https://myaccount.documents.azure.com/";

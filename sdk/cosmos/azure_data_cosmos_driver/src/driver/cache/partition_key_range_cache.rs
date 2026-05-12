@@ -422,7 +422,8 @@ mod tests {
         let account = crate::models::AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key",
-        );
+        )
+        .unwrap();
         let container_props = crate::models::ContainerProperties {
             id: "testcontainer".into(),
             partition_key: serde_json::from_str(r#"{"paths":["/pk"],"version":2}"#).unwrap(),
@@ -452,7 +453,8 @@ mod tests {
         let account = crate::models::AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key",
-        );
+        )
+        .unwrap();
         let container_props = crate::models::ContainerProperties {
             id: "testcontainer".into(),
             partition_key: serde_json::from_str(r#"{"paths":["/pk"],"version":2}"#).unwrap(),
@@ -481,7 +483,8 @@ mod tests {
         let account = crate::models::AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key",
-        );
+        )
+        .unwrap();
         let container_props = crate::models::ContainerProperties {
             id: "testcontainer".into(),
             partition_key: serde_json::from_str(r#"{"paths":["/pk"],"version":2}"#).unwrap(),
@@ -531,7 +534,8 @@ mod tests {
         let account = crate::models::AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "key",
-        );
+        )
+        .unwrap();
         let container_props = crate::models::ContainerProperties {
             id: "testcontainer".into(),
             partition_key: serde_json::from_str(pk_json).unwrap(),

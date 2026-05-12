@@ -58,7 +58,7 @@ async fn main() -> azure_core::Result<()> {
     let account = AccountReference::with_credential(
         Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
         credential,
-    );
+    )?;
 
     // Create the runtime
     let runtime = CosmosDriverRuntime::builder().build().await?;

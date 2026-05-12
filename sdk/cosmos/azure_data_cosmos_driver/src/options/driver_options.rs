@@ -28,7 +28,7 @@ use crate::{
 /// let account = AccountReference::with_master_key(
 ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
 ///     "my-master-key",
-/// );
+/// ).unwrap();
 ///
 /// let operation = OperationOptionsBuilder::new()
 ///     .with_max_failover_retry_count(5)
@@ -137,6 +137,7 @@ mod tests {
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         )
+        .unwrap()
     }
 
     #[test]

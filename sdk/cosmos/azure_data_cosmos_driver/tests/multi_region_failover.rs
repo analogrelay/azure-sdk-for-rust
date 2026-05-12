@@ -24,7 +24,7 @@ fn build_account_from_env() -> Option<AccountReference> {
     let endpoint = read_env("AZURE_COSMOS_ENDPOINT")?;
     let key = read_env("AZURE_COSMOS_KEY")?;
     let url = url::Url::parse(&endpoint).ok()?;
-    Some(AccountReference::with_master_key(url, key))
+    Some(AccountReference::with_master_key(url, key).unwrap())
 }
 
 #[tokio::test]

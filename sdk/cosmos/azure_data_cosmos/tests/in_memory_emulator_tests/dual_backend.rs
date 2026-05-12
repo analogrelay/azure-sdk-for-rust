@@ -88,7 +88,8 @@ impl DualBackend {
         let emulator_account = AccountReference::with_master_key(
             Url::parse(EMULATOR_GATEWAY_URL).unwrap(),
             "dGVzdGtleQ==",
-        );
+        )
+        .unwrap();
         let emulator_driver = emulator_runtime
             .get_or_create_driver(emulator_account.clone(), None)
             .await?;
@@ -355,7 +356,7 @@ async fn resolve_real_account(
     let conn_str: ConnectionString = conn_str_raw.parse()?;
     let endpoint: Url = conn_str.account_endpoint().parse()?;
     let key = conn_str.account_key().secret().to_string();
-    let account = AccountReference::with_master_key(endpoint, key);
+    let account = AccountReference::with_master_key(endpoint, key).unwrap();
 
     let mut pool_builder = ConnectionPoolOptions::builder();
     // If connecting to the local emulator, disable cert validation

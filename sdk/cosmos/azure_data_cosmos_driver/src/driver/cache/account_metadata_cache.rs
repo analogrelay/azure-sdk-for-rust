@@ -388,9 +388,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn test_endpoint(name: &str) -> AccountEndpoint {
-        AccountEndpoint::from(
-            url::Url::parse(&format!("https://{name}.documents.azure.com:443/")).unwrap(),
-        )
+        AccountEndpoint::try_from(format!("https://{name}.documents.azure.com:443/").as_str())
+            .unwrap()
     }
 
     /// Builds a minimal [`AccountProperties`] from JSON with the given region

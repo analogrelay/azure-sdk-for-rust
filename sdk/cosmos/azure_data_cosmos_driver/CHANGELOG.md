@@ -10,6 +10,8 @@
 
 ### Breaking Changes
 
+- Cosmos DB account endpoints are now required to use the `https` scheme. Constructing an `AccountEndpoint` or an `AccountReference` (including via `with_master_key`, `with_credential`, `AccountReferenceBuilder::build`, `ConnectionString` parsing, or deserialization) from a URL with any other scheme — including `http://localhost` — returns an error. `From<Url> for AccountEndpoint` was replaced with `TryFrom<Url>`; the `AccountReference::with_master_key`, `with_credential`, and `with_backup_endpoints` shorthand constructors now return `azure_core::Result<Self>`. This prevents accidental transmission of master keys or Entra ID tokens over an unencrypted channel; the Cosmos DB service and emulator both serve over HTTPS only. ([Unreleased — PR TBD](#))
+
 ### Bugs Fixed
 
 - PPCB now records every 5xx failure for the affected partition, including the final failure that exhausts the failover retry budget. Previously the budget-exhausted abort path skipped emitting `MarkPartitionUnavailable`, causing the most diagnostic failure to be silently dropped from PPCB's per-partition counter. ([#4156](https://github.com/Azure/azure-sdk-for-rust/pull/4156))

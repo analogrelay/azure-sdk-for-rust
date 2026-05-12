@@ -429,7 +429,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
-        );
+        )
+        .unwrap();
         ContainerReference::new(
             account,
             "testdb",
@@ -444,7 +445,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
-        );
+        )
+        .unwrap();
         ContainerReference::new(
             account,
             "testdb",

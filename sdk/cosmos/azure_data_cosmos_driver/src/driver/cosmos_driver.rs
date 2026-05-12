@@ -459,12 +459,12 @@ impl CosmosDriver {
             .readable_locations
             .iter()
             .filter_map(|loc| {
-                let url = loc.database_account_endpoint.url().clone();
-                let ep = AccountEndpoint::from(url.clone());
-                if ep == *primary_endpoint {
+                // `database_account_endpoint` was already validated as https when
+                // the AccountProperties payload was deserialized.
+                if loc.database_account_endpoint == *primary_endpoint {
                     None
                 } else {
-                    Some(url)
+                    Some(loc.database_account_endpoint.url().clone())
                 }
             })
             .collect();
@@ -1128,7 +1128,7 @@ impl CosmosDriver {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     ///
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     ///
@@ -1288,7 +1288,7 @@ impl CosmosDriver {
     /// let account = AccountReference::with_master_key(
     ///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
     ///     "my-key",
-    /// );
+    /// ).unwrap();
     /// let driver = runtime.get_or_create_driver(account, None).await?;
     ///
     /// // Resolve the container (fetched from service on each call)
@@ -1499,7 +1499,7 @@ mod tests {
     }"#;
 
     fn signed_test_account(url: &str) -> AccountReference {
-        AccountReference::with_master_key(Url::parse(url).unwrap(), "dGVzdA==")
+        AccountReference::with_master_key(Url::parse(url).unwrap(), "dGVzdA==").unwrap()
     }
 
     #[derive(Clone, Debug)]
@@ -1588,6 +1588,7 @@ mod tests {
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -1844,7 +1845,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
             "test-key",
-        );
+        )
+        .unwrap();
 
         let region = AccountRegion {
             name: Region::new("West US"),
@@ -1867,7 +1869,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
             "test-key",
-        );
+        )
+        .unwrap();
 
         let endpoint = CosmosDriver::endpoint_for_write_region(&account, None);
         assert_eq!(endpoint.url().as_str(), account.endpoint().as_str());

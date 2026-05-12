@@ -646,7 +646,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "dGVzdA==", // base64 "test"
-        );
+        )
+        .unwrap();
         let db_ref = DatabaseReference::from_name(account, "testdb".to_owned());
         CosmosOperation::read_database(db_ref)
     }
@@ -656,7 +657,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             url::Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "dGVzdA==",
-        );
+        )
+        .unwrap();
         CosmosOperation::create_database(account)
     }
 

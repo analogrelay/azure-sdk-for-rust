@@ -539,6 +539,7 @@ mod tests {
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "test-key",
         )
+        .unwrap()
     }
 
     fn test_partition_key_definition() -> PartitionKeyDefinition {

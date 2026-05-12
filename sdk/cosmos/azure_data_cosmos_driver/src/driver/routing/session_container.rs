@@ -154,7 +154,8 @@ mod tests {
         let account = AccountReference::with_master_key(
             Url::parse("https://test.documents.azure.com:443/").unwrap(),
             "dGVzdA==",
-        );
+        )
+        .unwrap();
         let pk_def: PartitionKeyDefinition = serde_json::from_str(r#"{"paths":["/pk"]}"#).unwrap();
         let props = ContainerProperties {
             id: Cow::Owned(coll_name.to_owned()),
