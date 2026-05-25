@@ -15,7 +15,10 @@
 
 use std::time::{Duration, Instant};
 
-use azure_core::error::ErrorKind;
+use azure_core::{
+    error::ErrorKind,
+    http::headers::{Headers, AUTHORIZATION},
+};
 use futures::{future::Either, pin_mut};
 use tracing::trace;
 
@@ -85,6 +88,22 @@ fn forced_final_retry_delay(deadline: Option<Instant>) -> Option<Duration> {
         ),
         None => Some(Duration::ZERO),
     }
+}
+
+fn format_http_headers(headers: &Headers) -> String {
+    headers
+        .iter()
+        .map(|(name, value)| {
+            let value = if *name == AUTHORIZATION {
+                "REDACTED"
+            } else {
+                value.as_str()
+            };
+
+            format!("{}: {}", name.as_str(), value)
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Decides whether to retry a 429 throttling response at the transport level.
@@ -162,6 +181,10 @@ pub(crate) struct TransportPipelineContext<'a> {
 /// operation pipeline for higher-level decision making.
 ///
 /// This is the core transport loop described in §5.2 of the spec.
+#[tracing::instrument(skip_all, fields(
+    method = ?request.method,
+    endpoint = %request.endpoint,
+))]
 pub(crate) async fn execute_transport_pipeline(
     request: TransportRequest,
     ctx: &TransportPipelineContext<'_>,
@@ -266,6 +289,14 @@ pub(crate) async fn execute_transport_pipeline(
             None
         };
 
+        tracing::debug!(
+            request_handle = ?request_handle,
+            url = %request.url,
+            method = %request.method,
+            headers = format_http_headers(&http_request.headers),
+            "starting transport attempt"
+        );
+
         let result = execute_http_attempt(
             &http_request,
             ctx.transport,
@@ -284,10 +315,36 @@ pub(crate) async fn execute_transport_pipeline(
                 diagnostics.set_fault_injection_evaluations(request_handle, evals);
             }
         }
-        tracing::debug!(
-            outcome = ?result.result.outcome,
-            "transport request complete"
-        );
+
+        // If debug tracing is enabled, we collect more detailed information about the outcome of each transport attempt.
+        // We'll also log transport errors at the error level, but ONLY if debug tracing is enabled. This is a little
+        // wonky, but it allows us to avoid logging noisy transient errors unless the user has explicitly enabled debug logging for troubleshooting.
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            match result.result.outcome {
+                TransportOutcome::Success { status, .. } => {
+                    tracing::debug!(%status, "transport attempt succeeded")
+                }
+                TransportOutcome::HttpError {
+                    status,
+                    ref body,
+                    request_sent,
+                    ..
+                } => {
+                    let body_str = String::from_utf8_lossy(body);
+                    tracing::error!(%status, %request_sent, "transport attempt resulted in HTTP error: {}", body_str)
+                }
+                TransportOutcome::TransportError {
+                    ref error,
+                    request_sent,
+                    ..
+                } => {
+                    tracing::error!(%request_sent, "transport attempt resulted in transport error: {}", error)
+                }
+                TransportOutcome::DeadlineExceeded { request_sent } => {
+                    tracing::error!(%request_sent, "request deadline exceeded");
+                }
+            }
+        }
 
         if result.shard_id.is_some_and(|failed_shard_id| {
             local_connectivity_retry_count < MAX_LOCAL_CONNECTIVITY_RETRIES
@@ -371,6 +428,9 @@ fn deadline_exceeded_result(request_sent: RequestSentStatus) -> TransportResult 
     TransportResult::deadline_exceeded(request_sent)
 }
 
+#[tracing::instrument(skip_all, fields(
+    endpoint = %endpoint_key,
+))]
 async fn execute_http_attempt(
     http_request: &HttpRequest,
     transport: &AdaptiveTransport,
@@ -881,6 +941,33 @@ mod tests {
         let timeout = remaining_request_timeout(Some(Instant::now() - Duration::from_millis(1)))
             .expect("timeout should be present when deadline exists");
         assert_eq!(timeout, Duration::from_millis(1));
+    }
+
+    #[test]
+    fn format_http_headers_writes_raw_names_and_values() {
+        let mut headers = azure_core::http::headers::Headers::new();
+        headers.insert("x-ms-date", "Tue, 25 May 2026 00:00:00 GMT");
+        headers.insert("content-type", "application/json");
+
+        let formatted = format_http_headers(&headers);
+
+        assert!(!formatted.contains('\n'));
+        assert!(formatted.contains("x-ms-date: Tue, 25 May 2026 00:00:00 GMT"));
+        assert!(formatted.contains("content-type: application/json"));
+    }
+
+    #[test]
+    fn format_http_headers_redacts_only_authorization() {
+        let mut headers = azure_core::http::headers::Headers::new();
+        headers.insert("authorization", "Bearer secret-token");
+        headers.insert("x-ms-session-token", "raw-session-token");
+
+        let formatted = format_http_headers(&headers);
+
+        assert!(!formatted.contains('\n'));
+        assert!(formatted.contains("authorization: REDACTED"));
+        assert!(!formatted.contains("Bearer secret-token"));
+        assert!(formatted.contains("x-ms-session-token: raw-session-token"));
     }
 
     #[tokio::test]

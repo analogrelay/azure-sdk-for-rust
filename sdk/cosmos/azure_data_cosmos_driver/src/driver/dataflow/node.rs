@@ -64,7 +64,7 @@ impl std::fmt::Debug for PageResult {
 /// allocation is negligible compared to the multi-millisecond network I/O
 /// of a Cosmos DB request.
 #[async_trait]
-pub(crate) trait PipelineNode: Send + std::any::Any {
+pub(crate) trait PipelineNode: std::fmt::Debug + Send + std::any::Any {
     /// Emits the next page of results, signals drain completion, or requests a split.
     async fn next_page(
         &mut self,

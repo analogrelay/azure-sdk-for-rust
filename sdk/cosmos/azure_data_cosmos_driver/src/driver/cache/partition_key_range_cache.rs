@@ -318,17 +318,17 @@ where
 
         tracing::trace!(
             iteration,
-            range_count = result.ranges.len(),
-            "Received partition key ranges"
+            "Received partition key ranges: {:?}",
+            result.ranges,
         );
         all_ranges.extend(result.ranges);
     }
 
     tracing::debug!(
         iterations = iterations_completed,
-        total_ranges = all_ranges.len(),
         not_modified = received_not_modified,
-        "Partition key range fetch loop completed"
+        "Partition key range fetch loop completed. Routing Map: {:?}",
+        all_ranges
     );
 
     if !received_not_modified && !all_ranges.is_empty() {

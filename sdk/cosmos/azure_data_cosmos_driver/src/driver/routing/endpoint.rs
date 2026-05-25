@@ -28,6 +28,12 @@ struct CosmosEndpointData {
 #[derive(Clone, Debug)]
 pub(crate) struct CosmosEndpoint(Arc<CosmosEndpointData>);
 
+impl std::fmt::Display for CosmosEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.endpoint_key())
+    }
+}
+
 impl PartialEq for CosmosEndpoint {
     fn eq(&self, other: &Self) -> bool {
         *self.0 == *other.0

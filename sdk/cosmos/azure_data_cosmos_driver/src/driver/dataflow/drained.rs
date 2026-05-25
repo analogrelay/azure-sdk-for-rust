@@ -13,6 +13,7 @@ use async_trait::async_trait;
 
 use super::{PageResult, PipelineContext, PipelineNode, PipelineNodeState};
 
+#[derive(Debug)]
 pub(crate) struct DrainedLeaf;
 
 #[async_trait]

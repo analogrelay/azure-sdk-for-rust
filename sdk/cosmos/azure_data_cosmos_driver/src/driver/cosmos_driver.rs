@@ -71,7 +71,7 @@ fn request_target_overrides(
             ..
         } => OperationOverrides {
             partition_key_range_id: Some(partition_key_range_id),
-            feed_range: Some(range),
+            feed_range: range,
             continuation,
             ..Default::default()
         },
@@ -1086,11 +1086,17 @@ impl CosmosDriver {
                     }
                 };
                 match parse_pk_ranges_response(&body_bytes) {
-                    Some(ranges) => Some(PkRangeFetchResult {
-                        ranges,
-                        continuation: etag,
-                        not_modified: false,
-                    }),
+                    Some(ranges) => {
+                        tracing::trace!(
+                            container = %container.name(),
+                            "Fetched partition key ranges from service: {:?}", ranges
+                        );
+                        Some(PkRangeFetchResult {
+                            ranges,
+                            continuation: etag,
+                            not_modified: false,
+                        })
+                    }
                     None => {
                         tracing::error!(
                             container = %container.name(),
@@ -1239,6 +1245,7 @@ impl CosmosDriver {
     /// # Ok(())
     /// # }
     /// ```
+    #[tracing::instrument(skip_all)]
     pub async fn execute_operation(
         &self,
         operation: CosmosOperation,
@@ -1278,6 +1285,7 @@ impl CosmosDriver {
     ///
     /// This is a convenience method around [`execute_operation`](CosmosDriver::execute_operation) that asserts at debug-time that the operation
     /// does not return an empty page.
+    #[tracing::instrument(skip_all)]
     pub async fn execute_singleton_operation(
         &self,
         operation: CosmosOperation,
@@ -1310,6 +1318,9 @@ impl CosmosDriver {
     /// (e.g. topology repairs, advancing page state, etc.).
     /// After this returns, the plan may be executed again to fetch the next page of results, if any.
     /// Once this returns `None`, there are no more pages to fetch, and the operation is complete.
+    #[tracing::instrument(skip_all, fields(
+        op = plan.operation().tracing_repr()
+    ))]
     pub async fn execute_plan(
         &self,
         plan: &mut OperationPlan,
@@ -1354,9 +1365,6 @@ impl CosmosDriver {
         options: &OperationOptions,
     ) -> azure_core::Result<CosmosResponse> {
         tracing::debug!(
-            operation_type = ?operation.operation_type(),
-            resource_type = ?operation.resource_type(),
-            resource_reference = ?operation.resource_reference(),
             overrides = ?overrides,
             body_length = operation.body().map(|b| b.len()),
             "executing operation");
@@ -1586,6 +1594,12 @@ impl CosmosDriver {
     ///   for trivial operations; passing one to a cross-partition query
     ///   returns a [`DataConversion`](azure_core::error::ErrorKind::DataConversion)
     ///   error.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            op = operation.tracing_repr(),
+        )
+    )]
     pub async fn plan_operation(
         &self,
         operation: CosmosOperation,
@@ -1603,7 +1617,7 @@ impl CosmosDriver {
             ));
         }
 
-        tracing::debug!(operation_type = ?operation.operation_type(), resource_type = ?operation.resource_type(), resource_reference = ?operation.resource_reference(), "planning operation");
+        tracing::debug!("planning operation");
 
         // Share the operation across every Request node in the resulting plan.
         // Per-Request differences are layered on at execution time via
@@ -2557,16 +2571,41 @@ mod tests {
         )
         .unwrap();
         let overrides = request_target_overrides(
-            RequestTarget::EffectivePartitionKeyRange {
-                range: range.clone(),
-                partition_key_range_id: "merged".to_string(),
-            },
+            RequestTarget::effective_partition_key_range(
+                range.clone(),
+                "merged".to_string(),
+                crate::models::FeedRange::new(
+                    EffectivePartitionKey::from("00"),
+                    EffectivePartitionKey::from("40"),
+                )
+                .unwrap(),
+            ),
             Some("ct".to_string()),
         );
 
         assert_eq!(overrides.partition_key_range_id.as_deref(), Some("merged"));
         assert_eq!(overrides.continuation.as_deref(), Some("ct"));
         assert_eq!(overrides.feed_range, Some(range));
+    }
+
+    #[test]
+    fn effective_partition_key_range_override_omits_exact_feed_range() {
+        let range = crate::models::FeedRange::new(
+            EffectivePartitionKey::from("10"),
+            EffectivePartitionKey::from("20"),
+        )
+        .unwrap();
+        let overrides = request_target_overrides(
+            RequestTarget::effective_partition_key_range(
+                range.clone(),
+                "pkrange".to_string(),
+                range,
+            ),
+            None,
+        );
+
+        assert_eq!(overrides.partition_key_range_id.as_deref(), Some("pkrange"));
+        assert_eq!(overrides.feed_range, None);
     }
 
     #[tokio::test]

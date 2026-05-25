@@ -236,6 +236,12 @@ impl fmt::Debug for ShardedHttpTransport {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct EndpointKey(Arc<str>);
 
+impl std::fmt::Display for EndpointKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl TryFrom<&Url> for EndpointKey {
     type Error = azure_core::Error;
 

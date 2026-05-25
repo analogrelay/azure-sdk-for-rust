@@ -27,6 +27,7 @@ const MAX_SPLIT_RETRIES: usize = 10;
 /// Each call to `next_page` returns the next page from the left-most (lowest EPK)
 /// child. When that child is drained, it is removed and the next child becomes active.
 /// When all children are drained, the node itself is drained.
+#[derive(Debug)]
 pub(crate) struct SequentialDrain {
     children: VecDeque<Box<dyn PipelineNode>>,
 }
@@ -44,10 +45,12 @@ impl SequentialDrain {
 
 #[async_trait]
 impl PipelineNode for SequentialDrain {
+    #[tracing::instrument(name = "sequential_drain", skip_all)]
     async fn next_page(
         &mut self,
         context: &mut PipelineContext<'_>,
     ) -> azure_core::Result<PageResult> {
+        tracing::debug!("executing drain");
         let mut split_retries = 0;
 
         loop {
@@ -60,6 +63,7 @@ impl PipelineNode for SequentialDrain {
                     response,
                     is_terminal,
                 } => {
+                    tracing::debug!(is_terminal, "child node emitted a page");
                     if is_terminal {
                         // The front child has emitted its last page; evict it
                         // now so a snapshot taken after this call no longer
@@ -77,10 +81,18 @@ impl PipelineNode for SequentialDrain {
                     });
                 }
                 PageResult::Drained => {
+                    tracing::debug!("child node drained; advancing to next child");
                     self.children.pop_front();
                     // Loop to try the next child.
                 }
                 PageResult::SplitRequired { replacement_nodes } => {
+                    tracing::debug!(
+                        "child node requested split into replacement nodes: {:?}",
+                        replacement_nodes
+                            .iter()
+                            .map(|n| n.feed_range())
+                            .collect::<Vec<_>>()
+                    );
                     split_retries += 1;
                     if split_retries > MAX_SPLIT_RETRIES {
                         // This should be ridiculously rare.

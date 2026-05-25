@@ -89,6 +89,11 @@ impl OperationPlan {
         }
     }
 
+    /// Returns a reference to the operation this plan is for.
+    pub(crate) fn operation(&self) -> &CosmosOperation {
+        &self.operation
+    }
+
     /// Snapshots this plan into a [`ContinuationToken`] suitable for cross-process
     /// resumption.
     ///

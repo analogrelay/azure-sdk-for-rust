@@ -91,6 +91,14 @@ impl CosmosOperation {
         &self.resource_reference
     }
 
+    pub(crate) fn tracing_repr(&self) -> String {
+        let mut repr = format!("{} {}", self.operation_type, self.resource_reference);
+        if let Some(target) = &self.target {
+            repr.push_str(&format!("@{}", target.tracing_repr()));
+        }
+        repr
+    }
+
     /// Computes the request path and signing link for this operation.
     ///
     /// Create and Upsert document operations use feed-style paths (targeting

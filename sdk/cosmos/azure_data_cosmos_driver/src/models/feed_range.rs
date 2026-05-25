@@ -27,6 +27,26 @@ use crate::models::{partition_key_range::PartitionKeyRange, PartitionKeyDefiniti
 #[safe(true)]
 pub struct FeedRange(FeedRangeRepr);
 
+impl FeedRange {
+    pub(crate) fn tracing_repr(&self) -> String {
+        match &self.0 {
+            FeedRangeRepr::LogicalPartition { partition_key, .. } => {
+                format!("lpk({:?})", partition_key.values())
+            }
+            FeedRangeRepr::Range {
+                min_inclusive,
+                max_exclusive,
+            } => {
+                format!(
+                    "epk([{}, {}))",
+                    min_inclusive.as_str(),
+                    max_exclusive.as_str()
+                )
+            }
+        }
+    }
+}
+
 #[derive(Clone, SafeDebug, PartialEq, Eq, Hash)]
 #[safe(true)]
 enum FeedRangeRepr {

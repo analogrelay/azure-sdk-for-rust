@@ -14,13 +14,15 @@ use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
 
 use crate::{
     diagnostics::{DiagnosticsContextBuilder, ExecutionContext, PipelineType, TransportSecurity},
-    driver::routing::{
-        can_circuit_breaker_trigger_failover, is_eligible_for_ppaf, is_eligible_for_ppcb,
-        partition_endpoint_state::HealthStatus, partition_key_range_id::PartitionKeyRangeId,
-        remove_probe_succeeded_entry, session_manager::SessionManager, AccountEndpointState,
-        CosmosEndpoint, LocationEffect, LocationSnapshot, LocationStateStore,
+    driver::{
+        routing::{
+            can_circuit_breaker_trigger_failover, is_eligible_for_ppaf, is_eligible_for_ppcb,
+            partition_endpoint_state::HealthStatus, partition_key_range_id::PartitionKeyRangeId,
+            remove_probe_succeeded_entry, session_manager::SessionManager, AccountEndpointState,
+            CosmosEndpoint, LocationEffect, LocationSnapshot, LocationStateStore,
+        },
+        transport::CosmosTransport,
     },
-    driver::transport::CosmosTransport,
     models::{
         cosmos_headers::QUERY_CONTENT_TYPE, request_header_names, AccountEndpoint, ActivityId,
         CosmosOperation, CosmosResponse, Credential, DefaultConsistencyLevel,
@@ -89,12 +91,20 @@ impl OperationOverrides {
                     HeaderValue::from(feed_range.max_exclusive().as_str().to_owned()),
                 );
             }
+            headers.insert(
+                HeaderName::from_static(request_header_names::READ_FEED_KEY_TYPE),
+                HeaderValue::from_static("EffectivePartitionKey"),
+            );
         }
 
         if let Some(pk_range_id) = &self.partition_key_range_id {
             headers.insert(
                 HeaderName::from_static(request_header_names::PARTITION_KEY_RANGE_ID),
                 HeaderValue::from(pk_range_id.clone()),
+            );
+            headers.insert(
+                HeaderName::from_static(request_header_names::READ_FEED_KEY_TYPE),
+                HeaderValue::from_static("EffectivePartitionKey"),
             );
         }
 
@@ -125,6 +135,9 @@ impl OperationOverrides {
 /// `OperationRetryState` so that partition-level failover overrides (PPAF/PPCB)
 /// can take effect from the very first attempt.
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip_all, fields(
+    op = operation.tracing_repr(),
+))]
 pub(crate) async fn execute_operation_pipeline(
     operation: &CosmosOperation,
     overrides: OperationOverrides,
@@ -144,6 +157,7 @@ pub(crate) async fn execute_operation_pipeline(
     throughput_control: Option<&ThroughputControlGroupSnapshot>,
     pre_resolved_pk_range_id: Option<PartitionKeyRangeId>,
 ) -> azure_core::Result<CosmosResponse> {
+    tracing::debug!("starting operation pipeline execution");
     let mut diagnostics = diagnostics;
     let location_snapshot = location_state_store.snapshot();
     let max_failover_retries = options.max_failover_retry_count().copied().unwrap_or(3);
