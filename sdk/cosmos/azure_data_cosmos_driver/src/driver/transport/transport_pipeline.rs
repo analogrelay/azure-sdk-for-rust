@@ -1107,6 +1107,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 0,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1168,6 +1169,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_millis(1),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1238,6 +1240,7 @@ mod tests {
                     // Generous budget so the cumulative-wait cap is never the
                     // limiter for these small attempt counts.
                     max_throttle_wait_time: Duration::from_secs(300),
+                    async_runtime: &get_async_runtime(),
                 },
                 &mut diagnostics,
             )

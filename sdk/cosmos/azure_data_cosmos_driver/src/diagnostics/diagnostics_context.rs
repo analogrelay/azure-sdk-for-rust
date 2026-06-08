@@ -1300,6 +1300,8 @@ impl DiagnosticsContextBuilder {
             machine_id: self.machine_id.clone(),
             #[cfg(feature = "fault_injection")]
             fault_injection_enabled: self.fault_injection_enabled,
+            custom_http_client: self.custom_http_client,
+            custom_async_runtime: self.custom_async_runtime,
             hedge_diagnostics: None,
             #[cfg(test)]
             test_system_usage: self.test_system_usage.clone(),

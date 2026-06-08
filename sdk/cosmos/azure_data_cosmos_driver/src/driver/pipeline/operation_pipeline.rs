@@ -2223,6 +2223,7 @@ async fn perform_single_attempt(
             endpoint_key: routing.endpoint.endpoint_key(),
             max_throttle_attempts,
             max_throttle_wait_time,
+            async_runtime: ctx.transport.async_runtime(),
         },
         diagnostics,
     )

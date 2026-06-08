@@ -1595,27 +1595,8 @@ impl CosmosDriver {
         let resource_type = operation.resource_type();
         let is_dataplane = uses_dataplane_pipeline(resource_type, operation_type);
         // Step 7: Initialize diagnostics
-        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
-            activity_id.clone(),
-            std::sync::Arc::new(DiagnosticsOptions::default()),
-        );
-        diagnostics_builder.set_cpu_monitor(self.runtime.cpu_monitor().clone());
-        diagnostics_builder.set_machine_id(Arc::clone(self.runtime.machine_id()));
-        if self.runtime.fault_injection_enabled() {
-            #[cfg(feature = "fault_injection")]
-            diagnostics_builder.set_fault_injection_enabled(true);
-        }
-        // Step 7: Initialize diagnostics
-        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
-            activity_id.clone(),
-            std::sync::Arc::new(DiagnosticsOptions::default()),
-        );
-        diagnostics_builder.set_cpu_monitor(self.runtime.cpu_monitor().clone());
-        diagnostics_builder.set_machine_id(Arc::clone(self.runtime.machine_id()));
-        if self.runtime.fault_injection_enabled() {
-            #[cfg(feature = "fault_injection")]
-            diagnostics_builder.set_fault_injection_enabled(true);
-        }
+        let (mut diagnostics_builder, transport_security) =
+            Self::new_diagnostics_envelope(&self.runtime, activity_id.clone(), &endpoint);
         if self.runtime.custom_http_client_factory() {
             diagnostics_builder.set_custom_http_client(true);
         }
@@ -2672,7 +2653,7 @@ mod tests {
         // the runtime tracks the flag but the pipeline forgets to stamp it.
         let mut diagnostics_builder = DiagnosticsContextBuilder::new(
             ActivityId::new_uuid(),
-            std::sync::Arc::new(DiagnosticsOptions::default()),
+            std::sync::Arc::new(crate::options::DiagnosticsOptions::default()),
         );
         if runtime.custom_http_client_factory() {
             diagnostics_builder.set_custom_http_client(true);

@@ -912,6 +912,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         // Bootstrap: succeeds, seeds the cache.
