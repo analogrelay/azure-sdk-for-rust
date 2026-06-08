@@ -1594,9 +1594,34 @@ impl CosmosDriver {
         let operation_type = operation.operation_type();
         let resource_type = operation.resource_type();
         let is_dataplane = uses_dataplane_pipeline(resource_type, operation_type);
-        // Step 7: Initialize diagnostics (shared envelope shape with the bootstrap fetch).
-        let (diagnostics_builder, transport_security) =
-            Self::new_diagnostics_envelope(&self.runtime, activity_id.clone(), &endpoint);
+        // Step 7: Initialize diagnostics
+        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
+            activity_id.clone(),
+            std::sync::Arc::new(DiagnosticsOptions::default()),
+        );
+        diagnostics_builder.set_cpu_monitor(self.runtime.cpu_monitor().clone());
+        diagnostics_builder.set_machine_id(Arc::clone(self.runtime.machine_id()));
+        if self.runtime.fault_injection_enabled() {
+            #[cfg(feature = "fault_injection")]
+            diagnostics_builder.set_fault_injection_enabled(true);
+        }
+        // Step 7: Initialize diagnostics
+        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
+            activity_id.clone(),
+            std::sync::Arc::new(DiagnosticsOptions::default()),
+        );
+        diagnostics_builder.set_cpu_monitor(self.runtime.cpu_monitor().clone());
+        diagnostics_builder.set_machine_id(Arc::clone(self.runtime.machine_id()));
+        if self.runtime.fault_injection_enabled() {
+            #[cfg(feature = "fault_injection")]
+            diagnostics_builder.set_fault_injection_enabled(true);
+        }
+        if self.runtime.custom_http_client_factory() {
+            diagnostics_builder.set_custom_http_client(true);
+        }
+        if self.runtime.custom_async_runtime() {
+            diagnostics_builder.set_custom_async_runtime(true);
+        }
 
         let pipeline_type = if is_dataplane {
             PipelineType::DataPlane

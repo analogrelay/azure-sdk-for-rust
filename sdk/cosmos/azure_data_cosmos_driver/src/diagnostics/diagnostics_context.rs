@@ -1055,8 +1055,24 @@ struct DiagnosticsOutput<'a> {
     system_usage: Option<SystemUsageSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     machine_id: Option<&'a str>,
+    /// Whether the operation ran on a Cosmos driver runtime whose HTTP
+    /// client factory was caller-supplied (i.e. not the default reqwest
+    /// factory). Elided from the payload when `false` to keep the
+    /// default-configuration output byte-for-byte identical.
+    #[serde(skip_serializing_if = "is_false")]
+    custom_http_client: bool,
+    /// Whether the operation ran on a Cosmos driver runtime whose async
+    /// runtime was caller-supplied (i.e. not the default tokio runtime).
+    /// Elided from the payload when `false`.
+    #[serde(skip_serializing_if = "is_false")]
+    custom_async_runtime: bool,
     #[serde(flatten)]
     payload: DiagnosticsPayload<'a>,
+}
+
+#[inline]
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// Summary of requests in a single region.
@@ -1214,6 +1230,16 @@ pub(crate) struct DiagnosticsContextBuilder {
     /// `None` when hedging was not selected for this operation.
     hedge_diagnostics: Option<HedgeDiagnostics>,
 
+    /// Whether the operation ran on a Cosmos driver runtime whose HTTP
+    /// client factory was caller-supplied (i.e. not the default reqwest
+    /// factory). Surfaced via [`DiagnosticsContext::custom_http_client`].
+    custom_http_client: bool,
+
+    /// Whether the operation ran on a Cosmos driver runtime whose async
+    /// runtime was caller-supplied (i.e. not the default tokio runtime).
+    /// Surfaced via [`DiagnosticsContext::custom_async_runtime`].
+    custom_async_runtime: bool,
+
     /// Test-only override for system usage snapshot, bypassing the CPU monitor.
     #[cfg(test)]
     test_system_usage: Option<SystemUsageSnapshot>,
@@ -1233,6 +1259,8 @@ impl DiagnosticsContextBuilder {
             #[cfg(feature = "fault_injection")]
             fault_injection_enabled: false,
             hedge_diagnostics: None,
+            custom_http_client: false,
+            custom_async_runtime: false,
             #[cfg(test)]
             test_system_usage: None,
         }
@@ -1302,6 +1330,18 @@ impl DiagnosticsContextBuilder {
     #[cfg(feature = "fault_injection")]
     pub(crate) fn fault_injection_enabled(&self) -> bool {
         self.fault_injection_enabled
+    }
+
+    /// Sets whether the operation's driver runtime was built with a
+    /// caller-supplied HTTP client factory.
+    pub(crate) fn set_custom_http_client(&mut self, custom: bool) {
+        self.custom_http_client = custom;
+    }
+
+    /// Sets whether the operation's driver runtime was built with a
+    /// caller-supplied async runtime.
+    pub(crate) fn set_custom_async_runtime(&mut self, custom: bool) {
+        self.custom_async_runtime = custom;
     }
 
     /// Returns the operation-level activity ID.
@@ -1531,6 +1571,8 @@ impl DiagnosticsContextBuilder {
             #[cfg(not(feature = "fault_injection"))]
             fault_injection_enabled: false,
             hedge_diagnostics: self.hedge_diagnostics,
+            custom_http_client: self.custom_http_client,
+            custom_async_runtime: self.custom_async_runtime,
             #[cfg(test)]
             test_system_usage: self.test_system_usage,
             cached_json_detailed: OnceLock::new(),
@@ -1613,6 +1655,16 @@ pub struct DiagnosticsContext {
     /// `Disabled`, eligibility check failed, etc.).
     hedge_diagnostics: Option<HedgeDiagnostics>,
 
+    /// Whether the operation ran on a Cosmos driver runtime whose HTTP
+    /// client factory was caller-supplied (i.e. not the default reqwest
+    /// factory). See [`DiagnosticsContext::custom_http_client`].
+    custom_http_client: bool,
+
+    /// Whether the operation ran on a Cosmos driver runtime whose async
+    /// runtime was caller-supplied (i.e. not the default tokio runtime).
+    /// See [`DiagnosticsContext::custom_async_runtime`].
+    custom_async_runtime: bool,
+
     /// Test-only override for system usage snapshot, bypassing the CPU monitor.
     #[cfg(test)]
     test_system_usage: Option<SystemUsageSnapshot>,
@@ -1687,6 +1739,8 @@ impl DiagnosticsContext {
             machine_id: last.machine_id.clone(),
             fault_injection_enabled: sources.iter().any(|c| c.fault_injection_enabled),
             hedge_diagnostics: None,
+            custom_http_client: sources.iter().any(|c| c.custom_http_client),
+            custom_async_runtime: sources.iter().any(|c| c.custom_async_runtime),
             #[cfg(test)]
             test_system_usage: last.test_system_usage.clone(),
             cached_json_detailed: OnceLock::new(),
@@ -1779,6 +1833,35 @@ impl DiagnosticsContext {
         self.fault_injection_enabled
     }
 
+    /// Returns `true` when the operation ran on a Cosmos driver runtime
+    /// whose HTTP client factory was caller-supplied (i.e. not the default
+    /// reqwest factory).
+    ///
+    /// This is a service-side investigation aid: any value other than
+    /// `false` means the operation went over a transport that Microsoft did
+    /// not produce or validate, which has implications for Azure Support
+    /// coverage. See the `pluggable_runtime` Cargo feature documentation
+    /// and the `with_http_client_factory` setter on
+    /// `CosmosDriverRuntimeBuilder` for details.
+    pub fn custom_http_client(&self) -> bool {
+        self.custom_http_client
+    }
+
+    /// Returns `true` when the operation ran on a Cosmos driver runtime
+    /// whose async runtime was caller-supplied (i.e. not the default tokio
+    /// runtime).
+    ///
+    /// This is a service-side investigation aid: any value other than
+    /// `false` means the operation's spawn / sleep / yield / timeout
+    /// primitives went through a runtime Microsoft did not produce or
+    /// validate, which has implications for Azure Support coverage. See
+    /// the `pluggable_runtime` Cargo feature documentation and the
+    /// `with_async_runtime` setter on `CosmosDriverRuntimeBuilder` for
+    /// details.
+    pub fn custom_async_runtime(&self) -> bool {
+        self.custom_async_runtime
+    }
+
     /// Serializes diagnostics to a JSON string.
     ///
     /// The result is lazily cached - the first call computes the JSON,
@@ -1827,6 +1910,8 @@ impl DiagnosticsContext {
             request_count: self.requests.len(),
             system_usage,
             machine_id: self.machine_id.as_ref().map(|s| s.as_str()),
+            custom_http_client: self.custom_http_client,
+            custom_async_runtime: self.custom_async_runtime,
             payload: DiagnosticsPayload::Requests {
                 requests: &self.requests,
             },
@@ -1863,6 +1948,8 @@ impl DiagnosticsContext {
             request_count: self.requests.len(),
             system_usage: self.resolve_system_usage(),
             machine_id: self.machine_id.as_ref().map(|s| s.as_str()),
+            custom_http_client: self.custom_http_client,
+            custom_async_runtime: self.custom_async_runtime,
             payload: DiagnosticsPayload::Summary {
                 regions: region_summaries,
             },
@@ -1902,6 +1989,8 @@ impl Clone for DiagnosticsContext {
             machine_id: self.machine_id.clone(),
             fault_injection_enabled: self.fault_injection_enabled,
             hedge_diagnostics: self.hedge_diagnostics.clone(),
+            custom_http_client: self.custom_http_client,
+            custom_async_runtime: self.custom_async_runtime,
             #[cfg(test)]
             test_system_usage: self.test_system_usage.clone(),
             // OnceLock does not implement Clone, so we propagate any cached
@@ -1955,6 +2044,12 @@ impl std::fmt::Display for DiagnosticsContext {
         )?;
         if let Some(status) = self.status() {
             write!(f, " status={status}")?;
+        }
+        match (self.custom_http_client, self.custom_async_runtime) {
+            (true, true) => f.write_str(" custom=http,runtime")?,
+            (true, false) => f.write_str(" custom=http")?,
+            (false, true) => f.write_str(" custom=runtime")?,
+            (false, false) => {}
         }
         if f.alternate() {
             f.write_str("\n")?;
@@ -2981,5 +3076,198 @@ mod tests {
         let builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
         let ctx = builder.complete();
         assert_eq!(ctx.machine_id(), None);
+    }
+
+    #[test]
+    fn custom_runtime_flags_default_to_false() {
+        let builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        let ctx = builder.complete();
+        assert!(!ctx.custom_http_client());
+        assert!(!ctx.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_http_client_flag_propagates() {
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        builder.set_custom_http_client(true);
+        let ctx = builder.complete();
+        assert!(ctx.custom_http_client());
+        assert!(!ctx.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_async_runtime_flag_propagates() {
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        builder.set_custom_async_runtime(true);
+        let ctx = builder.complete();
+        assert!(!ctx.custom_http_client());
+        assert!(ctx.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_runtime_flags_clone_round_trip() {
+        let mut builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        builder.set_custom_http_client(true);
+        builder.set_custom_async_runtime(true);
+        let ctx = builder.complete();
+        let cloned = ctx.clone();
+        assert!(cloned.custom_http_client());
+        assert!(cloned.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_runtime_flags_aggregate_any_true() {
+        let mut a_builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        a_builder.set_custom_http_client(true);
+        a_builder.start_test_request(
+            ExecutionContext::Initial,
+            Some(Region::WEST_US_2),
+            "https://test.westus2.documents.azure.com",
+        );
+        let a = Arc::new(a_builder.complete());
+
+        let mut b_builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        b_builder.set_custom_async_runtime(true);
+        b_builder.start_test_request(
+            ExecutionContext::Initial,
+            Some(Region::EAST_US_2),
+            "https://test.eastus2.documents.azure.com",
+        );
+        let b = Arc::new(b_builder.complete());
+
+        let aggregated = DiagnosticsContext::aggregate_sub_operations(&[a, b])
+            .expect("aggregation must succeed for non-empty source");
+        assert!(aggregated.custom_http_client());
+        assert!(aggregated.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_runtime_flags_aggregate_all_false_when_no_sources_custom() {
+        let mut a_builder = DiagnosticsContextBuilder::new(ActivityId::new_uuid(), make_options());
+        a_builder.start_test_request(
+            ExecutionContext::Initial,
+            Some(Region::WEST_US_2),
+            "https://test.westus2.documents.azure.com",
+        );
+        let a = Arc::new(a_builder.complete());
+
+        let aggregated = DiagnosticsContext::aggregate_sub_operations(&[a])
+            .expect("aggregation must succeed for non-empty source");
+        assert!(!aggregated.custom_http_client());
+        assert!(!aggregated.custom_async_runtime());
+    }
+
+    #[test]
+    fn custom_runtime_flags_omitted_from_json_when_false() {
+        let ctx = make_context_with(ActivityId::from_string("test-id".to_string()), |builder| {
+            let handle = builder.start_test_request(
+                ExecutionContext::Initial,
+                Some(Region::WEST_US_2),
+                "https://test.documents.azure.com",
+            );
+            builder.complete_request(handle, StatusCode::Ok, None);
+        });
+
+        let detailed = ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed));
+        let summary = ctx.to_json_string(Some(DiagnosticsVerbosity::Summary));
+        assert!(
+            !detailed.contains("custom_http_client"),
+            "Detailed JSON must elide custom_http_client when false: {detailed}"
+        );
+        assert!(
+            !detailed.contains("custom_async_runtime"),
+            "Detailed JSON must elide custom_async_runtime when false: {detailed}"
+        );
+        assert!(
+            !summary.contains("custom_http_client"),
+            "Summary JSON must elide custom_http_client when false: {summary}"
+        );
+        assert!(
+            !summary.contains("custom_async_runtime"),
+            "Summary JSON must elide custom_async_runtime when false: {summary}"
+        );
+    }
+
+    #[test]
+    fn custom_runtime_flags_emitted_to_json_when_true() {
+        let ctx = make_context_with(ActivityId::from_string("test-id".to_string()), |builder| {
+            builder.set_custom_http_client(true);
+            builder.set_custom_async_runtime(true);
+            let handle = builder.start_test_request(
+                ExecutionContext::Initial,
+                Some(Region::WEST_US_2),
+                "https://test.documents.azure.com",
+            );
+            builder.complete_request(handle, StatusCode::Ok, None);
+        });
+
+        let detailed =
+            normalize_diagnostics_json(ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed)));
+        assert_eq!(
+            detailed.get("custom_http_client").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            detailed
+                .get("custom_async_runtime")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+
+        let summary =
+            normalize_diagnostics_json(ctx.to_json_string(Some(DiagnosticsVerbosity::Summary)));
+        assert_eq!(
+            summary.get("custom_http_client").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            summary
+                .get("custom_async_runtime")
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn custom_http_client_only_emitted_to_json() {
+        let ctx = make_context_with(ActivityId::from_string("test-id".to_string()), |builder| {
+            builder.set_custom_http_client(true);
+            let handle = builder.start_test_request(
+                ExecutionContext::Initial,
+                Some(Region::WEST_US_2),
+                "https://test.documents.azure.com",
+            );
+            builder.complete_request(handle, StatusCode::Ok, None);
+        });
+
+        let detailed = ctx.to_json_string(Some(DiagnosticsVerbosity::Detailed));
+        assert!(detailed.contains("\"custom_http_client\":true"));
+        assert!(!detailed.contains("custom_async_runtime"));
+    }
+
+    #[test]
+    fn custom_runtime_flags_display_segments() {
+        let neither = make_context_with(ActivityId::from_string("a".to_string()), |_| {});
+        assert!(
+            !format!("{neither}").contains("custom="),
+            "Display must omit custom= segment when both flags are false"
+        );
+
+        let http_only = make_context_with(ActivityId::from_string("b".to_string()), |builder| {
+            builder.set_custom_http_client(true);
+        });
+        assert!(format!("{http_only}").contains("custom=http"));
+        assert!(!format!("{http_only}").contains("custom=http,"));
+
+        let runtime_only = make_context_with(ActivityId::from_string("c".to_string()), |builder| {
+            builder.set_custom_async_runtime(true);
+        });
+        assert!(format!("{runtime_only}").contains("custom=runtime"));
+
+        let both = make_context_with(ActivityId::from_string("d".to_string()), |builder| {
+            builder.set_custom_http_client(true);
+            builder.set_custom_async_runtime(true);
+        });
+        assert!(format!("{both}").contains("custom=http,runtime"));
     }
 }
