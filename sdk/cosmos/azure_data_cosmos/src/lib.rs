@@ -56,6 +56,8 @@ pub use feed::{FeedPage, QueryFeedPage, QueryItemIterator, QueryPageIterator};
 mod driver_bridge;
 #[cfg(feature = "fault_injection")]
 pub mod fault_injection;
+#[cfg(feature = "pluggable_runtime")]
+pub mod pluggable_runtime;
 mod region_proximity;
 pub mod regions;
 mod routing_strategy;

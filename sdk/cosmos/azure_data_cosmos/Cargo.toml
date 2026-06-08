@@ -86,6 +86,16 @@ hmac_openssl = ["azure_core/hmac_openssl"]
 fault_injection = [
   "azure_data_cosmos_driver/fault_injection",
 ] # Enables support for fault injection testing
+# `pluggable_runtime` exposes the stable plug-point surface on the Cosmos
+# driver that lets callers supply their own `azure_core::async_runtime::AsyncRuntime`
+# and `HttpClientFactory` to `CosmosClientBuilder::with_driver_runtime_builder`.
+# The default experience (reqwest + tokio) is unchanged. Replacing either
+# plug point puts the SDK outside the configuration Microsoft validates
+# and ships — see the doc comments on
+# `azure_data_cosmos::pluggable_runtime` and on
+# `CosmosClientBuilder::with_driver_runtime_builder` for the Azure Support
+# policy implications.
+pluggable_runtime = ["azure_data_cosmos_driver/pluggable_runtime"]
 __internal_in_memory_emulator = [
   "azure_data_cosmos_driver/__internal_in_memory_emulator",
   "key_auth",
@@ -102,5 +112,6 @@ features = [
   "hmac_rust",
   "key_auth",
   "native_tls",
+  "pluggable_runtime",
   "rustls",
 ]

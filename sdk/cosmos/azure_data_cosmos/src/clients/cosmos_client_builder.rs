@@ -88,8 +88,13 @@ pub struct CosmosClientBuilder {
         Vec<std::sync::Arc<azure_data_cosmos_driver::fault_injection::FaultInjectionRule>>,
     /// Fallback endpoints tried when the primary endpoint is unavailable.
     backup_endpoints: Vec<azure_core::http::Url>,
-    /// Custom driver runtime builder for testing (e.g., in-memory emulator transport).
-    #[cfg(feature = "__internal_in_memory_emulator")]
+    /// Custom driver runtime builder. Used both by the in-memory emulator
+    /// transport (via `__internal_in_memory_emulator`) and by callers who
+    /// enable the stable `pluggable_runtime` feature.
+    #[cfg(any(
+        feature = "pluggable_runtime",
+        feature = "__internal_in_memory_emulator"
+    ))]
     driver_runtime_builder: Option<CosmosDriverRuntimeBuilder>,
 }
 
@@ -254,11 +259,18 @@ impl CosmosClientBuilder {
         self
     }
 
-    /// Provides a pre-configured [`CosmosDriverRuntimeBuilder`] for the client to use.
+    /// Provides a pre-configured [`CosmosDriverRuntimeBuilder`] for the
+    /// client to use, replacing the default driver runtime construction.
     ///
-    /// When set, the client uses this builder instead of creating a default one.
-    /// This enables testing with custom transports such as the
-    /// [`InMemoryEmulatorHttpClient`](azure_data_cosmos_driver::in_memory_emulator::InMemoryEmulatorHttpClient).
+    /// Enable via the `pluggable_runtime` Cargo feature to swap in a custom
+    /// HTTP transport (via
+    /// [`CosmosDriverRuntimeBuilder::with_http_client_factory`](azure_data_cosmos_driver::CosmosDriverRuntimeBuilder)),
+    /// a custom async runtime (via
+    /// `CosmosDriverRuntimeBuilder::with_async_runtime`), or any other
+    /// driver-level setting that the SDK does not surface directly. The
+    /// canonical example is testing against the in-memory emulator
+    /// ([`InMemoryEmulatorHttpClient`](azure_data_cosmos_driver::in_memory_emulator::InMemoryEmulatorHttpClient)),
+    /// historically gated behind `__internal_in_memory_emulator`.
     ///
     /// # Field interactions
     ///
@@ -274,6 +286,14 @@ impl CosmosClientBuilder {
     ///   `with_http_client_factory` ignores its argument since it does not
     ///   perform real HTTP. Tests against the emulator therefore see no
     ///   connection-pool behaviour regardless of what is configured here.
+    /// - **Wrapping SDK identifier** (`with_wrapping_sdk_identifier`): the
+    ///   SDK always sets this to `azsdk-rust-cosmos/<crate-version>`,
+    ///   overwriting any value the caller put on the supplied builder.
+    /// - **PPCB default** (`per_partition_circuit_breaker_enabled`
+    ///   runtime-level option): the SDK reads
+    ///   `AZURE_COSMOS_PER_PARTITION_CIRCUIT_BREAKER_ENABLED` and applies
+    ///   the result (defaulting to `true`) as a runtime-level operation
+    ///   option, overwriting any matching field on the supplied builder.
     /// - **Fault injection rules** (`with_fault_injection_rules`): the SDK
     ///   appends each rule from its own fault-injection builder to the
     ///   rules already configured on the supplied builder (additive). Both
@@ -288,11 +308,14 @@ impl CosmosClientBuilder {
     ///   groups on the supplied builder).
     ///
     /// All other fields on the supplied builder — most importantly
-    /// `with_http_client_factory` (the in-memory emulator transport),
+    /// `with_http_client_factory`, `with_async_runtime`,
     /// `with_cpu_refresh_interval`, and any future fields — are left
     /// untouched and take effect as configured.
-    #[doc(hidden)]
-    #[cfg(feature = "__internal_in_memory_emulator")]
+    #[doc = azure_data_cosmos_driver::support_policy_notice!()]
+    #[cfg(any(
+        feature = "pluggable_runtime",
+        feature = "__internal_in_memory_emulator"
+    ))]
     pub fn with_driver_runtime_builder(mut self, builder: CosmosDriverRuntimeBuilder) -> Self {
         self.driver_runtime_builder = Some(builder);
         self
@@ -353,9 +376,15 @@ impl CosmosClientBuilder {
         // background tasks and connection pools. See https://github.com/Azure/azure-sdk-for-rust/issues/3908
         let driver_account =
             build_driver_account(endpoint, driver_credential, self.backup_endpoints);
-        #[cfg(feature = "__internal_in_memory_emulator")]
+        #[cfg(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator"
+        ))]
         let mut driver_runtime_builder = self.driver_runtime_builder.unwrap_or_default();
-        #[cfg(not(feature = "__internal_in_memory_emulator"))]
+        #[cfg(not(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator"
+        )))]
         let mut driver_runtime_builder = CosmosDriverRuntimeBuilder::new();
 
         // Forward SDK connection settings to the driver's connection pool.
