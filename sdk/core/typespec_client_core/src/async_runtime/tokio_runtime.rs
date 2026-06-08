@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-use super::{AsyncRuntime, SpawnedTask, TaskFuture};
+use super::{AsyncRuntime, Elapsed, SpawnedTask, TaskFuture};
 use crate::{async_runtime::AbortableTask, time::Duration};
 use pin_project::pin_project;
 use std::{
@@ -33,6 +33,26 @@ impl AsyncRuntime for TokioRuntime {
     fn yield_now(&self) -> TaskFuture {
         Box::pin(async {
             tokio::task::yield_now().await;
+        })
+    }
+
+    /// Overrides the default `timeout` to use [`tokio::time::timeout`],
+    /// which is backed by tokio's hashed-wheel timer and avoids the
+    /// per-call allocation that the default sleep+select implementation
+    /// requires.
+    fn timeout(
+        &self,
+        duration: Duration,
+        fut: TaskFuture,
+    ) -> Pin<Box<dyn std::future::Future<Output = std::result::Result<(), Elapsed>> + Send>> {
+        let tokio_duration: std::time::Duration = duration
+            .try_into()
+            .expect("Failed to convert duration to tokio format");
+        Box::pin(async move {
+            match time::timeout(tokio_duration, fut).await {
+                Ok(()) => Ok(()),
+                Err(_) => Err(Elapsed),
+            }
         })
     }
 }

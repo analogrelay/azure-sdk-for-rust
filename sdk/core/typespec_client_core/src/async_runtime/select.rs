@@ -9,7 +9,7 @@
 //! entry-point; [`SelectTwoResult`] is the value the macro resolves to.
 //!
 //! The implementation does **not** spawn, block, or use any reactor — it is
-//! a plain hand-written [`Future`](std::future::Future) that polls each input
+//! a plain hand-written [`Future`] that polls each input
 //! in turn and resolves with whichever finishes first.
 
 use std::future::Future;

@@ -46,6 +46,23 @@ pub use select::SelectTwoResult;
 /// A `TaskFuture` is a boxed future that represents a task that can be spawned and executed asynchronously.
 pub type TaskFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
+/// Returned by [`AsyncRuntime::timeout`] when the deadline elapses before
+/// the supplied future completes.
+///
+/// `Elapsed` carries no payload — it simply signals that the timer fired
+/// first. Implements [`std::error::Error`] so it can be returned through
+/// the standard error machinery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Elapsed;
+
+impl std::fmt::Display for Elapsed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("deadline elapsed")
+    }
+}
+
+impl std::error::Error for Elapsed {}
+
 /// A pinned, boxed [`AbortableTask`].
 ///
 /// Returned by [`AsyncRuntime::spawn`]. Await it to wait for the task to
@@ -127,6 +144,53 @@ pub trait AsyncRuntime: Send + Sync {
 
     /// Yield the current task back to the runtime scheduler.
     fn yield_now(&self) -> TaskFuture;
+
+    /// Races `fut` against a `duration`-long sleep on this runtime.
+    ///
+    /// Resolves to `Ok(())` if `fut` completes before the deadline,
+    /// or `Err(`[`Elapsed`]`)` if the deadline fires first.
+    ///
+    /// # Default implementation
+    ///
+    /// The default implementation combines [`self.sleep(duration)`](Self::sleep)
+    /// with the supplied future using the runtime-agnostic
+    /// [`select_two!`](crate::select_two!) macro. It works on any
+    /// implementation of [`AsyncRuntime`] without requiring a wheel timer
+    /// or a reactor.
+    ///
+    /// Runtime implementations may override this method when they have a
+    /// more efficient timer. For example,
+    /// [`TokioRuntime`](crate::async_runtime::AsyncRuntime) overrides it
+    /// to call [`tokio::time::timeout`], which uses tokio's hashed-wheel
+    /// timer and avoids spawning a sleep task per call.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use typespec_client_core::async_runtime::get_async_runtime;
+    /// use typespec_client_core::time::Duration;
+    ///
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let runtime = get_async_runtime();
+    /// let work = runtime.sleep(Duration::milliseconds(10));
+    /// let result = runtime.timeout(Duration::seconds(1), work).await;
+    /// assert!(result.is_ok());
+    /// # }
+    /// ```
+    fn timeout(
+        &self,
+        duration: Duration,
+        fut: TaskFuture,
+    ) -> Pin<Box<dyn Future<Output = std::result::Result<(), Elapsed>> + Send>> {
+        let sleep = self.sleep(duration);
+        Box::pin(async move {
+            match crate::select_two!(fut, sleep).await {
+                SelectTwoResult::First(((), _)) => Ok(()),
+                SelectTwoResult::Second(((), _)) => Err(Elapsed),
+            }
+        })
+    }
 }
 
 static ASYNC_RUNTIME_IMPLEMENTATION: OnceLock<Arc<dyn AsyncRuntime>> = OnceLock::new();

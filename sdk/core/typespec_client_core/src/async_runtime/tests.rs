@@ -396,3 +396,51 @@ fn std_abort_multiple_tasks() {
         assert!(result.is_ok());
     }
 }
+
+// --- AsyncRuntime::timeout tests -------------------------------------------
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn tokio_timeout_returns_ok_when_future_completes_first() {
+    let runtime: Arc<dyn AsyncRuntime> = Arc::new(tokio_runtime::TokioRuntime);
+    let fast = runtime.sleep(Duration::milliseconds(10));
+    let result = runtime.timeout(Duration::seconds(1), fast).await;
+    assert!(result.is_ok());
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn tokio_timeout_returns_elapsed_when_deadline_fires_first() {
+    let runtime: Arc<dyn AsyncRuntime> = Arc::new(tokio_runtime::TokioRuntime);
+    let slow = runtime.sleep(Duration::seconds(5));
+    let result = runtime.timeout(Duration::milliseconds(20), slow).await;
+    assert!(matches!(result, Err(Elapsed)));
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn std_runtime_timeout_returns_ok_when_future_completes_first() {
+    // StdRuntime keeps the default `timeout` impl (sleep + select). We
+    // exercise it here under a tokio test harness so we can `.await` the
+    // returned future inside the test.
+    let runtime: Arc<dyn AsyncRuntime> = Arc::new(standard_runtime::StdRuntime);
+    let fast = runtime.sleep(Duration::milliseconds(10));
+    let result = runtime.timeout(Duration::seconds(1), fast).await;
+    assert!(result.is_ok());
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn std_runtime_timeout_returns_elapsed_when_deadline_fires_first() {
+    let runtime: Arc<dyn AsyncRuntime> = Arc::new(standard_runtime::StdRuntime);
+    let slow = runtime.sleep(Duration::seconds(5));
+    let result = runtime.timeout(Duration::milliseconds(50), slow).await;
+    assert!(matches!(result, Err(Elapsed)));
+}
+
+#[test]
+fn elapsed_implements_error_display() {
+    let err = Elapsed;
+    assert_eq!(err.to_string(), "deadline elapsed");
+    let _e: &dyn std::error::Error = &err;
+}

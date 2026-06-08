@@ -5,6 +5,9 @@
 ### Features Added
 
 - `Error` now captures a `std::backtrace::Backtrace` at construction time and includes it in `Debug` output (e.g., `{:?}`) when `RUST_BACKTRACE=1` is set.
+- Added `AsyncRuntime::timeout`, a provided trait method that races a future against a runtime-supplied sleep and resolves with `Result<(), Elapsed>`. `TokioRuntime` overrides it to use `tokio::time::timeout`; the default implementation works on any runtime via the new `select_two!` macro.
+- Added the `Elapsed` error type returned by `AsyncRuntime::timeout` when the deadline fires first.
+- Added the `select_two!` macro and `SelectTwoResult` type — a small runtime-agnostic primitive that polls two futures concurrently and resolves with whichever finishes first. Intended as a building block for runtime-agnostic combinators like `AsyncRuntime::timeout`; application code that needs richer ergonomics should still reach for `futures::select!`.
 
 ### Breaking Changes
 
