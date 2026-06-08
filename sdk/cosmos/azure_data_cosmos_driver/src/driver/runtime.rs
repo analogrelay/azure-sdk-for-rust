@@ -3,9 +3,11 @@
 
 //! Cosmos DB driver runtime environment.
 
+use azure_core::async_runtime::{get_async_runtime, AsyncRuntime};
 use azure_core::http::ClientOptions;
 use std::{
     collections::HashMap,
+    fmt,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
@@ -104,6 +106,26 @@ pub struct CosmosDriverRuntime {
 
     /// Factory for creating HTTP clients, shared across per-account transports.
     http_client_factory: Arc<dyn HttpClientFactory>,
+
+    /// Async runtime used to spawn driver-owned tasks, sleep, yield, and
+    /// enforce per-attempt timeouts.
+    ///
+    /// Defaults to the runtime selected by
+    /// [`azure_core::async_runtime::get_async_runtime`] (tokio when the
+    /// `tokio` feature is on, the standard-library runtime otherwise).
+    /// Callers may supply their own via
+    /// [`CosmosDriverRuntimeBuilder::with_async_runtime`] when the
+    /// `pluggable_runtime` feature is enabled.
+    async_runtime: DynAsyncRuntime,
+
+    /// `true` if the HTTP client factory was caller-supplied via
+    /// [`CosmosDriverRuntimeBuilder::with_http_client_factory`] (or one of
+    /// the equivalent internal mocking setters).
+    custom_http_client_factory: bool,
+
+    /// `true` if the async runtime was caller-supplied via
+    /// [`CosmosDriverRuntimeBuilder::with_async_runtime`].
+    custom_async_runtime: bool,
 
     /// Environment-level operation options, populated once from env vars at build time.
     env_operation_options: Arc<OperationOptions>,
@@ -210,6 +232,33 @@ impl CosmosDriverRuntime {
     /// Returns the shared HTTP client factory for creating per-account transports.
     pub(crate) fn http_client_factory(&self) -> &Arc<dyn HttpClientFactory> {
         &self.http_client_factory
+    }
+
+    /// Returns the shared async runtime used by driver internals.
+    ///
+    /// All driver-owned task spawns, sleeps, yields, and per-attempt
+    /// timeouts go through this trait object so the surface is uniform
+    /// regardless of whether the runtime came from the
+    /// [`azure_core::async_runtime`] default or was supplied by the caller
+    /// via [`CosmosDriverRuntimeBuilder::with_async_runtime`].
+    pub fn async_runtime(&self) -> &Arc<dyn AsyncRuntime> {
+        &self.async_runtime.0
+    }
+
+    /// Returns `true` when the HTTP client factory was caller-supplied
+    /// (i.e. not the default reqwest factory). Surfaced in diagnostics so
+    /// service-side investigations can see that the operation ran with a
+    /// non-default transport plug point.
+    pub fn custom_http_client_factory(&self) -> bool {
+        self.custom_http_client_factory
+    }
+
+    /// Returns `true` when the async runtime was caller-supplied (i.e. not
+    /// the default tokio runtime). Surfaced in diagnostics so service-side
+    /// investigations can see that the operation ran with a non-default
+    /// runtime plug point.
+    pub fn custom_async_runtime(&self) -> bool {
+        self.custom_async_runtime
     }
 
     /// Returns the shared container cache.
@@ -453,10 +502,13 @@ pub struct CosmosDriverRuntimeBuilder {
     fault_injection_rules: Option<Vec<std::sync::Arc<crate::fault_injection::FaultInjectionRule>>>,
     #[cfg(any(
         test,
+        feature = "pluggable_runtime",
         feature = "__internal_in_memory_emulator",
         feature = "__internal_mocking"
     ))]
     http_client_factory: Option<Arc<dyn HttpClientFactory>>,
+    #[cfg(feature = "pluggable_runtime")]
+    async_runtime: Option<DynAsyncRuntime>,
 }
 
 impl CosmosDriverRuntimeBuilder {
@@ -557,9 +609,42 @@ impl CosmosDriverRuntimeBuilder {
         self
     }
 
-    #[cfg(any(test, feature = "__internal_in_memory_emulator"))]
+    #[cfg(all(
+        any(test, feature = "__internal_in_memory_emulator"),
+        not(feature = "pluggable_runtime"),
+    ))]
     pub(crate) fn with_http_client_factory(mut self, factory: Arc<dyn HttpClientFactory>) -> Self {
         self.http_client_factory = Some(factory);
+        self
+    }
+
+    /// Sets a custom HTTP client factory, replacing the default reqwest-based
+    /// transport for every account this runtime services.
+    ///
+    /// The factory is invoked once per (endpoint, HTTP version) pair when a
+    /// new sharded pool is created, and the resulting
+    /// [`TransportClient`](crate::driver::transport::cosmos_transport_client::TransportClient)
+    /// services every subsequent request on that shard until it is replaced.
+    /// Implementations must be `Send + Sync + 'static`.
+    #[doc = crate::support_policy_notice!()]
+    #[cfg(feature = "pluggable_runtime")]
+    pub fn with_http_client_factory(mut self, factory: Arc<dyn HttpClientFactory>) -> Self {
+        self.http_client_factory = Some(factory);
+        self
+    }
+
+    /// Sets the async runtime used by the driver to spawn tasks, sleep, yield,
+    /// and enforce per-attempt timeouts.
+    ///
+    /// When unset, the runtime falls back to
+    /// [`azure_core::async_runtime::get_async_runtime`] (tokio when the
+    /// `tokio` feature is on, the standard-library runtime otherwise). The
+    /// supplied runtime overrides that default for every driver and
+    /// transport created by this `CosmosDriverRuntime`.
+    #[doc = crate::support_policy_notice!()]
+    #[cfg(feature = "pluggable_runtime")]
+    pub fn with_async_runtime(mut self, runtime: Arc<dyn AsyncRuntime>) -> Self {
+        self.async_runtime = Some(DynAsyncRuntime(runtime));
         self
     }
 
@@ -721,30 +806,45 @@ impl CosmosDriverRuntimeBuilder {
 
         let connection_pool = self.connection_pool.unwrap_or_default();
         let proxy_configuration = ProxyConfiguration::from_env(connection_pool.proxy_allowed());
-        #[cfg(feature = "fault_injection")]
-        let fault_injection_enabled;
+        #[allow(unused_mut)]
+        let mut fault_injection_enabled = false;
+        #[allow(unused_mut)]
+        let mut fault_injection_enabled = false;
+
+        // Resolve the base HTTP client factory and remember whether it came
+        // from the caller. The flag flows into the runtime so diagnostics can
+        // surface that the operation ran with a non-default transport.
+        #[allow(unused_mut, unused_assignments)]
+        let mut custom_http_client_factory = false;
+        let base_factory: Arc<dyn HttpClientFactory> = {
+            #[cfg(any(
+                test,
+                feature = "pluggable_runtime",
+                feature = "__internal_in_memory_emulator",
+                feature = "__internal_mocking"
+            ))]
+            {
+                match self.http_client_factory {
+                    Some(factory) => {
+                        custom_http_client_factory = true;
+                        factory
+                    }
+                    None => Arc::new(DefaultHttpClientFactory::new()),
+                }
+            }
+
+            #[cfg(not(any(
+                test,
+                feature = "pluggable_runtime",
+                feature = "__internal_in_memory_emulator",
+                feature = "__internal_mocking"
+            )))]
+            {
+                Arc::new(DefaultHttpClientFactory::new())
+            }
+        };
+
         let http_client_factory: Arc<dyn HttpClientFactory> = {
-            let base_factory: Arc<dyn HttpClientFactory> = {
-                #[cfg(any(
-                    test,
-                    feature = "__internal_in_memory_emulator",
-                    feature = "__internal_mocking"
-                ))]
-                {
-                    self.http_client_factory
-                        .unwrap_or_else(|| Arc::new(DefaultHttpClientFactory::new()))
-                }
-
-                #[cfg(not(any(
-                    test,
-                    feature = "__internal_in_memory_emulator",
-                    feature = "__internal_mocking"
-                )))]
-                {
-                    Arc::new(DefaultHttpClientFactory::new())
-                }
-            };
-
             #[cfg(feature = "fault_injection")]
             {
                 if let Some(rules) = self.fault_injection_rules {
@@ -764,6 +864,29 @@ impl CosmosDriverRuntimeBuilder {
             #[cfg(not(feature = "fault_injection"))]
             {
                 base_factory
+            }
+        };
+
+        // Resolve the async runtime. When `pluggable_runtime` is enabled the
+        // caller can supply one via `with_async_runtime`; otherwise we fall
+        // back to the `azure_core::async_runtime` default (tokio when the
+        // `tokio` feature is on, the standard-library runtime otherwise).
+        #[allow(unused_mut, unused_assignments)]
+        let mut custom_async_runtime = false;
+        let async_runtime: Arc<dyn AsyncRuntime> = {
+            #[cfg(feature = "pluggable_runtime")]
+            {
+                match self.async_runtime {
+                    Some(DynAsyncRuntime(rt)) => {
+                        custom_async_runtime = true;
+                        rt
+                    }
+                    None => get_async_runtime(),
+                }
+            }
+            #[cfg(not(feature = "pluggable_runtime"))]
+            {
+                get_async_runtime()
             }
         };
 
@@ -817,6 +940,9 @@ impl CosmosDriverRuntimeBuilder {
                 throttling_retry_options: Some(crate::options::ThrottlingRetryOptions::from_env()),
                 ..OperationOptions::from_env()
             }),
+            async_runtime: DynAsyncRuntime(async_runtime),
+            custom_http_client_factory,
+            custom_async_runtime,
             operation_options: RwLock::new(Arc::new(self.operation_options.unwrap_or_default())),
             user_agent,
             workload_id: self.workload_id,
@@ -837,6 +963,18 @@ impl CosmosDriverRuntimeBuilder {
 }
 
 static NEXT_RUNTIME_ID: AtomicUsize = AtomicUsize::new(0);
+
+/// Newtype wrapper around `Arc<dyn AsyncRuntime>` that provides a `Debug`
+/// implementation. `AsyncRuntime` itself does not require `Debug`, so we
+/// can't derive it on `CosmosDriverRuntime` without this wrapper.
+#[derive(Clone)]
+struct DynAsyncRuntime(Arc<dyn AsyncRuntime>);
+
+impl fmt::Debug for DynAsyncRuntime {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DynAsyncRuntime").field(&"...").finish()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -960,5 +1098,33 @@ mod tests {
             "unexpected User-Agent: {}",
             runtime.user_agent().as_str(),
         );
+    }
+
+    /// Without any plug-point overrides, both telemetry flags read `false`
+    /// and the runtime exposes a usable async-runtime trait object.
+    #[tokio::test]
+    async fn default_runtime_has_no_custom_flags() {
+        let runtime = CosmosDriverRuntimeBuilder::new().build().await.unwrap();
+        assert!(!runtime.custom_http_client_factory());
+        assert!(!runtime.custom_async_runtime());
+        // The accessor returns a usable trait object.
+        let _: &Arc<dyn AsyncRuntime> = runtime.async_runtime();
+    }
+
+    /// Supplying a custom async runtime via `with_async_runtime` flips
+    /// `custom_async_runtime()` to `true` while leaving the HTTP flag
+    /// untouched.
+    #[cfg(feature = "pluggable_runtime")]
+    #[tokio::test]
+    async fn with_async_runtime_sets_custom_async_runtime_flag() {
+        use azure_core::async_runtime::get_async_runtime;
+        let custom: Arc<dyn AsyncRuntime> = get_async_runtime();
+        let runtime = CosmosDriverRuntimeBuilder::new()
+            .with_async_runtime(custom)
+            .build()
+            .await
+            .unwrap();
+        assert!(!runtime.custom_http_client_factory());
+        assert!(runtime.custom_async_runtime());
     }
 }
