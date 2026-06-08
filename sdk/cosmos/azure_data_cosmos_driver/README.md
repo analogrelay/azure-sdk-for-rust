@@ -147,8 +147,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **`models`**: Resource types, partition keys, status codes, and request metadata
 - **`options`**: Configuration types (driver options, connection pool settings, diagnostics)
 - **`system`**: System-level utilities (CPU/memory monitoring, VM metadata)
+- **`transport`** (gated on `pluggable_runtime` / `__internal_mocking` / `__internal_in_memory_emulator`): Stable surface for replacing the HTTP transport — `HttpClientFactory`, `TransportClient`, `HttpRequest`, `HttpResponse`, `HttpClientConfig`, `HttpVersionPolicy`, and `TransportError`.
 
 Internal modules (pipeline, routing, handlers) have `pub(crate)` visibility.
+
+## Customizing the runtime
+
+Enable the `pluggable_runtime` Cargo feature to replace the default reqwest-based HTTP transport (via `with_http_client_factory`) and/or the default tokio async runtime (via `with_async_runtime`) when constructing a `CosmosDriverRuntime`. Both setters live on `CosmosDriverRuntimeBuilder`. The runtime routes every production-code `spawn` / `sleep` / `yield` / `timeout` through the supplied [`AsyncRuntime`](https://docs.rs/azure_core/latest/azure_core/async_runtime/trait.AsyncRuntime.html), and every transport-layer request through the supplied `HttpClientFactory`. See [`ARCHITECTURE.md`](./ARCHITECTURE.md#pluggable-runtime) for the contract, the diagnostics surfacing, and the in-scope vs out-of-scope tokio call sites.
+
+> [!IMPORTANT]
+> Replacing the HTTP client factory or the async runtime puts the SDK outside the configuration Microsoft validates and ships, so **Microsoft cannot provide 24/7 support for the SDK through Azure Support for operations that run on a non-default plug point**. When a support ticket is opened, the engineer will ask you to reproduce the issue with the default reqwest + tokio combination before investigation can proceed. See the [Azure Support policy](https://azure.microsoft.com/en-us/support/legal/) for full details.
+
+```rust,no_run
+use azure_data_cosmos_driver::{
+    CosmosDriverRuntime,
+    options::ConnectionPoolOptions,
+    transport::{
+        HttpClientConfig, HttpClientFactory, HttpRequest, HttpResponse, TransportClient,
+        TransportError,
+    },
+};
+use azure_core::http::headers::Headers;
+use std::sync::Arc;
+
+#[derive(Debug)]
+struct MyTransport;
+
+#[async_trait::async_trait]
+impl TransportClient for MyTransport {
+    async fn send(&self, _request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        Ok(HttpResponse { status: 200, headers: Headers::new(), body: Vec::new() })
+    }
+}
+
+#[derive(Debug)]
+struct MyFactory;
+
+impl HttpClientFactory for MyFactory {
+    fn build(
+        &self,
+        _pool: &ConnectionPoolOptions,
+        _config: HttpClientConfig,
+    ) -> azure_data_cosmos_driver::Result<Arc<dyn TransportClient>> {
+        Ok(Arc::new(MyTransport))
+    }
+}
+
+# async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+let runtime = CosmosDriverRuntime::builder()
+    .with_http_client_factory(Arc::new(MyFactory))
+    .build()
+    .await?;
+# Ok(())
+# }
+```
+
+Every `DiagnosticsContext` returned by the driver records whether either plug point was in use via the `custom_http_client` / `custom_async_runtime` flags. The flags surface in the diagnostics JSON payload (elided when `false`, so default-configuration payloads remain byte-for-byte identical) and in the one-line `Display` summary, so service-side investigations can see at a glance which configuration produced a given trace. Wrapping the default reqwest factory and re-supplying it is intentionally flagged as `custom_http_client = true` — the driver cannot verify wrapper equivalence and flags pessimistically to match the support-policy disclosure.
 
 ## Contributing
 

@@ -145,6 +145,74 @@ async fn example(cosmos_client: CosmosClient) -> Result<(), Box<dyn std::error::
 
 If you encounter bugs or have suggestions, [open an issue](https://github.com/Azure/azure-sdk-for-rust/issues).
 
+## Customizing the runtime
+
+For advanced scenarios you can replace the SDK's default reqwest-based HTTP transport and/or the default tokio async runtime by enabling the `pluggable_runtime` Cargo feature and passing a pre-configured [`CosmosDriverRuntimeBuilder`] to [`CosmosClientBuilder::with_driver_runtime_builder`]. The SDK still layers its own overlay onto the supplied builder (connection pool, the `azsdk-rust-cosmos/<version>` wrapping SDK identifier, the PPCB default, fault-injection rules, throughput-control groups) per the documented field-interaction rules.
+
+> [!IMPORTANT]
+> Replacing the HTTP client factory or the async runtime puts the SDK outside the configuration Microsoft validates and ships, so **Microsoft cannot provide 24/7 support for the SDK through Azure Support for operations that run on a non-default plug point**. When a support ticket is opened, the engineer will ask you to reproduce the issue with the default reqwest + tokio combination before investigation can proceed. See the [Azure Support policy](https://azure.microsoft.com/en-us/support/legal/) for full details.
+
+```rust no_run
+use azure_data_cosmos::{
+    AccountEndpoint, AccountReference, CosmosClient, RoutingStrategy,
+};
+use azure_data_cosmos::pluggable_runtime::{
+    CosmosDriverRuntimeBuilder, HttpClientConfig, HttpClientFactory, HttpRequest, HttpResponse,
+    TransportClient, TransportError,
+};
+use azure_core::http::headers::Headers;
+use azure_data_cosmos_driver::options::ConnectionPoolOptions;
+use std::sync::Arc;
+
+#[derive(Debug)]
+struct MyTransport;
+
+#[async_trait::async_trait]
+impl TransportClient for MyTransport {
+    async fn send(&self, _request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        // Plug in any HTTP stack here (a custom hyper client, an in-process
+        // emulator, a recorder, etc.).
+        Ok(HttpResponse { status: 200, headers: Headers::new(), body: Vec::new() })
+    }
+}
+
+#[derive(Debug)]
+struct MyFactory;
+
+impl HttpClientFactory for MyFactory {
+    fn build(
+        &self,
+        _pool: &ConnectionPoolOptions,
+        _config: HttpClientConfig,
+    ) -> azure_data_cosmos_driver::Result<Arc<dyn TransportClient>> {
+        Ok(Arc::new(MyTransport))
+    }
+}
+
+# async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+let credential: Arc<dyn azure_core::credentials::TokenCredential> =
+    azure_identity::DeveloperToolsCredential::new(None)?;
+let endpoint: AccountEndpoint = "https://myaccount.documents.azure.com/".parse()?;
+
+let driver_builder =
+    CosmosDriverRuntimeBuilder::new().with_http_client_factory(Arc::new(MyFactory));
+
+let client = CosmosClient::builder()
+    .with_driver_runtime_builder(driver_builder)
+    .build(
+        AccountReference::with_credential(endpoint, credential),
+        RoutingStrategy::PreferredRegions(vec![]),
+    )
+    .await?;
+# Ok(())
+# }
+```
+
+Every `DiagnosticsContext` returned by the SDK records whether either plug point was in use for that operation via the `custom_http_client` / `custom_async_runtime` flags. The flags surface in the diagnostics JSON payload (elided when `false`, so default-configuration payloads remain byte-for-byte identical) and in the one-line `Display` summary, so service-side investigations can see at a glance which configuration produced a given trace.
+
+[`CosmosDriverRuntimeBuilder`]: https://docs.rs/azure_data_cosmos_driver/latest/azure_data_cosmos_driver/struct.CosmosDriverRuntimeBuilder.html
+[`CosmosClientBuilder::with_driver_runtime_builder`]: https://docs.rs/azure_data_cosmos/latest/azure_data_cosmos/struct.CosmosClientBuilder.html#method.with_driver_runtime_builder
+
 ## Developer notes
 
 This crate exposes feature flags prefixed with `__internal_` (currently `__internal_in_memory_emulator`). These are intended **only** for in-repo testing, are not part of the public API, are not subject to semver, and may change or be removed without notice. Do not enable them on builds shipped to crates.io or to other consumers.

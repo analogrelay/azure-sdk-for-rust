@@ -854,6 +854,29 @@ tokio::spawn(async move {
 
 ---
 
+## Pluggable Runtime
+
+The driver ships with two stable plug points behind the `pluggable_runtime` Cargo feature that let callers replace the default reqwest-based HTTP transport and the default tokio async runtime independently:
+
+- **HTTP client factory** — implement the `HttpClientFactory` trait and pass it to `CosmosDriverRuntimeBuilder::with_http_client_factory`. The factory's `build` method is invoked by the driver to produce the underlying `TransportClient` implementations used by the connection-pool shards; it receives the SDK's resolved `ConnectionPoolOptions` plus the per-shard `HttpClientConfig` (HTTP version policy, request timeout, keep-alive hint, invalid-cert allowance). The default reqwest factory (`__internal_in_memory_emulator` and benchmarks use the same surface internally now) is gated on the `reqwest` feature.
+- **Async runtime** — implement `azure_core::async_runtime::AsyncRuntime` (the same abstraction `azure_core` itself uses) and pass it to `CosmosDriverRuntimeBuilder::with_async_runtime`. The driver routes every production-code `spawn` / `sleep` / `yield` / `timeout` through this trait, so a non-tokio runtime can host the driver end-to-end. `BackgroundTaskManager` stores `SpawnedTask` handles returned by the trait and aborts them on shutdown. The HTTP/2 connection-pool health sweep was rewritten as a sleep loop on `AsyncRuntime::sleep` so the sweep runs identically under tokio, under any caller-supplied runtime, and under the `StdRuntime` fallback.
+
+Both plug points are exposed via the same `transport` module that hosts `HttpClientFactory`, `TransportClient`, `HttpRequest`, `HttpResponse`, `HttpClientConfig`, `HttpVersionPolicy`, and `TransportError`. The `__internal_mocking` and `__internal_in_memory_emulator` internal features were rebuilt on top of this stable surface; the legacy `testing` module is now a re-export shim.
+
+### Diagnostics
+
+Whenever a caller supplies either plug point, the resulting `CosmosDriverRuntime` records the choice as two booleans (`custom_http_client_factory()`, `custom_async_runtime()`). The operation pipeline stamps both bits into every `DiagnosticsContextBuilder` it constructs, so each `DiagnosticsContext` carries `custom_http_client()` / `custom_async_runtime()` accessors and surfaces them in the JSON payload (`custom_http_client` / `custom_async_runtime`, elided when `false` so default-config payloads remain byte-for-byte identical) and in the `Display` summary (`custom=http`, `custom=runtime`, `custom=http,runtime`). Service-side investigations can therefore tell at a glance whether an operation ran with non-default transport or runtime. Wrapping the default reqwest factory and re-supplying it is intentionally flagged as `custom_http_client = true` — the SDK cannot verify wrapper equivalence and flags pessimistically to match the support-policy disclosure.
+
+### Azure Support
+
+Replacing the HTTP client factory or the async runtime puts the SDK outside the configuration that Microsoft validates and ships. As a result, Microsoft cannot provide 24/7 support for the SDK through Azure Support for operations that run with a non-default plug point. When a support ticket is opened, the engineer will ask you to reproduce the issue with the default reqwest HTTP client / tokio async runtime before investigation can proceed. See the [Azure Support policy](https://azure.microsoft.com/en-us/support/legal/) for full details. The `DiagnosticsContext` flags above let service-side readers identify these cases without needing to re-instrument the client.
+
+### Out of scope (today)
+
+`tokio::task::JoinSet`, `tokio::task::JoinHandle`, and `tokio::sync::Semaphore` inside `in_memory_emulator/` remain tokio-only; `__internal_in_memory_emulator` additively requires `tokio`. A future iteration may extend `AsyncRuntime` with a `JoinAll`-style primitive that lets the in-memory emulator run under non-tokio runtimes too, but the production paths consumed by `pluggable_runtime` are tokio-free.
+
+---
+
 ## See Also
 
 <!-- TODO: Add links once files exist in main branch -->
