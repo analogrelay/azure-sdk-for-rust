@@ -140,8 +140,8 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.as_mut().get_mut();
-        let poll_b_first = this.poll_b_first;
-        this.poll_b_first = !poll_b_first;
+        let mut poll_b_first = !this.poll_b_first;
+        std::mem::swap(&mut poll_b_first, &mut this.poll_b_first);
 
         if poll_b_first {
             if let Some(out) = poll_side_b(this, cx) {
