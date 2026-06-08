@@ -3,7 +3,7 @@
 
 //! Cosmos DB driver runtime environment.
 
-use azure_core::async_runtime::{get_async_runtime, AsyncRuntime};
+use azure_core::async_runtime::AsyncRuntime;
 use azure_core::http::ClientOptions;
 use std::{
     collections::HashMap,
@@ -630,7 +630,7 @@ impl CosmosDriverRuntimeBuilder {
     /// [`TransportClient`](crate::driver::transport::cosmos_transport_client::TransportClient)
     /// services every subsequent request on that shard until it is replaced.
     /// Implementations must be `Send + Sync + 'static`.
-    #[doc = crate::support_policy_notice!()]
+    #[doc = include_str!("../../docs/pluggable-runtime-warning.md")]
     #[cfg(feature = "pluggable_runtime")]
     pub fn with_http_client_factory(mut self, factory: Arc<dyn HttpClientFactory>) -> Self {
         self.http_client_factory = Some(factory);
@@ -640,12 +640,13 @@ impl CosmosDriverRuntimeBuilder {
     /// Sets the async runtime used by the driver to spawn tasks, sleep, yield,
     /// and enforce per-attempt timeouts.
     ///
-    /// When unset, the runtime falls back to
-    /// [`azure_core::async_runtime::get_async_runtime`] (tokio when the
-    /// `tokio` feature is on, the standard-library runtime otherwise). The
-    /// supplied runtime overrides that default for every driver and
-    /// transport created by this `CosmosDriverRuntime`.
-    #[doc = crate::support_policy_notice!()]
+    /// When unset, the runtime falls back to a driver-local tokio adapter
+    /// (under the `tokio` Cargo feature). The supplied runtime overrides
+    /// that default for every driver and transport created by this
+    /// `CosmosDriverRuntime`. If neither the `tokio` feature is enabled
+    /// nor a custom runtime is supplied, [`CosmosDriverRuntimeBuilder::build`]
+    /// returns an error.
+    #[doc = include_str!("../../docs/pluggable-runtime-warning.md")]
     #[cfg(feature = "pluggable_runtime")]
     pub fn with_async_runtime(mut self, runtime: Arc<dyn AsyncRuntime>) -> Self {
         self.async_runtime = Some(DynAsyncRuntime(runtime));
@@ -815,33 +816,47 @@ impl CosmosDriverRuntimeBuilder {
 
         let connection_pool = self.connection_pool.unwrap_or_default();
         let proxy_configuration = ProxyConfiguration::from_env(connection_pool.proxy_allowed());
-        #[allow(unused_mut)]
-        let mut fault_injection_enabled = false;
-        #[allow(unused_mut)]
-        let mut fault_injection_enabled = false;
+        #[cfg(feature = "fault_injection")]
+        let fault_injection_enabled;
 
         // Resolve the async runtime first because the fault-injection HTTP
         // client wrapper threads it through for injected delays. When
         // `pluggable_runtime` is enabled the caller can supply one via
-        // `with_async_runtime`; otherwise we fall back to the
-        // `azure_core::async_runtime` default (tokio when the `tokio` feature
-        // is on, the standard-library runtime otherwise).
+        // `with_async_runtime`; otherwise we default to a driver-local tokio
+        // adapter (under the `tokio` feature). The driver intentionally does
+        // not consult `azure_core::async_runtime::get_async_runtime` so the
+        // default is not affected by process-wide global state.
         #[allow(unused_mut, unused_assignments)]
         let mut custom_async_runtime = false;
         let async_runtime: Arc<dyn AsyncRuntime> = {
             #[cfg(feature = "pluggable_runtime")]
-            {
-                match self.async_runtime {
-                    Some(DynAsyncRuntime(rt)) => {
-                        custom_async_runtime = true;
-                        rt
-                    }
-                    None => get_async_runtime(),
-                }
-            }
+            let supplied_async_runtime = self.async_runtime.map(|d| d.0);
             #[cfg(not(feature = "pluggable_runtime"))]
-            {
-                get_async_runtime()
+            let supplied_async_runtime: Option<Arc<dyn AsyncRuntime>> = None;
+
+            match supplied_async_runtime {
+                Some(rt) => {
+                    custom_async_runtime = true;
+                    rt
+                }
+                None => {
+                    #[cfg(feature = "tokio")]
+                    {
+                        Arc::new(super::tokio_runtime::TokioRuntime) as Arc<dyn AsyncRuntime>
+                    }
+                    #[cfg(not(feature = "tokio"))]
+                    {
+                        return Err(crate::error::CosmosError::builder()
+                            .with_status(crate::error::CosmosStatus::CLIENT_INVALID_CONFIG)
+                            .with_message(
+                                "no async runtime is available: enable the `tokio` Cargo feature \
+                                 or supply one via \
+                                 `CosmosDriverRuntimeBuilder::with_async_runtime` \
+                                 (requires the `pluggable_runtime` feature).",
+                            )
+                            .build());
+                    }
+                }
             }
         };
 

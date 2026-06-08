@@ -18,6 +18,8 @@ pub(crate) mod jitter;
 pub(crate) mod pipeline;
 pub(crate) mod routing;
 mod runtime;
+#[cfg(feature = "tokio")]
+mod tokio_runtime;
 pub(crate) mod transport;
 
 pub use cosmos_driver::CosmosDriver;
