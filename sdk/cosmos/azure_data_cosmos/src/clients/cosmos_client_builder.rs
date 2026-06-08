@@ -311,7 +311,7 @@ impl CosmosClientBuilder {
     /// `with_http_client_factory`, `with_async_runtime`,
     /// `with_cpu_refresh_interval`, and any future fields — are left
     /// untouched and take effect as configured.
-    #[doc = azure_data_cosmos_driver::support_policy_notice!()]
+    #[doc = include_str!("../../docs/pluggable-runtime-warning.md")]
     #[cfg(any(
         feature = "pluggable_runtime",
         feature = "__internal_in_memory_emulator"

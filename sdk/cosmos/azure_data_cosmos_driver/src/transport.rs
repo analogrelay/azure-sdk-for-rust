@@ -8,7 +8,7 @@
 //! Available under the `pluggable_runtime` feature (and the existing
 //! `__internal_in_memory_emulator` / `__internal_mocking` internal flags).
 //!
-#![doc = crate::support_policy_notice!()]
+#![doc = include_str!("../docs/pluggable-runtime-warning.md")]
 //!
 //! [`CosmosDriverRuntimeBuilder::with_http_client_factory`]: crate::CosmosDriverRuntimeBuilder::with_http_client_factory
 

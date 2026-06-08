@@ -13,7 +13,7 @@
 //! layered onto the supplied builder per the documented field-interaction
 //! rules; see the setter for full details.
 //!
-#![doc = azure_data_cosmos_driver::support_policy_notice!()]
+#![doc = include_str!("../docs/pluggable-runtime-warning.md")]
 
 pub use azure_core::async_runtime::{AbortableTask, AsyncRuntime, SpawnedTask, TaskFuture};
 pub use azure_data_cosmos_driver::transport::{

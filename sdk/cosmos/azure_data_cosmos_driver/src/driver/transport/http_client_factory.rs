@@ -208,7 +208,7 @@ mod tests {
 /// `build` once per (endpoint, HTTP version) pair when constructing a new
 /// sharded pool; the returned [`TransportClient`] services every request
 /// on that shard until the pool is replaced.
-#[doc = crate::support_policy_notice!()]
+#[doc = include_str!("../../../docs/pluggable-runtime-warning.md")]
 pub trait HttpClientFactory: fmt::Debug + Send + Sync {
     fn build(
         &self,
