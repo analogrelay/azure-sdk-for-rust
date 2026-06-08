@@ -11,8 +11,13 @@ use crate::diagnostics::TransportHttpVersion;
 use crate::options::ConnectionPoolOptions;
 
 /// HTTP protocol policy required by a transport.
+///
+/// Returned from [`HttpClientConfig::version_policy`] so custom
+/// [`HttpClientFactory`] implementations can branch on whether the
+/// requested transport must use HTTP/1.1 or HTTP/2.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HttpVersionPolicy {
+pub enum HttpVersionPolicy {
     /// Use HTTP/1.1 only. TCP keepalive is configured; no HTTP/2 keepalive.
     Http11Only,
     /// HTTP/2 only (`http2_prior_knowledge`), no HTTP/1.1 fallback.
@@ -20,6 +25,13 @@ pub(crate) enum HttpVersionPolicy {
     Http2Only,
 }
 
+/// Configuration the driver passes to an [`HttpClientFactory`] when it
+/// needs a fresh underlying transport client.
+///
+/// The struct is `#[non_exhaustive]`: new fields may be added in future
+/// driver releases, and custom factories should access values through the
+/// provided accessors. Construction is reserved for the driver itself.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct HttpClientConfig {
     pub(crate) version_policy: HttpVersionPolicy,
@@ -29,6 +41,27 @@ pub struct HttpClientConfig {
 }
 
 impl HttpClientConfig {
+    /// Returns the HTTP version this transport must use.
+    pub fn version_policy(&self) -> HttpVersionPolicy {
+        self.version_policy
+    }
+
+    /// Returns the per-request timeout (does not include connect time).
+    pub fn request_timeout(&self) -> std::time::Duration {
+        self.request_timeout
+    }
+
+    /// Returns `true` if the transport may accept invalid TLS certificates.
+    /// This is only ever `true` for connections to the local emulator.
+    pub fn allow_invalid_cert(&self) -> bool {
+        self.allow_invalid_cert
+    }
+
+    /// Returns whether HTTP/2 keep-alive pings should be sent while the
+    /// connection is otherwise idle.
+    pub fn http2_keep_alive_while_idle(&self) -> bool {
+        self.http2_keep_alive_while_idle
+    }
     /// Config for metadata requests using the negotiated HTTP version.
     pub(crate) fn metadata(
         connection_pool: &ConnectionPoolOptions,
@@ -136,6 +169,14 @@ mod tests {
     }
 }
 
+/// Factory the driver uses to obtain a [`TransportClient`] for a given
+/// [`HttpClientConfig`].
+///
+/// Implementations must be `Send + Sync + 'static`. The driver invokes
+/// `build` once per (endpoint, HTTP version) pair when constructing a new
+/// sharded pool; the returned [`TransportClient`] services every request
+/// on that shard until the pool is replaced.
+#[doc = crate::support_policy_notice!()]
 pub trait HttpClientFactory: fmt::Debug + Send + Sync {
     fn build(
         &self,

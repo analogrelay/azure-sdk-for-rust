@@ -57,6 +57,12 @@ mod support_policy;
 pub(crate) mod system;
 #[cfg(feature = "__internal_mocking")]
 pub mod testing;
+#[cfg(any(
+    feature = "pluggable_runtime",
+    feature = "__internal_in_memory_emulator",
+    feature = "__internal_mocking",
+))]
+pub mod transport;
 
 // Re-export key types at crate root
 pub use diagnostics::{DiagnosticsContext, ExecutionContext, RequestDiagnostics, RequestHandle};
