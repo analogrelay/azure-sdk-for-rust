@@ -36,8 +36,12 @@ mod standard_runtime;
 #[cfg(feature = "tokio")]
 mod tokio_runtime;
 
+pub mod select;
+
 #[cfg(test)]
 mod tests;
+
+pub use select::SelectTwoResult;
 
 /// A `TaskFuture` is a boxed future that represents a task that can be spawned and executed asynchronously.
 pub type TaskFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
