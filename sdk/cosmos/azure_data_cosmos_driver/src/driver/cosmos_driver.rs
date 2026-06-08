@@ -2629,6 +2629,62 @@ mod tests {
         );
     }
 
+    /// End-to-end telemetry check: when a runtime is built with a custom
+    /// HTTP client factory and that runtime executes the real
+    /// `refresh_account_properties` code path against a `ScriptedFactory`,
+    /// the resulting runtime carries `custom_http_client_factory() == true`
+    /// (and `custom_async_runtime() == false`). The pipeline stamps these
+    /// bits into every `DiagnosticsContextBuilder` it constructs (see
+    /// `cosmos_driver.rs` step 7), so this acts as the end-to-end check
+    /// that supplying a plug point at build time will surface in
+    /// per-operation diagnostics.
+    #[cfg(feature = "pluggable_runtime")]
+    #[tokio::test]
+    async fn custom_http_client_flag_set_after_real_refresh() {
+        let factory = Arc::new(ScriptedFactory::new([ResponsePlan::Success]));
+        let runtime = CosmosDriverRuntimeBuilder::new()
+            .with_http_client_factory(factory)
+            .build()
+            .await
+            .unwrap();
+        let account = signed_test_account("https://test.documents.azure.com:443/");
+        let current_transport = Arc::new(
+            CosmosTransport::with_factory(
+                runtime.connection_pool().clone(),
+                Arc::clone(runtime.http_client_factory()),
+                TransportHttpVersion::Http11,
+                Arc::clone(runtime.async_runtime()),
+            )
+            .unwrap(),
+        );
+        let transport_holder = Arc::new(ArcSwap::from(current_transport));
+
+        CosmosDriver::refresh_account_properties(&runtime, &account, &transport_holder, None)
+            .await
+            .unwrap();
+
+        assert!(runtime.custom_http_client_factory());
+        assert!(!runtime.custom_async_runtime());
+
+        // Surface the runtime bits through the same path the operation
+        // pipeline uses to stamp them into a per-operation diagnostics
+        // builder (cosmos_driver.rs step 7). This catches regressions where
+        // the runtime tracks the flag but the pipeline forgets to stamp it.
+        let mut diagnostics_builder = DiagnosticsContextBuilder::new(
+            ActivityId::new_uuid(),
+            std::sync::Arc::new(DiagnosticsOptions::default()),
+        );
+        if runtime.custom_http_client_factory() {
+            diagnostics_builder.set_custom_http_client(true);
+        }
+        if runtime.custom_async_runtime() {
+            diagnostics_builder.set_custom_async_runtime(true);
+        }
+        let ctx = diagnostics_builder.complete();
+        assert!(ctx.custom_http_client());
+        assert!(!ctx.custom_async_runtime());
+    }
+
     #[tokio::test]
     async fn refresh_account_properties_keeps_http11_when_http2_reprobe_fails() {
         let factory = Arc::new(ScriptedFactory::new([

@@ -1140,4 +1140,80 @@ mod tests {
         assert!(!runtime.custom_http_client_factory());
         assert!(runtime.custom_async_runtime());
     }
+
+    /// Supplying a custom HTTP client factory via `with_http_client_factory`
+    /// flips `custom_http_client_factory()` to `true` while leaving the
+    /// runtime flag untouched. Mirror of
+    /// `with_async_runtime_sets_custom_async_runtime_flag`.
+    #[cfg(feature = "pluggable_runtime")]
+    #[tokio::test]
+    async fn with_http_client_factory_sets_custom_http_client_flag() {
+        let factory = test_support::ok_factory();
+        let runtime = CosmosDriverRuntimeBuilder::new()
+            .with_http_client_factory(factory)
+            .build()
+            .await
+            .unwrap();
+        assert!(runtime.custom_http_client_factory());
+        assert!(!runtime.custom_async_runtime());
+    }
+
+    /// Supplying both plug points flips both diagnostic flags.
+    #[cfg(feature = "pluggable_runtime")]
+    #[tokio::test]
+    async fn with_both_plug_points_sets_both_flags() {
+        let factory = test_support::ok_factory();
+        use azure_core::async_runtime::get_async_runtime;
+        let runtime = CosmosDriverRuntimeBuilder::new()
+            .with_http_client_factory(factory)
+            .with_async_runtime(get_async_runtime())
+            .build()
+            .await
+            .unwrap();
+        assert!(runtime.custom_http_client_factory());
+        assert!(runtime.custom_async_runtime());
+    }
+
+    #[cfg(feature = "pluggable_runtime")]
+    mod test_support {
+        use super::*;
+        use crate::driver::transport::cosmos_transport_client::{
+            HttpRequest, HttpResponse, TransportClient, TransportError,
+        };
+        use crate::driver::transport::http_client_factory::HttpClientConfig;
+        use crate::options::ConnectionPoolOptions;
+        use async_trait::async_trait;
+        use azure_core::http::headers::Headers;
+
+        #[derive(Debug)]
+        pub(super) struct OkClient;
+
+        #[async_trait]
+        impl TransportClient for OkClient {
+            async fn send(&self, _request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: Headers::new(),
+                    body: Vec::new(),
+                })
+            }
+        }
+
+        #[derive(Debug)]
+        pub(super) struct OkFactory;
+
+        impl HttpClientFactory for OkFactory {
+            fn build(
+                &self,
+                _connection_pool: &ConnectionPoolOptions,
+                _config: HttpClientConfig,
+            ) -> crate::error::Result<Arc<dyn TransportClient>> {
+                Ok(Arc::new(OkClient))
+            }
+        }
+
+        pub(super) fn ok_factory() -> Arc<dyn HttpClientFactory> {
+            Arc::new(OkFactory)
+        }
+    }
 }

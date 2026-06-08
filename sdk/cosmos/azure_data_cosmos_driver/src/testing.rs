@@ -21,6 +21,5 @@
 
 pub use crate::options::ConnectionPoolOptions;
 pub use crate::transport::{
-    HttpClientConfig, HttpClientFactory, HttpRequest, HttpResponse, TransportClient,
-    TransportError,
+    HttpClientConfig, HttpClientFactory, HttpRequest, HttpResponse, TransportClient, TransportError,
 };
