@@ -13,8 +13,10 @@
 //! request-sent-status tracking, per-attempt diagnostics, and deadline
 //! enforcement.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use azure_core::async_runtime::AsyncRuntime;
 use futures::{future::Either, pin_mut};
 use tracing::trace;
 
@@ -166,6 +168,12 @@ pub(crate) struct TransportPipelineContext<'a> {
     /// (defaulting to 30 seconds). Same per-invocation scope note as
     /// [`max_throttle_attempts`](Self::max_throttle_attempts).
     pub max_throttle_wait_time: Duration,
+    /// Async runtime used for transport-level retry sleeps and per-attempt
+    /// timeout races. Comes from the [`CosmosDriverRuntime`] that owns this
+    /// transport — either the caller-supplied runtime via
+    /// `CosmosDriverRuntimeBuilder::with_async_runtime` or the default
+    /// fallback returned by `azure_core::async_runtime::get_async_runtime()`.
+    pub async_runtime: &'a Arc<dyn AsyncRuntime>,
 }
 
 /// Executes a single transport attempt.
@@ -288,6 +296,7 @@ pub(crate) async fn execute_transport_pipeline(
             diagnostics,
             excluded_shard_id.take(),
             endpoint_key,
+            ctx.async_runtime,
         )
         .await;
 
@@ -337,11 +346,12 @@ pub(crate) async fn execute_transport_pipeline(
                     effective_delay = deadline_capped_delay(effective_delay, remaining);
                 }
 
-                azure_core::sleep(
-                    azure_core::time::Duration::try_from(effective_delay)
-                        .unwrap_or(azure_core::time::Duration::ZERO),
-                )
-                .await;
+                ctx.async_runtime
+                    .sleep(
+                        azure_core::time::Duration::try_from(effective_delay)
+                            .unwrap_or(azure_core::time::Duration::ZERO),
+                    )
+                    .await;
 
                 if let Some(deadline) = request.deadline {
                     if Instant::now() >= deadline {
@@ -381,11 +391,12 @@ pub(crate) async fn execute_transport_pipeline(
                         // One extra retry attempt after throttle budget is exhausted.
                         // When no deadline exists, this retry is immediate.
                         if !final_delay.is_zero() {
-                            azure_core::sleep(
-                                azure_core::time::Duration::try_from(final_delay)
-                                    .unwrap_or(azure_core::time::Duration::ZERO),
-                            )
-                            .await;
+                            ctx.async_runtime
+                                .sleep(
+                                    azure_core::time::Duration::try_from(final_delay)
+                                        .unwrap_or(azure_core::time::Duration::ZERO),
+                                )
+                                .await;
                         }
 
                         throttle_state = throttle_state.mark_forced_final_retry_used();
@@ -403,6 +414,7 @@ fn deadline_exceeded_result(request_sent: RequestSentStatus) -> TransportResult 
     TransportResult::deadline_exceeded(request_sent)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_http_attempt(
     http_request: &HttpRequest,
     transport: &AdaptiveTransport,
@@ -411,6 +423,7 @@ async fn execute_http_attempt(
     diagnostics: &mut DiagnosticsContextBuilder,
     excluded_shard_id: Option<u64>,
     endpoint_key: &EndpointKey,
+    async_runtime: &Arc<dyn AsyncRuntime>,
 ) -> ExecutedTransportAttempt {
     if let Some(timeout_duration) = per_request_timeout {
         // Pre-select the shard so we know which shard the request was dispatched
@@ -428,11 +441,12 @@ async fn execute_http_attempt(
             dispatched_shard,
         );
         let timeout_future = async {
-            azure_core::sleep(
-                azure_core::time::Duration::try_from(timeout_duration)
-                    .unwrap_or(azure_core::time::Duration::ZERO),
-            )
-            .await;
+            async_runtime
+                .sleep(
+                    azure_core::time::Duration::try_from(timeout_duration)
+                        .unwrap_or(azure_core::time::Duration::ZERO),
+                )
+                .await;
         };
 
         pin_mut!(transport_future);
@@ -700,6 +714,7 @@ mod tests {
     };
 
     use async_trait::async_trait;
+    use azure_core::async_runtime::get_async_runtime;
 
     use crate::{
         diagnostics::DiagnosticsContextBuilder,
@@ -1018,6 +1033,7 @@ mod tests {
                 endpoint_key: endpoint.endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1391,6 +1407,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1442,6 +1459,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1481,6 +1499,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )
@@ -1518,6 +1537,7 @@ mod tests {
                 endpoint_key: test_endpoint_key(),
                 max_throttle_attempts: 9,
                 max_throttle_wait_time: Duration::from_secs(30),
+                async_runtime: &get_async_runtime(),
             },
             &mut diagnostics,
         )

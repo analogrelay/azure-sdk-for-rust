@@ -811,6 +811,31 @@ impl CosmosDriverRuntimeBuilder {
         #[allow(unused_mut)]
         let mut fault_injection_enabled = false;
 
+        // Resolve the async runtime first because the fault-injection HTTP
+        // client wrapper threads it through for injected delays. When
+        // `pluggable_runtime` is enabled the caller can supply one via
+        // `with_async_runtime`; otherwise we fall back to the
+        // `azure_core::async_runtime` default (tokio when the `tokio` feature
+        // is on, the standard-library runtime otherwise).
+        #[allow(unused_mut, unused_assignments)]
+        let mut custom_async_runtime = false;
+        let async_runtime: Arc<dyn AsyncRuntime> = {
+            #[cfg(feature = "pluggable_runtime")]
+            {
+                match self.async_runtime {
+                    Some(DynAsyncRuntime(rt)) => {
+                        custom_async_runtime = true;
+                        rt
+                    }
+                    None => get_async_runtime(),
+                }
+            }
+            #[cfg(not(feature = "pluggable_runtime"))]
+            {
+                get_async_runtime()
+            }
+        };
+
         // Resolve the base HTTP client factory and remember whether it came
         // from the caller. The flag flows into the runtime so diagnostics can
         // surface that the operation ran with a non-default transport.
@@ -853,6 +878,7 @@ impl CosmosDriverRuntimeBuilder {
                         crate::fault_injection::FaultInjectingHttpClientFactory::new(
                             base_factory,
                             rules,
+                            Arc::clone(&async_runtime),
                         ),
                     )
                 } else {
@@ -864,29 +890,6 @@ impl CosmosDriverRuntimeBuilder {
             #[cfg(not(feature = "fault_injection"))]
             {
                 base_factory
-            }
-        };
-
-        // Resolve the async runtime. When `pluggable_runtime` is enabled the
-        // caller can supply one via `with_async_runtime`; otherwise we fall
-        // back to the `azure_core::async_runtime` default (tokio when the
-        // `tokio` feature is on, the standard-library runtime otherwise).
-        #[allow(unused_mut, unused_assignments)]
-        let mut custom_async_runtime = false;
-        let async_runtime: Arc<dyn AsyncRuntime> = {
-            #[cfg(feature = "pluggable_runtime")]
-            {
-                match self.async_runtime {
-                    Some(DynAsyncRuntime(rt)) => {
-                        custom_async_runtime = true;
-                        rt
-                    }
-                    None => get_async_runtime(),
-                }
-            }
-            #[cfg(not(feature = "pluggable_runtime"))]
-            {
-                get_async_runtime()
             }
         };
 

@@ -17,6 +17,7 @@ use crate::driver::transport::cosmos_transport_client::{
 use crate::models::cosmos_headers::fault_injection_header_names::FAULT_INJECTION_OPERATION;
 use crate::models::{CosmosResponseHeaders, CosmosStatus, SubStatusCode};
 use async_trait::async_trait;
+use azure_core::async_runtime::AsyncRuntime;
 use azure_core::http::headers::HeaderName;
 use azure_core::http::StatusCode;
 use std::sync::Arc;
@@ -34,12 +35,23 @@ enum ApplyResult {
 }
 
 /// Custom implementation of a transport client that injects faults for testing purposes.
-#[derive(Debug)]
 pub struct FaultClient {
     /// The inner transport client to which requests are delegated.
     inner: Arc<dyn TransportClient>,
     /// The fault injection rules to apply.
     rules: Arc<Vec<Arc<FaultInjectionRule>>>,
+    /// Async runtime used for fault-injection delays. Comes from the
+    /// [`CosmosDriverRuntime`] that owns this client so a caller-supplied
+    /// runtime (via `pluggable_runtime`) is honored.
+    async_runtime: Arc<dyn AsyncRuntime>,
+}
+
+impl std::fmt::Debug for FaultClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FaultClient")
+            .field("rules", &self.rules.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl FaultClient {
@@ -47,10 +59,12 @@ impl FaultClient {
     pub(crate) fn new(
         inner: Arc<dyn TransportClient>,
         rules: Vec<Arc<FaultInjectionRule>>,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> Self {
         Self {
             inner,
             rules: Arc::new(rules),
+            async_runtime,
         }
     }
 
@@ -179,7 +193,7 @@ impl FaultClient {
             if delay > Duration::ZERO {
                 let delay = azure_core::time::Duration::try_from(delay)
                     .unwrap_or(azure_core::time::Duration::ZERO);
-                azure_core::sleep(delay).await;
+                self.async_runtime.sleep(delay).await;
             }
         }
 
@@ -451,7 +465,11 @@ mod tests {
             .with_condition(condition)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         // Request without operation type header shouldn't match
         let (request, _collector) = create_test_request();
@@ -464,7 +482,11 @@ mod tests {
     #[tokio::test]
     async fn execute_request_empty_rules() {
         let mock_client = Arc::new(MockTransportClient::new());
-        let fault_client = FaultClient::new(mock_client.clone(), vec![]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         let (request, _collector) = create_test_request();
         let result = fault_client.send(&request).await;
@@ -484,7 +506,11 @@ mod tests {
             .with_hit_limit(2)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         // First two requests should hit the fault
@@ -521,7 +547,11 @@ mod tests {
             .with_start_time(Instant::now() + Duration::from_secs(60))
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         // Request should pass through because start_time is in the future
@@ -539,7 +569,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("error-rule", error).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         let result = fault_client.send(&request).await;
@@ -567,7 +601,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("throttle-rule", error).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         let result = fault_client.send(&request).await;
@@ -590,7 +628,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("response-delay-rule", error).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         // Delay-only should pass through to actual request after delay
@@ -623,7 +665,11 @@ mod tests {
             .with_condition(condition)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         // Request URL doesn't contain "westus", should pass through
         let (request, _collector) = create_test_request();
@@ -647,7 +693,11 @@ mod tests {
             .with_condition(condition)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         // Request URL doesn't contain "my-container", should pass through
         let (request, _collector) = create_test_request();
@@ -669,7 +719,11 @@ mod tests {
             .with_hit_limit(2)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         // First request should hit the fault
@@ -724,7 +778,11 @@ mod tests {
                 .build();
             let rule = FaultInjectionRuleBuilder::new("substatus-rule", error).build();
 
-            let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+            let fault_client = FaultClient::new(
+                mock_client,
+                vec![Arc::new(rule)],
+                azure_core::async_runtime::get_async_runtime(),
+            );
             let (request, _collector) = create_test_request();
 
             let result = fault_client.send(&request).await;
@@ -770,7 +828,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("conn-error", error).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         let result = fault_client.send(&request).await;
@@ -796,7 +858,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("timeout-error", error).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         let result = fault_client.send(&request).await;
@@ -827,7 +893,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("custom-response-rule", result).build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, _collector) = create_test_request();
 
         let response = fault_client.send(&request).await;
@@ -853,7 +923,11 @@ mod tests {
             .with_condition(condition)
             .build();
 
-        let fault_client = FaultClient::new(mock_client.clone(), vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client.clone(),
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         let (mut request, _collector) = create_test_request();
         request
@@ -879,7 +953,11 @@ mod tests {
             .build();
         let rule = FaultInjectionRuleBuilder::new("header-test-rule", result).build();
 
-        let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, collector) = create_test_request();
 
         let response = fault_client.send(&request).await;
@@ -900,7 +978,11 @@ mod tests {
         let rule = Arc::new(FaultInjectionRuleBuilder::new("disabled-rule", error).build());
         rule.disable();
 
-        let fault_client = FaultClient::new(mock_client, vec![rule]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![rule],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, collector) = create_test_request();
         let result = fault_client.send(&request).await;
         assert!(result.is_ok(), "Request should succeed with disabled rule");
@@ -926,7 +1008,11 @@ mod tests {
             .with_error(FaultInjectionErrorType::ServiceUnavailable)
             .build();
         let rule = FaultInjectionRuleBuilder::new("test-rule", error).build();
-        let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         let (request, collector) = create_test_request();
         let _ = fault_client.send(&request).await;
@@ -944,7 +1030,11 @@ mod tests {
             .with_error(FaultInjectionErrorType::ConnectionError)
             .build();
         let rule = FaultInjectionRuleBuilder::new("conn-rule", error).build();
-        let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         let (request, collector) = create_test_request();
         let _ = fault_client.send(&request).await;
@@ -962,7 +1052,11 @@ mod tests {
             .with_error(FaultInjectionErrorType::ResponseTimeout)
             .build();
         let rule = FaultInjectionRuleBuilder::new("timeout-rule", error).build();
-        let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         let (request, collector) = create_test_request();
         let _ = fault_client.send(&request).await;
@@ -992,7 +1086,11 @@ mod tests {
         let rule2 = Arc::new(FaultInjectionRuleBuilder::new("active-rule", error2).build());
         let rule3 = Arc::new(FaultInjectionRuleBuilder::new("superseded-rule", error3).build());
 
-        let fault_client = FaultClient::new(mock_client, vec![rule1, rule2, rule3]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![rule1, rule2, rule3],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let (request, collector) = create_test_request();
         let _ = fault_client.send(&request).await;
 
@@ -1028,7 +1126,11 @@ mod tests {
             .with_condition(condition)
             .build();
 
-        let fault_client = FaultClient::new(mock_client, vec![Arc::new(rule)]);
+        let fault_client = FaultClient::new(
+            mock_client,
+            vec![Arc::new(rule)],
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         // Request without matching operation header
         let (request, collector) = create_test_request();

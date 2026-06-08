@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use azure_core::async_runtime::AsyncRuntime;
 use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
 use futures::future::{pending, select, Either, Future};
 
@@ -494,6 +495,7 @@ pub(crate) async fn execute_operation_pipeline(
                 endpoint_key: routing.endpoint.endpoint_key(),
                 max_throttle_attempts,
                 max_throttle_wait_time,
+                async_runtime: transport.async_runtime(),
             },
             &mut diagnostics,
         )
@@ -611,7 +613,7 @@ pub(crate) async fn execute_operation_pipeline(
                     deferred_effects = retry_state.pending_write_effects.len(),
                     "failover retry triggered",
                 );
-                apply_failover_delay(delay).await;
+                apply_failover_delay(transport.async_runtime(), delay).await;
                 advance_to_next_attempt(
                     &mut retry_state,
                     new_state,
@@ -1616,7 +1618,7 @@ fn apply_optional_request_headers(
 /// to repeat that guard themselves. Conversion to `azure_core::time::Duration`
 /// is performed once; if it fails (e.g., overflow) the sleep is silently
 /// skipped because a too-large delay is no worse than no delay at all.
-async fn apply_failover_delay(delay: Option<Duration>) {
+async fn apply_failover_delay(async_runtime: &Arc<dyn AsyncRuntime>, delay: Option<Duration>) {
     let Some(delay) = delay else {
         return;
     };
@@ -1624,7 +1626,7 @@ async fn apply_failover_delay(delay: Option<Duration>) {
         return;
     }
     if let Ok(duration) = azure_core::time::Duration::try_from(delay) {
-        azure_core::sleep(duration).await;
+        async_runtime.sleep(duration).await;
     }
 }
 
@@ -5931,8 +5933,9 @@ mod tests {
 
     #[tokio::test]
     async fn failover_delay_none_returns_immediately() {
+        let runtime = azure_core::async_runtime::get_async_runtime();
         let start = std::time::Instant::now();
-        super::apply_failover_delay(None).await;
+        super::apply_failover_delay(&runtime, None).await;
         // Allow generous slack for CI scheduling jitter; the goal is to
         // confirm that `None` does not invoke the sleep path at all.
         assert!(start.elapsed() < Duration::from_millis(50));
@@ -5940,8 +5943,9 @@ mod tests {
 
     #[tokio::test]
     async fn failover_delay_zero_returns_immediately() {
+        let runtime = azure_core::async_runtime::get_async_runtime();
         let start = std::time::Instant::now();
-        super::apply_failover_delay(Some(Duration::ZERO)).await;
+        super::apply_failover_delay(&runtime, Some(Duration::ZERO)).await;
         assert!(start.elapsed() < Duration::from_millis(50));
     }
 
@@ -5949,8 +5953,9 @@ mod tests {
     async fn failover_delay_real_value_actually_sleeps() {
         // Use tokio's pause-time to verify the sleep path is taken
         // without making the test wall-clock-slow.
+        let runtime = azure_core::async_runtime::get_async_runtime();
         let start = tokio::time::Instant::now();
-        super::apply_failover_delay(Some(Duration::from_secs(5))).await;
+        super::apply_failover_delay(&runtime, Some(Duration::from_secs(5))).await;
         assert!(start.elapsed() >= Duration::from_secs(5));
     }
 

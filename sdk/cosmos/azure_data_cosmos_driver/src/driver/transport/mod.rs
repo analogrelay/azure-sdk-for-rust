@@ -229,6 +229,12 @@ impl CosmosTransport {
         self.negotiated_version
     }
 
+    /// Returns the async runtime that backs spawn / sleep / yield / timeout
+    /// for the operation pipeline and the per-shard background tasks.
+    pub(crate) fn async_runtime(&self) -> &Arc<dyn AsyncRuntime> {
+        &self.async_runtime
+    }
+
     /// Determines if insecure emulator transport should be used for the given endpoint.
     ///
     /// Returns `true` when both conditions are met:

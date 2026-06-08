@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use azure_core::async_runtime::AsyncRuntime;
+
 use super::http_client::FaultClient;
 use super::rule::FaultInjectionRule;
 use crate::driver::transport::cosmos_transport_client::TransportClient;
@@ -16,10 +18,18 @@ use crate::options::ConnectionPoolOptions;
 /// When `create` is called, this factory delegates to the inner factory to build
 /// a real HTTP client, then wraps it in a [`FaultClient`] that
 /// evaluates the configured rules on every request.
-#[derive(Debug)]
 pub(crate) struct FaultInjectingHttpClientFactory {
     inner: Arc<dyn HttpClientFactory>,
     rules: Arc<Vec<Arc<FaultInjectionRule>>>,
+    async_runtime: Arc<dyn AsyncRuntime>,
+}
+
+impl std::fmt::Debug for FaultInjectingHttpClientFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FaultInjectingHttpClientFactory")
+            .field("rules", &self.rules.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl FaultInjectingHttpClientFactory {
@@ -27,10 +37,12 @@ impl FaultInjectingHttpClientFactory {
     pub(crate) fn new(
         inner: Arc<dyn HttpClientFactory>,
         rules: Vec<Arc<FaultInjectionRule>>,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> Self {
         Self {
             inner,
             rules: Arc::new(rules),
+            async_runtime,
         }
     }
 }
@@ -43,7 +55,11 @@ impl HttpClientFactory for FaultInjectingHttpClientFactory {
     ) -> crate::error::Result<Arc<dyn TransportClient>> {
         let real_client = self.inner.build(connection_pool, config)?;
         let rules = (*self.rules).clone();
-        Ok(Arc::new(FaultClient::new(real_client, rules)))
+        Ok(Arc::new(FaultClient::new(
+            real_client,
+            rules,
+            Arc::clone(&self.async_runtime),
+        )))
     }
 }
 
@@ -100,7 +116,11 @@ mod tests {
         let rule = Arc::new(FaultInjectionRuleBuilder::new("test-rule", error).build());
 
         let pool = ConnectionPoolOptions::default();
-        let factory = FaultInjectingHttpClientFactory::new(inner, vec![rule]);
+        let factory = FaultInjectingHttpClientFactory::new(
+            inner,
+            vec![rule],
+            azure_core::async_runtime::get_async_runtime(),
+        );
         let client = factory.build(
             &pool,
             HttpClientConfig::metadata(&pool, crate::diagnostics::TransportHttpVersion::Http11),
