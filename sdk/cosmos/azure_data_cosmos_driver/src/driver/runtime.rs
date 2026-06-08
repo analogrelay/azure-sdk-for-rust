@@ -609,6 +609,10 @@ impl CosmosDriverRuntimeBuilder {
         self
     }
 
+    /// Test-only `pub(crate)` setter used when `pluggable_runtime` is not
+    /// enabled. With `pluggable_runtime` on, callers use the public
+    /// [`with_http_client_factory`](Self::with_http_client_factory) setter
+    /// instead.
     #[cfg(all(
         any(test, feature = "__internal_in_memory_emulator"),
         not(feature = "pluggable_runtime"),
@@ -652,10 +656,15 @@ impl CosmosDriverRuntimeBuilder {
     ///
     /// **Unsupported internal API** — only available under the `__internal_mocking` feature
     /// flag. Intended for benchmarks and test harnesses; no stability guarantees.
+    ///
+    /// This is a thin wrapper around
+    /// [`with_http_client_factory`](Self::with_http_client_factory) (the
+    /// stable `pluggable_runtime` setter), preserved only for backwards
+    /// compatibility with existing benchmark code. New callers should use
+    /// `with_http_client_factory` directly.
     #[cfg(feature = "__internal_mocking")]
-    pub fn with_mock_http_client_factory(mut self, factory: Arc<dyn HttpClientFactory>) -> Self {
-        self.http_client_factory = Some(factory);
-        self
+    pub fn with_mock_http_client_factory(self, factory: Arc<dyn HttpClientFactory>) -> Self {
+        self.with_http_client_factory(factory)
     }
 
     /// Registers a throughput control group.

@@ -309,7 +309,7 @@ impl HttpClientFactory for DefaultHttpClientFactory {
         Err(crate::error::CosmosError::builder()
             .with_status(crate::error::CosmosStatus::CLIENT_REQWEST_FEATURE_REQUIRED)
             .with_message(
-                "azure_data_cosmos_driver requires the `reqwest` feature to construct the default transport",
+                "azure_data_cosmos_driver was built without the `reqwest` feature, so the default HTTP transport is unavailable. Either enable the `reqwest` feature, or enable the `pluggable_runtime` feature and supply your own transport via `CosmosDriverRuntimeBuilder::with_http_client_factory(...)`.",
             )
             .build())
     }
