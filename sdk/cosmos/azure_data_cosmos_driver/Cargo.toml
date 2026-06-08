@@ -77,14 +77,7 @@ reqwest = [
 rustls = ["reqwest", "reqwest/rustls", "__tls"]
 native_tls = ["reqwest", "reqwest/native-tls", "__tls"]
 fault_injection = ["dep:rand"]
-# `pluggable_runtime` opts in to the stable plug-point surface that lets
-# callers supply their own `azure_core::async_runtime::AsyncRuntime` and
-# `HttpClientFactory` when building a `CosmosDriverRuntime`. The default
-# experience (reqwest + tokio) is unchanged whether this feature is on or
-# off. Replacing either plug point puts the SDK outside the configuration
-# Microsoft validates and ships — see the doc comments on
-# `CosmosDriverRuntimeBuilder::with_http_client_factory` and
-# `with_async_runtime` for the Azure Support policy implications.
+# Exposes plug points for replacing the HTTP client factory and async runtime via `CosmosDriverRuntimeBuilder`.
 pluggable_runtime = []
 # `__internal_in_memory_emulator` exposes the in-memory query evaluator
 # (`crate::query::eval`, `crate::query::value`) used by the in-memory Cosmos DB
