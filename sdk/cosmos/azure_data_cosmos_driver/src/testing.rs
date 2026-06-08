@@ -12,7 +12,7 @@
 //! bump. Do **not** depend on this module in production code.
 //!
 //! New callers should use the stable
-//! [`crate::transport`](crate::transport) module exposed under the
+//! [`crate::transport`] module exposed under the
 //! `pluggable_runtime` feature flag, together with
 //! [`CosmosDriverRuntimeBuilder::with_http_client_factory`](crate::CosmosDriverRuntimeBuilder::with_http_client_factory).
 //! The setters and types in this module are now thin re-exports of the
