@@ -77,6 +77,15 @@ reqwest = [
 rustls = ["reqwest", "reqwest/rustls", "__tls"]
 native_tls = ["reqwest", "reqwest/native-tls", "__tls"]
 fault_injection = ["dep:rand"]
+# `pluggable_runtime` opts in to the stable plug-point surface that lets
+# callers supply their own `azure_core::async_runtime::AsyncRuntime` and
+# `HttpClientFactory` when building a `CosmosDriverRuntime`. The default
+# experience (reqwest + tokio) is unchanged whether this feature is on or
+# off. Replacing either plug point puts the SDK outside the configuration
+# Microsoft validates and ships — see the doc comments on
+# `CosmosDriverRuntimeBuilder::with_http_client_factory` and
+# `with_async_runtime` for the Azure Support policy implications.
+pluggable_runtime = []
 # `__internal_in_memory_emulator` exposes the in-memory query evaluator
 # (`crate::query::eval`, `crate::query::value`) used by the in-memory Cosmos DB
 # emulator. The evaluator intentionally trades full Cosmos parity for emulator
@@ -84,11 +93,12 @@ fault_injection = ["dep:rand"]
 # `eval` module). Production code MUST NOT enable this feature; it is not
 # covered by SemVer and may change or disappear at any time.
 __internal_in_memory_emulator = [
+  "pluggable_runtime",
   "dep:tokio",
   "dep:time",
   "dep:percent-encoding",
 ]
-__internal_mocking = []
+__internal_mocking = ["pluggable_runtime"]
 # Enables test-only DiagnosticsContext construction used by SDK unit tests. NOT a stable API.
 __internal_test_diagnostics_construction = []
 # `__internal_backtrace_bench` exposes [`error::Backtrace`], its capture/
@@ -109,6 +119,7 @@ __tls = []
 features = [
   "fault_injection",
   "native_tls",
+  "pluggable_runtime",
   "rustls",
   "tokio",
 ]
