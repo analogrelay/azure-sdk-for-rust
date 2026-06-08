@@ -3,30 +3,41 @@
 
 //! Manages background tasks spawned by a client.
 //!
-//! [`BackgroundTaskManager`] holds on to [`tokio::task::JoinHandle`]s returned
-//! by [`tokio::spawn`]. Dropping the manager aborts all stored tasks — unlike
-//! raw `JoinHandle` (which detaches on drop), this manager calls
-//! [`JoinHandle::abort`] to cancel each task.
+//! [`BackgroundTaskManager`] holds on to the [`SpawnedTask`] handles returned
+//! by [`AsyncRuntime::spawn`]. Dropping the manager calls
+//! [`AbortableTask::abort`](azure_core::async_runtime::AbortableTask::abort)
+//! on each tracked handle, cancelling the associated task (handles detach
+//! on drop without explicit abort).
+//!
+//! The manager is intended for long-lived spawn-once tasks (periodic health
+//! sweeps, refresh loops). It does not prune finished handles on each spawn
+//! — production callers spawn a fixed number of tasks at construction and
+//! they run for the lifetime of the owner. Tests cover both the
+//! abort-on-drop and shutdown-and-await paths.
 
+use azure_core::async_runtime::{AsyncRuntime, SpawnedTask};
 use futures::FutureExt;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error};
 
-/// Manages the lifecycle of background tasks spawned on the tokio runtime.
+/// Manages the lifecycle of background tasks spawned on the configured
+/// [`AsyncRuntime`].
 ///
-/// Spawned tasks are kept alive by storing their [`tokio::task::JoinHandle`]s.
+/// Spawned tasks are kept alive by storing their [`SpawnedTask`] handles.
 /// When the manager is dropped, all handles are aborted, cancelling the
-/// associated tasks (tokio `JoinHandle`s detach on drop rather than cancel,
-/// so explicit abort is required).
+/// associated tasks (handles detach on drop without explicit abort).
 #[allow(dead_code)]
 pub(crate) struct BackgroundTaskManager {
+    /// Async runtime used to spawn new tasks. Stored as an `Arc` so
+    /// [`spawn`](Self::spawn) can dispatch without re-resolving the runtime.
+    runtime: Arc<dyn AsyncRuntime>,
     /// Stored task handles. Aborting these cancels the tasks.
     /// Uses a [`Mutex`] for interior mutability so that [`spawn`](Self::spawn)
     /// can accept `&self`, which is required when the manager lives inside an
     /// `Arc`.
-    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    tasks: Mutex<Vec<SpawnedTask>>,
 }
 
 impl std::fmt::Debug for BackgroundTaskManager {
@@ -42,30 +53,26 @@ impl std::fmt::Debug for BackgroundTaskManager {
 
 #[allow(dead_code)]
 impl BackgroundTaskManager {
-    /// Creates a new [`BackgroundTaskManager`] with no active tasks.
-    pub fn new() -> Self {
+    /// Creates a new [`BackgroundTaskManager`] backed by the supplied
+    /// [`AsyncRuntime`] with no active tasks.
+    pub fn new(runtime: Arc<dyn AsyncRuntime>) -> Self {
         Self {
+            runtime,
             tasks: Mutex::new(Vec::new()),
         }
     }
 
-    /// Spawns a background task on the tokio runtime and stores the handle.
+    /// Spawns a background task on the configured runtime and stores the
+    /// handle.
     ///
     /// The task will remain alive as long as this manager is alive. When the
     /// manager is dropped, all stored handles are aborted, cancelling the
     /// tasks.
-    ///
-    /// Completed task handles are pruned on each call to prevent unbounded
-    /// accumulation when the manager is long-lived.
     pub fn spawn<F>(&self, future: F)
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        // NOTE: We use tokio::spawn directly instead of azure_core::async_runtime
-        // because we need JoinHandle::abort() for correct task cancellation on drop.
-        // The AsyncRuntime::spawn abstraction returns SpawnedTask (a boxed future)
-        // which only detaches on drop — it does not cancel the underlying task.
-        let handle = tokio::spawn(async move {
+        let handle = self.runtime.spawn(Box::pin(async move {
             if let Err(panic_payload) = AssertUnwindSafe(future).catch_unwind().await {
                 let msg = panic_payload
                     .downcast_ref::<&str>()
@@ -74,12 +81,11 @@ impl BackgroundTaskManager {
                     .unwrap_or("<non-string panic>");
                 error!("Background task panicked: {msg}");
             }
-        });
+        }));
         let mut tasks = self
             .tasks
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        tasks.retain(|h| !h.is_finished());
         tasks.push(handle);
     }
 
@@ -99,7 +105,8 @@ impl BackgroundTaskManager {
         debug!("BackgroundTaskManager: shutting down {count} background task(s).");
         for handle in tasks {
             handle.abort();
-            // JoinError from abort is expected — we just need to ensure completion.
+            // The runtime returns an abort-friendly future; awaiting it after
+            // `abort` resolves promptly with either Ok or the abort error.
             let _ = handle.await;
         }
     }
@@ -124,26 +131,31 @@ impl Drop for BackgroundTaskManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use azure_core::async_runtime::get_async_runtime;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;
     use tokio::time::Duration;
 
+    fn manager() -> BackgroundTaskManager {
+        BackgroundTaskManager::new(get_async_runtime())
+    }
+
     #[test]
     fn new_manager_has_no_tasks() {
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         assert_eq!(manager.tasks.lock().unwrap().len(), 0);
     }
 
     #[test]
     fn debug_shows_task_count() {
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         let debug_str = format!("{:?}", manager);
         assert!(debug_str.contains("tasks_count"));
     }
 
     #[tokio::test]
     async fn drop_cleans_up_tasks() {
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         manager.spawn(async {});
         assert_eq!(manager.tasks.lock().unwrap().len(), 1);
         drop(manager);
@@ -153,7 +165,7 @@ mod tests {
     async fn task_runs_to_completion() {
         let counter = Arc::new(AtomicU32::new(0));
 
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         {
             let counter = Arc::clone(&counter);
             manager.spawn(async move {
@@ -181,7 +193,7 @@ mod tests {
         let started = Arc::new(AtomicBool::new(false));
         let completed = Arc::new(AtomicBool::new(false));
 
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         {
             let started = Arc::clone(&started);
             let completed = Arc::clone(&completed);
@@ -219,7 +231,7 @@ mod tests {
     async fn shutdown_awaits_task_termination() {
         let started = Arc::new(AtomicBool::new(false));
 
-        let manager = BackgroundTaskManager::new();
+        let manager = manager();
         {
             let started = Arc::clone(&started);
             manager.spawn(async move {
@@ -245,40 +257,9 @@ mod tests {
         assert_eq!(manager.tasks.lock().unwrap().len(), 0);
     }
 
-    #[tokio::test]
-    async fn spawn_prunes_finished_handles() {
-        let manager = BackgroundTaskManager::new();
-
-        // Spawn a trivial task that completes immediately
-        manager.spawn(async {});
-
-        // Wait for it to finish
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                let all_done = manager
-                    .tasks
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .all(|h| h.is_finished());
-                if all_done {
-                    break;
-                }
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("task should finish within timeout");
-
-        // Spawning again should prune the finished handle
-        manager.spawn(async {});
-        // Only the new task should remain (finished one was pruned)
-        assert_eq!(manager.tasks.lock().unwrap().len(), 1);
-    }
-
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_spawn_is_safe() {
-        let manager = Arc::new(BackgroundTaskManager::new());
+        let manager = Arc::new(manager());
         let done_count = Arc::new(AtomicU32::new(0));
 
         let mut spawner_handles = Vec::new();

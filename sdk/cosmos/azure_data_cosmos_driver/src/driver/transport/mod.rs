@@ -15,7 +15,6 @@
 
 pub(crate) mod adaptive_transport;
 mod authorization_policy;
-#[cfg(feature = "tokio")]
 pub(crate) mod background_task_manager;
 pub(crate) mod cosmos_headers;
 pub(crate) mod cosmos_transport_client;
@@ -34,6 +33,7 @@ use crate::{
     models::{AccountEndpoint, OperationType, ResourceType},
     options::ConnectionPoolOptions,
 };
+use azure_core::async_runtime::AsyncRuntime;
 use std::sync::{Arc, OnceLock};
 
 use self::{
@@ -94,7 +94,6 @@ pub(crate) fn uses_dataplane_pipeline(
 ///   connection liveness detection.
 /// - **Gateway 2.0**: Always HTTP/2 (unchanged).
 /// - **Emulator**: Lazily created with insecure TLS.
-#[derive(Debug)]
 pub(crate) struct CosmosTransport {
     /// Connection pool configuration.
     connection_pool: ConnectionPoolOptions,
@@ -119,6 +118,9 @@ pub(crate) struct CosmosTransport {
 
     /// Lazily-initialized transport for emulator dataplane operations.
     insecure_emulator_dataplane_transport: OnceLock<AdaptiveTransport>,
+
+    /// Async runtime used by sharded transports for background health sweeps.
+    async_runtime: Arc<dyn AsyncRuntime>,
 }
 
 impl CosmosTransport {
@@ -134,7 +136,12 @@ impl CosmosTransport {
         let http_client_factory: Arc<dyn HttpClientFactory> =
             Arc::new(DefaultHttpClientFactory::new());
 
-        Self::with_factory(connection_pool, http_client_factory, negotiated_version)
+        Self::with_factory(
+            connection_pool,
+            http_client_factory,
+            negotiated_version,
+            azure_core::async_runtime::get_async_runtime(),
+        )
     }
 
     /// Creates a transport with a custom HTTP client factory (for testing).
@@ -142,12 +149,14 @@ impl CosmosTransport {
         connection_pool: ConnectionPoolOptions,
         http_client_factory: Arc<dyn HttpClientFactory>,
         negotiated_version: TransportHttpVersion,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> crate::error::Result<Self> {
         let metadata_config = HttpClientConfig::metadata(&connection_pool, negotiated_version);
         let metadata_transport = AdaptiveTransport::from_config(
             &connection_pool,
             http_client_factory.clone(),
             metadata_config,
+            Arc::clone(&async_runtime),
         )?;
 
         let gateway_config =
@@ -156,6 +165,7 @@ impl CosmosTransport {
             &connection_pool,
             http_client_factory.clone(),
             gateway_config,
+            Arc::clone(&async_runtime),
         )?;
 
         Ok(Self {
@@ -167,6 +177,7 @@ impl CosmosTransport {
             dataplane_gateway20_transport: OnceLock::new(),
             insecure_emulator_metadata_transport: OnceLock::new(),
             insecure_emulator_dataplane_transport: OnceLock::new(),
+            async_runtime,
         })
     }
 
@@ -180,6 +191,7 @@ impl CosmosTransport {
         connection_pool: ConnectionPoolOptions,
         http_client_factory: Arc<dyn HttpClientFactory>,
         negotiated_version: TransportHttpVersion,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> crate::error::Result<Self> {
         let metadata_config = HttpClientConfig::metadata(&connection_pool, negotiated_version);
         let metadata_transport = AdaptiveTransport::unsharded(
@@ -208,6 +220,7 @@ impl CosmosTransport {
             dataplane_gateway20_transport: OnceLock::new(),
             insecure_emulator_metadata_transport: OnceLock::new(),
             insecure_emulator_dataplane_transport: OnceLock::new(),
+            async_runtime,
         })
     }
 
@@ -242,6 +255,7 @@ impl CosmosTransport {
                         &self.connection_pool,
                         self.http_client_factory.clone(),
                         config,
+                        Arc::clone(&self.async_runtime),
                     )?;
                     self.insecure_emulator_metadata_transport
                         .get_or_init(|| t)
@@ -273,6 +287,7 @@ impl CosmosTransport {
                         &self.connection_pool,
                         self.http_client_factory.clone(),
                         config,
+                        Arc::clone(&self.async_runtime),
                     )?;
                     self.insecure_emulator_dataplane_transport
                         .get_or_init(|| t)
@@ -292,6 +307,7 @@ impl CosmosTransport {
                             &self.connection_pool,
                             self.http_client_factory.clone(),
                             config,
+                            Arc::clone(&self.async_runtime),
                         );
                         self.dataplane_gateway20_transport.get_or_init(|| t).clone()
                     }
@@ -300,6 +316,33 @@ impl CosmosTransport {
             }
             _ => Ok(self.dataplane_gateway_transport.clone()),
         }
+    }
+}
+
+impl std::fmt::Debug for CosmosTransport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CosmosTransport")
+            .field("connection_pool", &self.connection_pool)
+            .field("http_client_factory", &self.http_client_factory)
+            .field("negotiated_version", &self.negotiated_version)
+            .field("metadata_transport", &self.metadata_transport)
+            .field(
+                "dataplane_gateway_transport",
+                &self.dataplane_gateway_transport,
+            )
+            .field(
+                "dataplane_gateway20_transport",
+                &self.dataplane_gateway20_transport,
+            )
+            .field(
+                "insecure_emulator_metadata_transport",
+                &self.insecure_emulator_metadata_transport,
+            )
+            .field(
+                "insecure_emulator_dataplane_transport",
+                &self.insecure_emulator_dataplane_transport,
+            )
+            .finish_non_exhaustive()
     }
 }
 

@@ -11,10 +11,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use azure_core::async_runtime::AsyncRuntime;
 use crossbeam_epoch::{self as epoch, Atomic, Owned};
 use futures::future::BoxFuture;
 
-#[cfg(feature = "tokio")]
 use crate::driver::transport::background_task_manager::BackgroundTaskManager;
 use crate::{
     driver::cache::{AccountMetadataCache, AccountProperties},
@@ -70,7 +70,6 @@ type AccountRefreshFn = Arc<
 /// loop. Independent of `LocationStateStore::refresh_interval` (which
 /// rate-limits the event-driven refresh emitted by
 /// `LocationEffect::RefreshAccountProperties`).
-#[cfg(feature = "tokio")]
 pub(crate) const BACKGROUND_REFRESH_INTERVAL: Duration = Duration::from_secs(300);
 
 /// Unified location state store with lock-free reads and CAS-loop writes.
@@ -103,8 +102,10 @@ pub(crate) struct LocationStateStore {
     cached_snapshot: std::sync::Mutex<(u64, LocationSnapshot)>,
     /// Manages the background failback loop task.
     /// Dropping this manager aborts the failback task.
-    #[cfg(feature = "tokio")]
     background_task_manager: BackgroundTaskManager,
+    /// Async runtime used by the background failback / refresh loops for
+    /// timed sleeps.
+    async_runtime: Arc<dyn AsyncRuntime>,
 }
 
 impl std::fmt::Debug for LocationStateStore {
@@ -153,6 +154,7 @@ impl LocationStateStore {
         endpoint_unavailability_ttl: Duration,
         partition_failover_config: PartitionFailoverConfig,
         preferred_regions: Vec<Region>,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> Self {
         let account_state = AccountEndpointState::single(default_endpoint.clone());
         let partition_state = PartitionEndpointState::new(partition_failover_config);
@@ -183,8 +185,8 @@ impl LocationStateStore {
             last_synced_properties: std::sync::Mutex::new(None),
             account_version: AtomicU64::new(0),
             cached_snapshot: std::sync::Mutex::new((0, initial_snapshot)),
-            #[cfg(feature = "tokio")]
-            background_task_manager: BackgroundTaskManager::new(),
+            background_task_manager: BackgroundTaskManager::new(Arc::clone(&async_runtime)),
+            async_runtime,
         }
     }
 
@@ -547,12 +549,12 @@ impl LocationStateStore {
     /// The loop holds a `Weak` reference to `self` so it self-terminates when
     /// the store is dropped. The `BackgroundTaskManager` provides abort-on-drop
     /// as an additional safety layer.
-    #[cfg(feature = "tokio")]
     pub fn start_failback_loop(self: &Arc<Self>) {
         let weak_store: Weak<LocationStateStore> = Arc::downgrade(self);
         let config = self.snapshot().partitions.config.clone();
+        let runtime = Arc::clone(&self.async_runtime);
         self.background_task_manager.spawn(async move {
-            failback_loop(weak_store, config).await;
+            failback_loop(weak_store, config, runtime).await;
         });
     }
 
@@ -564,11 +566,11 @@ impl LocationStateStore {
     /// database account metadata via `force_refresh_account_properties`
     /// (the timer interval IS the rate limit, so the event-driven
     /// `refresh_interval` check is bypassed).
-    #[cfg(feature = "tokio")]
     pub fn start_account_refresh_loop(self: &Arc<Self>) {
         let weak_store: Weak<LocationStateStore> = Arc::downgrade(self);
+        let runtime = Arc::clone(&self.async_runtime);
         self.background_task_manager.spawn(async move {
-            account_refresh_loop(weak_store, BACKGROUND_REFRESH_INTERVAL).await;
+            account_refresh_loop(weak_store, BACKGROUND_REFRESH_INTERVAL, runtime).await;
         });
     }
 
@@ -635,10 +637,16 @@ impl LocationStateStore {
 /// Each successful iteration emits `tracing::debug!` so operators can confirm
 /// the timer is alive without flooding logs (debug, not info, since this
 /// fires every 5 minutes per driver in steady state).
-#[cfg(feature = "tokio")]
-async fn account_refresh_loop(weak_store: Weak<LocationStateStore>, interval: Duration) {
+async fn account_refresh_loop(
+    weak_store: Weak<LocationStateStore>,
+    interval: Duration,
+    runtime: Arc<dyn AsyncRuntime>,
+) {
+    let runtime_interval: azure_core::time::Duration = interval
+        .try_into()
+        .expect("background account refresh interval out of range for azure_core::time::Duration");
     loop {
-        tokio::time::sleep(interval).await;
+        runtime.sleep(runtime_interval).await;
 
         let Some(store) = weak_store.upgrade() else {
             // LocationStateStore was dropped — exit the loop.
@@ -657,10 +665,17 @@ async fn account_refresh_loop(weak_store: Weak<LocationStateStore>, interval: Du
 /// Background failback loop that periodically sweeps expired partition overrides.
 ///
 /// Exits when the `LocationStateStore` is dropped (`Weak::upgrade()` returns `None`).
-#[cfg(feature = "tokio")]
-async fn failback_loop(weak_store: Weak<LocationStateStore>, config: PartitionFailoverConfig) {
+async fn failback_loop(
+    weak_store: Weak<LocationStateStore>,
+    config: PartitionFailoverConfig,
+    runtime: Arc<dyn AsyncRuntime>,
+) {
+    let runtime_interval: azure_core::time::Duration = config
+        .failback_sweep_interval
+        .try_into()
+        .expect("failback sweep interval out of range for azure_core::time::Duration");
     loop {
-        tokio::time::sleep(config.failback_sweep_interval).await;
+        runtime.sleep(runtime_interval).await;
 
         let Some(store) = weak_store.upgrade() else {
             // LocationStateStore was dropped — exit the loop.
@@ -739,6 +754,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         store
@@ -777,6 +793,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         store
@@ -833,6 +850,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         // First refresh: fails. Should NOT advance last_refresh_epoch_ms,
@@ -946,6 +964,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         let properties = Arc::new(test_refresh_payload());
@@ -1008,6 +1027,7 @@ mod tests {
             Duration::from_secs(60),
             PartitionFailoverConfig::default(),
             Vec::new(),
+            azure_core::async_runtime::get_async_runtime(),
         );
 
         let canary = Arc::new(());

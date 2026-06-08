@@ -198,12 +198,17 @@ impl CosmosDriver {
         http_client_factory: Arc<dyn super::transport::http_client_factory::HttpClientFactory>,
         version: TransportHttpVersion,
         endpoint: &AccountEndpoint,
+        async_runtime: Arc<dyn azure_core::async_runtime::AsyncRuntime>,
     ) -> crate::error::Result<(
         CosmosTransport,
         super::transport::adaptive_transport::AdaptiveTransport,
     )> {
-        let transport =
-            CosmosTransport::with_factory(connection_pool.clone(), http_client_factory, version)?;
+        let transport = CosmosTransport::with_factory(
+            connection_pool.clone(),
+            http_client_factory,
+            version,
+            async_runtime,
+        )?;
         let metadata_transport = transport.get_metadata_transport(endpoint)?;
         Ok((transport, metadata_transport))
     }
@@ -219,6 +224,7 @@ impl CosmosDriver {
             Arc::clone(runtime.http_client_factory()),
             version,
             &endpoint,
+            Arc::clone(runtime.async_runtime()),
         )?;
         let user_agent = Self::user_agent_header(runtime);
         let props = Self::fetch_account_properties_with_transport(
@@ -796,6 +802,7 @@ impl CosmosDriver {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http2,
+                Arc::clone(runtime.async_runtime()),
             ) {
                 Ok(transport) => {
                     transport_holder.store(Arc::new(transport));
@@ -1009,10 +1016,10 @@ impl CosmosDriver {
             endpoint_unavailability_ttl,
             partition_failover_config,
             options.preferred_regions().to_vec(),
+            Arc::clone(runtime.async_runtime()),
         ));
 
         // Spawn the background failback loop for partition-level overrides.
-        #[cfg(feature = "tokio")]
         location_state_store.start_failback_loop();
 
         // Spawn the background account-metadata refresh loop so long-running
@@ -1020,7 +1027,6 @@ impl CosmosDriver {
         // without paying the latency on the request hot path. Per-operation
         // lookups in `execute_operation` use the cheap `get_or_fetch` fast
         // path because freshness is owned by this loop.
-        #[cfg(feature = "tokio")]
         location_state_store.start_account_refresh_loop();
 
         Self {
@@ -1092,6 +1098,7 @@ impl CosmosDriver {
             self.runtime.connection_pool().clone(),
             Arc::clone(self.runtime.http_client_factory()),
             negotiated_version,
+            Arc::clone(self.runtime.async_runtime()),
         )?);
 
         self.transport.store(new_transport);
@@ -2512,6 +2519,7 @@ mod tests {
             factory.clone(),
             TransportHttpVersion::Http11,
             &endpoint,
+            azure_core::async_runtime::get_async_runtime(),
         )
         .unwrap();
 
@@ -2578,6 +2586,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http11,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );
@@ -2614,6 +2623,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http11,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );
@@ -2651,6 +2661,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http2,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );
@@ -2773,6 +2784,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http2,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );
@@ -2812,6 +2824,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http2,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );
@@ -2846,6 +2859,7 @@ mod tests {
                 runtime.connection_pool().clone(),
                 Arc::clone(runtime.http_client_factory()),
                 TransportHttpVersion::Http2,
+                Arc::clone(runtime.async_runtime()),
             )
             .unwrap(),
         );

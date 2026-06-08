@@ -5,6 +5,8 @@
 
 use std::{fmt, sync::Arc};
 
+use azure_core::async_runtime::AsyncRuntime;
+
 use crate::diagnostics::{TransportHttpVersion, TransportKind};
 
 use super::{
@@ -36,14 +38,20 @@ impl AdaptiveTransport {
         connection_pool: &ConnectionPoolOptions,
         client_factory: Arc<dyn HttpClientFactory>,
         config: HttpClientConfig,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> crate::error::Result<Self> {
         Ok(match config.version_policy {
             HttpVersionPolicy::Http11Only => {
                 Self::Gateway(client_factory.build(connection_pool, config)?)
             }
-            HttpVersionPolicy::Http2Only => Self::ShardedGateway(Arc::new(
-                ShardedHttpTransport::new(connection_pool.clone(), client_factory, config),
-            )),
+            HttpVersionPolicy::Http2Only => {
+                Self::ShardedGateway(Arc::new(ShardedHttpTransport::new(
+                    connection_pool.clone(),
+                    client_factory,
+                    config,
+                    async_runtime,
+                )))
+            }
         })
     }
 
@@ -67,11 +75,13 @@ impl AdaptiveTransport {
         connection_pool: &ConnectionPoolOptions,
         client_factory: Arc<dyn HttpClientFactory>,
         config: HttpClientConfig,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> Self {
         Self::ShardedGateway20(Arc::new(ShardedHttpTransport::new(
             connection_pool.clone(),
             client_factory,
             config,
+            async_runtime,
         )))
     }
 

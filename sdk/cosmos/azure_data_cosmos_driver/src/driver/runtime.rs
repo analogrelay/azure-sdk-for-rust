@@ -903,6 +903,7 @@ impl CosmosDriverRuntimeBuilder {
             connection_pool.clone(),
             http_client_factory.clone(),
             bootstrap_version,
+            Arc::clone(&async_runtime),
         )?);
 
         // Initialize system monitoring singletons.

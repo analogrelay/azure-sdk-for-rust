@@ -12,23 +12,19 @@ use std::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc, Mutex,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use arc_swap::ArcSwap;
+use azure_core::async_runtime::AsyncRuntime;
 
 use super::cosmos_transport_client::{HttpRequest, HttpResponse, TransportClient, TransportError};
-#[cfg(any(feature = "tokio", test))]
-use std::time::Duration;
-#[cfg(any(feature = "tokio", test))]
-use tracing::debug;
-use tracing::trace;
+use tracing::{debug, trace};
 use url::Url;
 
 use crate::diagnostics::TransportShardDiagnostics;
 use crate::options::ConnectionPoolOptions;
 
-#[cfg(feature = "tokio")]
 use super::background_task_manager::BackgroundTaskManager;
 use super::http_client_factory::{HttpClientConfig, HttpClientFactory};
 
@@ -44,7 +40,6 @@ pub(crate) struct ShardedHttpTransport {
     client_factory: Arc<dyn HttpClientFactory>,
     connection_pool: ConnectionPoolOptions,
     client_config: HttpClientConfig,
-    #[cfg(feature = "tokio")]
     background_tasks: Arc<BackgroundTaskManager>,
 }
 
@@ -53,18 +48,17 @@ impl ShardedHttpTransport {
         connection_pool: ConnectionPoolOptions,
         client_factory: Arc<dyn HttpClientFactory>,
         client_config: HttpClientConfig,
+        async_runtime: Arc<dyn AsyncRuntime>,
     ) -> Self {
         let transport = Self {
             pools: Arc::new(Mutex::new(HashMap::new())),
             client_factory,
             connection_pool,
             client_config,
-            #[cfg(feature = "tokio")]
-            background_tasks: Arc::new(BackgroundTaskManager::new()),
+            background_tasks: Arc::new(BackgroundTaskManager::new(Arc::clone(&async_runtime))),
         };
 
-        #[cfg(feature = "tokio")]
-        transport.spawn_health_sweep();
+        transport.spawn_health_sweep(async_runtime);
 
         transport
     }
@@ -173,21 +167,32 @@ impl ShardedHttpTransport {
         Ok(pool)
     }
 
-    #[cfg(feature = "tokio")]
-    fn spawn_health_sweep(&self) {
+    fn spawn_health_sweep(&self, runtime: Arc<dyn AsyncRuntime>) {
+        // Defensive guard: when the global async runtime is backed by tokio,
+        // spawning requires a current tokio reactor. Test and non-async
+        // callers may construct a `ShardedHttpTransport` outside any
+        // `#[tokio::test]` / `tokio::runtime::Runtime::block_on` scope, where
+        // the spawn would panic. In those cases there is no event loop to
+        // drive the periodic sweep anyway, so silently skipping it is the
+        // correct behavior. Custom `AsyncRuntime` implementations supplied
+        // via `pluggable_runtime` are unaffected: their `spawn` is expected
+        // to work from any context (the default `StdRuntime` spawns on a
+        // background thread).
+        #[cfg(feature = "tokio")]
         if tokio::runtime::Handle::try_current().is_err() {
             return;
         }
 
-        let interval = self.connection_pool.http2_health_check_interval();
+        let interval: azure_core::time::Duration = self
+            .connection_pool
+            .http2_health_check_interval()
+            .try_into()
+            .expect("http2 health check interval out of range for azure_core::time::Duration");
         let pools = Arc::clone(&self.pools);
-
+        let runtime_for_sleep = Arc::clone(&runtime);
         self.background_tasks.spawn(async move {
-            let mut ticker = tokio::time::interval(interval);
-            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
             loop {
-                ticker.tick().await;
+                runtime_for_sleep.sleep(interval).await;
 
                 let snapshot = pools
                     .lock()
@@ -406,7 +411,6 @@ impl EndpointShardPool {
     }
 }
 
-#[cfg(any(feature = "tokio", test))]
 impl EndpointShardPool {
     fn run_health_sweep(&self) -> crate::error::Result<()> {
         let now = Instant::now();
@@ -742,7 +746,6 @@ impl ClientShard {
     }
 }
 
-#[cfg(any(feature = "tokio", test))]
 impl ClientShard {
     /// Converts a biased nanos offset to an `Instant` relative to this shard's creation time.
     fn nanos_to_instant(&self, biased_nanos: u64) -> Instant {
@@ -788,7 +791,6 @@ impl ClientShard {
     }
 }
 
-#[cfg(any(feature = "tokio", test))]
 #[derive(Clone, Copy, Debug)]
 struct ClientShardHealthSnapshot {
     id: u64,
@@ -801,7 +803,6 @@ struct ClientShardHealthSnapshot {
     marked_for_eviction: bool,
 }
 
-#[cfg(any(feature = "tokio", test))]
 impl ClientShardHealthSnapshot {
     fn has_recent_success(self, now: Instant, grace_period: Duration) -> bool {
         self.last_success_at
@@ -879,7 +880,6 @@ fn active_shard_count(
     needed.max(min_connections).min(selectable_count).max(1)
 }
 
-#[cfg(any(feature = "tokio", test))]
 fn pick_probe_candidate(
     snapshots: &[ClientShardHealthSnapshot],
     threshold: u32,
@@ -1199,7 +1199,12 @@ mod tests {
         );
         let factory = Arc::new(TrackingFactory::default());
 
-        let transport = ShardedHttpTransport::new(pool_opts.clone(), factory.clone(), config);
+        let transport = ShardedHttpTransport::new(
+            pool_opts.clone(),
+            factory.clone(),
+            config,
+            azure_core::async_runtime::get_async_runtime(),
+        );
 
         // Create a pool and force a shard above the failure threshold.
         let endpoint_key = EndpointKey(Arc::from("sweep-test.documents.azure.com:443"));

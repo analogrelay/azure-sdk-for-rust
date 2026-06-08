@@ -42,23 +42,55 @@ pub struct HttpClientConfig {
 
 impl HttpClientConfig {
     /// Returns the HTTP version this transport must use.
+    #[cfg_attr(
+        not(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator",
+            feature = "__internal_mocking",
+        )),
+        allow(dead_code)
+    )]
     pub fn version_policy(&self) -> HttpVersionPolicy {
         self.version_policy
     }
 
     /// Returns the per-request timeout (does not include connect time).
+    #[cfg_attr(
+        not(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator",
+            feature = "__internal_mocking",
+        )),
+        allow(dead_code)
+    )]
     pub fn request_timeout(&self) -> std::time::Duration {
         self.request_timeout
     }
 
     /// Returns `true` if the transport may accept invalid TLS certificates.
     /// This is only ever `true` for connections to the local emulator.
+    #[cfg_attr(
+        not(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator",
+            feature = "__internal_mocking",
+        )),
+        allow(dead_code)
+    )]
     pub fn allow_invalid_cert(&self) -> bool {
         self.allow_invalid_cert
     }
 
     /// Returns whether HTTP/2 keep-alive pings should be sent while the
     /// connection is otherwise idle.
+    #[cfg_attr(
+        not(any(
+            feature = "pluggable_runtime",
+            feature = "__internal_in_memory_emulator",
+            feature = "__internal_mocking",
+        )),
+        allow(dead_code)
+    )]
     pub fn http2_keep_alive_while_idle(&self) -> bool {
         self.http2_keep_alive_while_idle
     }
@@ -274,11 +306,11 @@ impl HttpClientFactory for DefaultHttpClientFactory {
         _connection_pool: &ConnectionPoolOptions,
         _config: HttpClientConfig,
     ) -> crate::error::Result<Arc<dyn TransportClient>> {
-        Err(crate::error::CosmosError::builder().with_status(crate::error::CosmosStatus::CLIENT_REQWEST_FEATURE_REQUIRED)
+        Err(crate::error::CosmosError::builder()
+            .with_status(crate::error::CosmosStatus::CLIENT_REQWEST_FEATURE_REQUIRED)
             .with_message(
                 "azure_data_cosmos_driver requires the `reqwest` feature to construct the default transport",
             )
-            .build()
-            .into())
+            .build())
     }
 }

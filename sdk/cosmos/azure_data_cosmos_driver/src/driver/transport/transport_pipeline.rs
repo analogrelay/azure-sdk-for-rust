@@ -1336,6 +1336,7 @@ mod tests {
                 &pool,
                 crate::diagnostics::TransportHttpVersion::Http2,
             ),
+            azure_core::async_runtime::get_async_runtime(),
         )
         .unwrap()
     }
