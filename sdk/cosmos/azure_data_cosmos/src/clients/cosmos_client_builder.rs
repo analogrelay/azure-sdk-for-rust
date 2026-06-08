@@ -744,4 +744,155 @@ mod tests {
         );
         assert_eq!(opts.preferred_regions(), input.as_slice());
     }
+
+    #[cfg(feature = "pluggable_runtime")]
+    mod pluggable_runtime_tests {
+        use super::*;
+        use crate::pluggable_runtime::{
+            HttpClientConfig, HttpClientFactory, HttpRequest, HttpResponse, TransportClient,
+            TransportError,
+        };
+        use crate::AccountEndpoint;
+        use async_trait::async_trait;
+        use azure_core::credentials::{AccessToken, Secret, TokenCredential, TokenRequestOptions};
+        use azure_core::http::headers::Headers;
+        use azure_data_cosmos_driver::options::ConnectionPoolOptions;
+        use std::sync::{Arc, Mutex};
+        use time::OffsetDateTime;
+
+        const ACCOUNT_PROPERTIES_PAYLOAD: &str = r#"{
+            "_self": "",
+            "id": "test",
+            "_rid": "test.documents.azure.com",
+            "media": "//media/",
+            "addresses": "//addresses/",
+            "_dbs": "//dbs/",
+            "writableLocations": [
+                { "name": "West US 2", "databaseAccountEndpoint": "https://test-westus2.documents.azure.com:443/" }
+            ],
+            "readableLocations": [
+                { "name": "West US 2", "databaseAccountEndpoint": "https://test-westus2.documents.azure.com:443/" }
+            ],
+            "enableMultipleWriteLocations": false,
+            "userReplicationPolicy": { "minReplicaSetSize": 3, "maxReplicasetSize": 4 },
+            "userConsistencyPolicy": { "defaultConsistencyLevel": "Session" },
+            "systemReplicationPolicy": { "minReplicaSetSize": 3, "maxReplicasetSize": 4 },
+            "readPolicy": { "primaryReadCoefficient": 1, "secondaryReadCoefficient": 1 },
+            "queryEngineConfiguration": "{}"
+        }"#;
+
+        #[derive(Debug)]
+        struct StubCredential;
+
+        #[async_trait]
+        impl TokenCredential for StubCredential {
+            async fn get_token(
+                &self,
+                _scopes: &[&str],
+                _options: Option<TokenRequestOptions<'_>>,
+            ) -> azure_core::Result<AccessToken> {
+                Ok(AccessToken::new(
+                    Secret::new("stub-token".to_string()),
+                    OffsetDateTime::now_utc() + time::Duration::hours(1),
+                ))
+            }
+        }
+
+        #[derive(Debug)]
+        struct OkClient;
+
+        #[async_trait]
+        impl TransportClient for OkClient {
+            async fn send(&self, _request: &HttpRequest) -> Result<HttpResponse, TransportError> {
+                Ok(HttpResponse {
+                    status: 200,
+                    headers: Headers::new(),
+                    body: ACCOUNT_PROPERTIES_PAYLOAD.as_bytes().to_vec(),
+                })
+            }
+        }
+
+        #[derive(Debug, Default)]
+        struct CountingFactory {
+            builds: Mutex<u32>,
+        }
+
+        impl HttpClientFactory for CountingFactory {
+            fn build(
+                &self,
+                _connection_pool: &ConnectionPoolOptions,
+                _config: HttpClientConfig,
+            ) -> azure_data_cosmos_driver::Result<Arc<dyn TransportClient>> {
+                *self.builds.lock().unwrap() += 1;
+                Ok(Arc::new(OkClient))
+            }
+        }
+
+        fn pluggable_test_account() -> AccountReference {
+            let endpoint: AccountEndpoint = "https://test.documents.azure.com:443/"
+                .parse()
+                .expect("valid endpoint");
+            let credential: Arc<dyn TokenCredential> = Arc::new(StubCredential);
+            AccountReference::with_credential(endpoint, credential)
+        }
+
+        /// `with_driver_runtime_builder` forwards a caller-supplied builder
+        /// through to the resulting `CosmosClient`'s driver runtime. The
+        /// runtime should carry `custom_http_client_factory() == true`
+        /// (per the supplied `HttpClientFactory`), and the SDK's overlay
+        /// rules — wrapping SDK identifier and the PPCB default — should
+        /// still be applied on top.
+        #[tokio::test]
+        async fn with_driver_runtime_builder_applies_sdk_overlay_and_records_custom_flag() {
+            let factory = Arc::new(CountingFactory::default());
+            let driver_builder =
+                CosmosDriverRuntimeBuilder::new().with_http_client_factory(factory.clone());
+
+            let client = CosmosClient::builder()
+                .with_driver_runtime_builder(driver_builder)
+                .build(
+                    pluggable_test_account(),
+                    RoutingStrategy::PreferredRegions(vec![]),
+                )
+                .await
+                .expect("CosmosClient builds with custom driver runtime builder");
+
+            let runtime = client.context.driver.runtime();
+
+            assert!(
+                runtime.custom_http_client_factory(),
+                "runtime must record that the HTTP client factory was caller-supplied",
+            );
+            assert!(
+                !runtime.custom_async_runtime(),
+                "no custom async runtime was supplied",
+            );
+
+            let wrapping = runtime
+                .wrapping_sdk_identifier()
+                .expect("SDK overlay must set the wrapping SDK identifier");
+            assert!(
+                wrapping.starts_with("azsdk-rust-cosmos/"),
+                "wrapping SDK identifier {wrapping:?} should start with azsdk-rust-cosmos/",
+            );
+            assert!(
+                runtime.user_agent().as_str().contains("azsdk-rust-cosmos/"),
+                "User-Agent {:?} should include the wrapping SDK identifier",
+                runtime.user_agent().as_str(),
+            );
+
+            assert_eq!(
+                runtime
+                    .operation_options()
+                    .per_partition_circuit_breaker_enabled,
+                Some(true),
+                "SDK's PPCB default must apply on top of a caller-supplied driver runtime builder",
+            );
+
+            assert!(
+                *factory.builds.lock().unwrap() >= 1,
+                "factory must have been invoked at least once during bootstrap",
+            );
+        }
+    }
 }
