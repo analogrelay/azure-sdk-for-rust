@@ -19,22 +19,20 @@ use crate::{
 
 /// Options that apply to individual Cosmos DB requests.
 ///
-/// `OperationOptions` controls cross-cutting concerns such as consistency, routing,
-/// retry behavior, and custom headers. These settings can be specified at multiple
-/// levels — each per-operation options type (e.g., `ItemReadOptions`)
-/// has an `operation` field of this type.
+/// [`OperationOptions`] controls cross-cutting concerns such as consistency,
+/// routing, retries, and custom headers.
 ///
 /// # Layered Resolution
 ///
-/// When the same option is set at multiple levels, the most specific value wins:
+/// When the same setting is configured in more than one place, the most
+/// specific value wins:
 ///
-/// 1. **Operation** — set on the per-request options (highest priority)
-/// 2. **Account** — set on `CosmosClientOptions` when building the client
-/// 3. **Runtime** — application-wide defaults
-/// 4. **Environment** — loaded from `AZURE_COSMOS_*` environment variables (lowest priority)
+/// 1. **Operation** - set for one request
+/// 2. **Account/driver** - set for one Cosmos DB account
+/// 3. **Runtime** - application-wide defaults
+/// 4. **Environment** - loaded from `AZURE_COSMOS_*` environment variables
 ///
-/// A field set to `None` means "inherit from a lower-priority level."
-/// A field set to `Some(value)` overrides all lower levels.
+/// A field set to `None` inherits from the next lower-priority layer.
 #[derive(CosmosOptions, Clone, Debug)]
 #[options(layers(runtime, account, operation))]
 #[non_exhaustive]
@@ -144,48 +142,26 @@ pub struct OperationOptions {
     pub custom_headers: Option<HashMap<HeaderName, HeaderValue>>,
 }
 
-/// Retry behavior for requests throttled by the service (HTTP 429,
-/// rate-limited).
+/// Options that limit automatic retries after service throttling (HTTP 429).
 ///
-/// Mirrors the .NET and Java SDKs' `ThrottlingRetryOptions`, grouping the two
-/// throttle-retry knobs into a single option group instead of exposing them as
-/// flat fields. Each setting participates independently in the standard
-/// runtime → account → operation → environment layered resolution.
-///
-/// These limits bound the transport-level 429 retry loop, which honors the
-/// service `x-ms-retry-after-ms` header (or an exponential-backoff fallback
-/// when the header is absent).
+/// Each setting resolves independently across the standard option layers.
+/// The retry loop honors the service's retry-after guidance when it is present.
 ///
 /// # Scope
 ///
-/// Both budgets apply *per transport-pipeline invocation*, not per logical
-/// operation. An operation that performs cross-region failover or hedging can
-/// call into the transport pipeline multiple times — each invocation starts
-/// with a fresh throttle-retry budget. To bound the **total** time an
-/// operation can spend on retries, configure
-/// [`OperationOptions::end_to_end_latency_policy`].
+/// These budgets apply to a single transport request sequence, not the entire
+/// logical operation. To cap the total time spent retrying across throttling,
+/// failover, or hedging, configure [`OperationOptions::end_to_end_latency_policy`].
 #[derive(CosmosOptions, Clone, Debug)]
 #[options(layers(runtime, account, operation))]
 #[non_exhaustive]
 pub struct ThrottlingRetryOptions {
-    /// Maximum number of retries when a request is throttled by the service
-    /// (HTTP 429, rate-limited).
+    /// Maximum number of retries after a throttled response (HTTP 429).
     ///
-    /// This is the analog of the .NET SDK's
-    /// `MaxRetryAttemptsOnRateLimitedRequests` (and Java's
-    /// `maxRetryAttemptsOnThrottledRequests`).
+    /// **Default**: `9`. A value of `0` disables automatic retries and returns
+    /// the first throttled response to the caller.
     ///
-    /// **Default**: `9`. A value of `0` disables retrying throttled requests
-    /// (the first 429 is surfaced to the caller).
-    ///
-    /// **Wire-request semantics**: a configured `max_retry_count = N`
-    /// produces up to `N + 1` total HTTP requests on the wire (1 initial
-    /// + up to N retries). The driver's one-shot forced-final-retry
-    /// safety net is suppressed once the count budget is exhausted, so the
-    /// count is the hard cap — matching .NET / Java parity. (The
-    /// forced-final retry only fires when the cumulative-wait budget
-    /// — see [`max_retry_wait_time`](Self::max_retry_wait_time) — is the
-    /// limiter rather than the count.)
+    /// A value of `N` allows up to `N` retries after the initial request.
     #[option(env = "AZURE_COSMOS_MAX_THROTTLE_RETRY_COUNT")]
     pub max_retry_count: Option<u32>,
 
@@ -201,40 +177,26 @@ pub struct ThrottlingRetryOptions {
     pub max_retry_wait_time: Option<Duration>,
 }
 
-/// Throughput-control tuning for an individual request (or layer default).
+/// Throughput-control settings for an individual request or default layer.
 ///
-/// Mirrors the [`ThrottlingRetryOptions`] pattern: three independently
-/// layered knobs grouped under a single nested option group on
-/// [`OperationOptions`]. None of these fields read from environment
-/// variables — throughput control is a per-application policy.
+/// This groups three independently layered settings under [`OperationOptions`].
+/// Throughput control is an application policy, so these values are not loaded
+/// from environment variables.
 ///
 /// # Resolution
 ///
-/// Each inner field participates independently in the standard runtime →
-/// account → operation layered resolution. Once resolved, the driver
-/// computes the wire headers (`x-ms-cosmos-priority-level`,
-/// `x-ms-cosmos-throughput-bucket`) using a two-step rule per field:
+/// Each field resolves independently across the runtime, account, and
+/// operation layers:
 ///
-/// 1. If the layered value for the field is `Some`, use it directly.
-/// 2. Else, if [`group_name`](Self::group_name) resolves to a group
-///    registered on the driver via
-///    [`DriverOptionsBuilder::register_throughput_control_group`](crate::options::DriverOptionsBuilder::register_throughput_control_group),
-///    use the group's value for the field (if the group sets it).
-/// 3. Else, the header is omitted.
+/// 1. If the field resolves to `Some`, that value is used.
+/// 2. Otherwise, [`group_name`](Self::group_name) can supply a fallback from a
+///    previously registered [`ThroughputControlGroupOptions`](crate::options::ThroughputControlGroupOptions).
+/// 3. If neither produces a value, the setting is omitted.
 ///
-/// The two fields resolve independently, so a layered
-/// `throughput_bucket = Some(...)` does not suppress a
-/// `priority_level` carried by the registered group, and vice versa.
-///
-/// # Why direct overrides exist
-///
-/// The direct [`throughput_bucket`](Self::throughput_bucket) /
-/// [`priority_level`](Self::priority_level) overrides let callers set the
-/// per-operation headers without having to register a
-/// [`ThroughputControlGroupOptions`](super::ThroughputControlGroupOptions)
-/// on the driver. Use a registered group when you want shared, mutable
-/// values to apply to a family of operations; use the direct fields for
-/// one-off overrides.
+/// The direct [`throughput_bucket`](Self::throughput_bucket) and
+/// [`priority_level`](Self::priority_level) fields are useful for one-off
+/// overrides. Use a [`ThroughputControlGroupOptions`](crate::options::ThroughputControlGroupOptions)
+/// when you want a shared, mutable policy for a family of operations.
 #[derive(CosmosOptions, Clone, Debug)]
 #[options(layers(runtime, account, operation))]
 #[non_exhaustive]

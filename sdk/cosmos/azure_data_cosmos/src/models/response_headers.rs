@@ -3,7 +3,7 @@
 
 // cspell:ignore activityid llsn gatewayversion
 
-//! SDK-owned wrapper around the driver's `CosmosResponseHeaders`.
+//! [`ResponseHeaders`] for Azure Cosmos DB responses.
 
 use azure_core::http::Etag;
 use azure_data_cosmos_driver::models::{
@@ -11,25 +11,10 @@ use azure_data_cosmos_driver::models::{
     SubStatusCode,
 };
 
-/// Cosmos DB response headers parsed from the wire.
+/// Parsed headers returned with a Cosmos DB response.
 ///
-/// This is the SDK-owned view of the per-response headers. Callers reach the
-/// individual values through dedicated accessor methods (`etag()`,
-/// `request_charge()`, `session_token()`, …) instead of touching the driver
-/// header struct directly, so the driver remains free to evolve its internal
-/// header representation without breaking SDK consumers.
-///
-/// Note that the *value* types returned by the accessors
-/// (`Etag`, `RequestCharge`, `SessionToken`, `SubStatusCode`, `ActivityId`)
-/// are intentionally narrow primitives sourced from their canonical Azure SDK
-/// homes (`azure_core::http::Etag` for `Etag`; the driver crate for the
-/// Cosmos-specific types). They have no SDK-specific behavior, so the SDK
-/// does not maintain parallel wrappers for them.
-///
-/// Construction from the driver type is `From`-based for the bridge layer; the
-/// reverse direction is intentionally `pub(crate)`-scoped (the crate-internal
-/// `into_driver_headers` helper) so the driver representation is not part of
-/// the SDK's public surface.
+/// Use the accessor methods on this type to read common values such as the
+/// ETag, request charge, session token, and continuation token.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct ResponseHeaders(DriverCosmosResponseHeaders);
@@ -161,8 +146,8 @@ impl ResponseHeaders {
         self.0.partition_key_range_id.as_deref()
     }
 
-    /// Internal partition ID (`x-ms-cosmos-internal-partition-id`). Backend
-    /// routing identifier; primarily useful for diagnostics.
+    /// The partition ID returned by the service
+    /// (`x-ms-cosmos-internal-partition-id`). Primarily useful for diagnostics.
     pub fn internal_partition_id(&self) -> Option<&str> {
         self.0.internal_partition_id.as_deref()
     }
@@ -183,12 +168,7 @@ impl ResponseHeaders {
 }
 
 impl ResponseHeaders {
-    /// Test-only escape hatch to recover the underlying driver headers.
-    ///
-    /// Gated behind the unstable `__internal_in_memory_emulator` feature so
-    /// the conversion is not part of the SDK's public API. Used only by the
-    /// integration-test validation framework that compares against driver-side
-    /// snapshots.
+    /// Returns the underlying headers for test support.
     #[cfg(feature = "__internal_in_memory_emulator")]
     #[doc(hidden)]
     pub fn __into_driver_headers(self) -> DriverCosmosResponseHeaders {

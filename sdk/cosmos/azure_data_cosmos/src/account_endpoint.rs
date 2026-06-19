@@ -7,8 +7,8 @@ use azure_core::http::Url;
 
 /// The endpoint URL for a Cosmos DB account.
 ///
-/// This is a newtype wrapper around [`Url`] that provides a strongly-typed representation
-/// of a Cosmos DB account endpoint, such as `https://myaccount.documents.azure.com/`.
+/// This represents the account endpoint, such as
+/// `https://myaccount.documents.azure.com/`.
 ///
 /// # Examples
 ///

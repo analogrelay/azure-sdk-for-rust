@@ -11,17 +11,18 @@ use crate::{
     models::{IndexingPolicy, SystemProperties},
 };
 
-/// Represents the time-to-live configuration for a Cosmos DB container.
+/// Time-to-live settings for a container.
 ///
-/// Cosmos DB supports three TTL states:
-/// - **Forever**: TTL is disabled; items never expire. This is the default.
-/// - **NoDefault**: TTL is enabled at the container level, but items have no default expiration.
-///   Individual items can still set their own TTL via the `ttl` property.
-///   Corresponds to the value `-1` on the wire.
-/// - **Seconds**: TTL is enabled with a default expiration in seconds. Items expire after the given
-///   number of seconds unless they override it with their own `ttl` property.
+/// Azure Cosmos DB supports three TTL states:
+/// - **Forever**: TTL is disabled and items do not expire. This is the default.
+/// - **NoDefault**: TTL is enabled for the container, but items do not get a
+///   default expiration. Individual items can still set their own `ttl` value.
+///   On the wire, this is `-1`.
+/// - **Seconds**: TTL is enabled with a default expiration in seconds. Items
+///   expire after that many seconds unless they override it with their own
+///   `ttl` value.
 ///
-/// For more information see <https://learn.microsoft.com/azure/cosmos-db/time-to-live#time-to-live-configurations>
+/// For more information, see <https://learn.microsoft.com/azure/cosmos-db/time-to-live#time-to-live-configurations>.
 #[derive(Clone, Default, SafeDebug, PartialEq, Eq)]
 #[safe(true)]
 #[non_exhaustive]
@@ -82,18 +83,11 @@ impl<'de> Deserialize<'de> for TimeToLive {
     }
 }
 
-/// Properties of a Cosmos DB container.
+/// Properties that define a container.
 ///
-/// # Constructing
-///
-/// When constructing this type, use [`ContainerProperties::new()`] with the required values, for example:
-///
-/// ```rust
-/// # use azure_data_cosmos::models::ContainerProperties;
-/// let properties = ContainerProperties::new("NewContainer", "/partitionKey".into());
-/// ```
-///
-/// Also, note that the `id` and `partition_key` values are **required** by the server. You will get an error from the server if you omit them.
+/// This includes the container ID, partition key definition, indexing policy,
+/// uniqueness settings, conflict resolution, vector settings, and time-to-live
+/// values.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -141,6 +135,7 @@ pub struct ContainerProperties {
 }
 
 impl ContainerProperties {
+    /// Creates container properties with the required ID and partition key.
     pub fn new(id: impl Into<Cow<'static, str>>, partition_key: PartitionKeyDefinition) -> Self {
         Self {
             id: id.into(),
@@ -155,16 +150,19 @@ impl ContainerProperties {
         }
     }
 
+    /// Sets the container's indexing policy.
     pub fn with_indexing_policy(mut self, indexing_policy: IndexingPolicy) -> Self {
         self.indexing_policy = Some(indexing_policy);
         self
     }
 
+    /// Sets the container's unique key policy.
     pub fn with_unique_key_policy(mut self, unique_key_policy: UniqueKeyPolicy) -> Self {
         self.unique_key_policy = Some(unique_key_policy);
         self
     }
 
+    /// Sets the container's conflict resolution policy.
     pub fn with_conflict_resolution_policy(
         mut self,
         conflict_resolution_policy: ConflictResolutionPolicy,
@@ -173,6 +171,7 @@ impl ContainerProperties {
         self
     }
 
+    /// Sets the container's vector embedding policy.
     pub fn with_vector_embedding_policy(
         mut self,
         vector_embedding_policy: VectorEmbeddingPolicy,
@@ -181,11 +180,13 @@ impl ContainerProperties {
         self
     }
 
+    /// Sets the default time to live for items in the container.
     pub fn with_default_ttl(mut self, default_ttl: impl Into<TimeToLive>) -> Self {
         self.default_ttl = default_ttl.into();
         self
     }
 
+    /// Sets the time to live for the analytical store.
     pub fn with_analytical_storage_ttl(
         mut self,
         analytical_storage_ttl: impl Into<TimeToLive>,
@@ -195,26 +196,26 @@ impl ContainerProperties {
     }
 }
 
-/// Represents the vector embedding policy for a container.
+/// Vector embedding settings for a container.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct VectorEmbeddingPolicy {
-    /// The [`VectorEmbedding`]s that describe the vector embeddings of items in the container.
+    /// The vector embeddings defined for items in the container.
     #[serde(rename = "vectorEmbeddings")]
     pub embeddings: Vec<VectorEmbedding>,
 }
 
 impl VectorEmbeddingPolicy {
-    /// Appends `embedding` to the policy's list of embeddings.
+    /// Adds a vector embedding to the policy.
     pub fn with_embedding(mut self, embedding: VectorEmbedding) -> Self {
         self.embeddings.push(embedding);
         self
     }
 }
 
-/// Represents the vector embedding policy for a container.
+/// A vector embedding definition for items in a container.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -234,7 +235,7 @@ pub struct VectorEmbedding {
 }
 
 impl VectorEmbedding {
-    /// Creates a new [`VectorEmbedding`] with the given path, data type, dimensions, and distance function.
+    /// Creates a vector embedding definition.
     pub fn new(
         path: impl Into<String>,
         data_type: VectorDataType,
@@ -249,70 +250,70 @@ impl VectorEmbedding {
         }
     }
 
-    /// Sets the path of this embedding.
+    /// Sets the property path for this embedding.
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.path = path.into();
         self
     }
 
-    /// Sets the data type of this embedding.
+    /// Sets the vector element type.
     pub fn with_data_type(mut self, data_type: VectorDataType) -> Self {
         self.data_type = data_type;
         self
     }
 
-    /// Sets the number of dimensions of this embedding.
+    /// Sets the number of vector dimensions.
     pub fn with_dimensions(mut self, dimensions: u32) -> Self {
         self.dimensions = dimensions;
         self
     }
 
-    /// Sets the distance function used by this embedding.
+    /// Sets the distance function for similarity comparisons.
     pub fn with_distance_function(mut self, distance_function: VectorDistanceFunction) -> Self {
         self.distance_function = distance_function;
         self
     }
 }
 
-/// Defines the data types of the elements of a vector.
+/// Data types supported for vector elements.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VectorDataType {
-    /// Represents the `float16` data type.
+    /// 16-bit floating-point values.
     Float16,
 
-    /// Represents the `float32` data type.
+    /// 32-bit floating-point values.
     Float32,
 
-    /// Represents the `uint8` data type.
+    /// Unsigned 8-bit integer values.
     Uint8,
 
-    /// Represents the `int8` data type.
+    /// Signed 8-bit integer values.
     Int8,
 }
 
-/// Defines the distance functions that can be used to calculate the distance between vectors.
+/// Distance functions used to compare vectors.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VectorDistanceFunction {
-    /// Represents the `euclidian` distance function.
+    /// Euclidean distance.
     Euclidean,
 
-    /// Represents the `cosine` distance function.
+    /// Cosine distance.
     Cosine,
 
-    /// Represents the `dotproduct` distance function.
+    /// Dot product distance.
     #[serde(rename = "dotproduct")]
     DotProduct,
 }
 
-/// Represents a unique key policy for a container.
+/// Unique key settings for a container.
 ///
-/// For more information see <https://learn.microsoft.com/azure/cosmos-db/unique-keys>
+/// For more information, see <https://learn.microsoft.com/azure/cosmos-db/unique-keys>.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -323,14 +324,14 @@ pub struct UniqueKeyPolicy {
 }
 
 impl UniqueKeyPolicy {
-    /// Appends `unique_key` to the policy's list of unique keys.
+    /// Adds a unique key to the policy.
     pub fn with_unique_key(mut self, unique_key: UniqueKey) -> Self {
         self.unique_keys.push(unique_key);
         self
     }
 }
 
-/// Represents a single unique key for a container.
+/// A unique key definition for a container.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -341,16 +342,16 @@ pub struct UniqueKey {
 }
 
 impl UniqueKey {
-    /// Appends `path` to the unique key's list of paths.
+    /// Adds a property path to the unique key.
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.paths.push(path.into());
         self
     }
 }
 
-/// Represents a conflict resolution policy for a container
+/// Conflict resolution settings for a container.
 ///
-/// For more information, see <https://learn.microsoft.com/en-us/azure/cosmos-db/conflict-resolution-policies>
+/// For more information, see <https://learn.microsoft.com/azure/cosmos-db/conflict-resolution-policies>.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -359,21 +360,22 @@ pub struct ConflictResolutionPolicy {
     /// The conflict resolution mode.
     pub mode: ConflictResolutionMode,
 
-    /// The path within the item to use to perform [`LastWriterWins`](ConflictResolutionMode::LastWriterWins) conflict resolution.
+    /// The item property used for [`ConflictResolutionMode::LastWriterWins`].
     #[serde(rename = "conflictResolutionPath")]
     pub resolution_path: String,
 
-    /// The stored procedure path to use to perform [`Custom`](ConflictResolutionMode::Custom) conflict resolution.
+    /// The stored procedure path used for [`ConflictResolutionMode::Custom`].
     #[serde(rename = "conflictResolutionProcedure")]
     pub resolution_procedure: String,
 }
 
 impl ConflictResolutionPolicy {
-    /// Creates a new [`ConflictResolutionPolicy`] with the given conflict resolution mode.
+    /// Creates a conflict resolution policy for the given mode.
     ///
-    /// `resolution_path` and `resolution_procedure` are initialized to empty strings; set
-    /// the field appropriate for the chosen mode via [`with_resolution_path`](Self::with_resolution_path)
-    /// or [`with_resolution_procedure`](Self::with_resolution_procedure).
+    /// The resolution path and stored procedure path start out empty. Set the
+    /// one that applies to the selected mode with
+    /// [`with_resolution_path`](Self::with_resolution_path) or
+    /// [`with_resolution_procedure`](Self::with_resolution_procedure).
     pub fn new(mode: ConflictResolutionMode) -> Self {
         Self {
             mode,
@@ -382,29 +384,29 @@ impl ConflictResolutionPolicy {
         }
     }
 
-    /// Sets the path within the item used to resolve [`LastWriterWins`](ConflictResolutionMode::LastWriterWins) conflicts.
+    /// Sets the item property used for [`ConflictResolutionMode::LastWriterWins`].
     pub fn with_resolution_path(mut self, resolution_path: impl Into<String>) -> Self {
         self.resolution_path = resolution_path.into();
         self
     }
 
-    /// Sets the stored procedure path used to resolve [`Custom`](ConflictResolutionMode::Custom) conflicts.
+    /// Sets the stored procedure path used for [`ConflictResolutionMode::Custom`].
     pub fn with_resolution_procedure(mut self, resolution_procedure: impl Into<String>) -> Self {
         self.resolution_procedure = resolution_procedure.into();
         self
     }
 }
 
-/// Defines conflict resolution types available in Azure Cosmos DB
+/// Conflict resolution modes supported by Azure Cosmos DB.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "PascalCase")]
 #[non_exhaustive]
 pub enum ConflictResolutionMode {
-    /// Conflict resolution will be performed by using the highest value of the property specified by [`ConflictResolutionPolicy::resolution_path`].
+    /// Resolves conflicts by choosing the highest value from the property named by [`ConflictResolutionPolicy::resolution_path`].
     LastWriterWins,
 
-    /// Conflict resolution will be performed by executing the stored procedure specified by [`ConflictResolutionPolicy::resolution_procedure`].
+    /// Resolves conflicts by running the stored procedure named by [`ConflictResolutionPolicy::resolution_procedure`].
     Custom,
 }
 

@@ -1,17 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Models and components used to represents and execute queries.
+//! Types for defining queries and choosing their scope.
 
 use azure_data_cosmos_driver::models::{FeedRange, PartitionKey, PartitionKeyDefinition};
 use serde::Serialize;
 
-/// Represents the scope of a query, which determines which partitions it targets.
+/// Defines which partition or range a query targets.
 ///
-/// The Cosmos DB backend can only execute queries against a single physical partition at a time,
-/// so it is important to choose the appropriate scope for your query to ensure it is executed efficiently.
-/// Queries that cross physical partition boundaries require the client to fan out the query to
-/// multiple partitions and aggregate the results, which can be expensive and slow for large datasets.
+/// Use [`FeedScope::partition`] when you know the logical partition key.
+/// Use [`FeedScope::range`] or [`FeedScope::full_container`] when you need to
+/// query a broader range.
 #[derive(Clone)]
 #[non_exhaustive]
 pub enum FeedScope {
@@ -20,24 +19,28 @@ pub enum FeedScope {
 }
 
 impl FeedScope {
-    /// Returns a [`FeedScope`] that represents the given partition key, which is used for targeting a specific partition in the container.
+    /// Creates a scope for a single logical partition.
     ///
-    /// The provided [`PartitionKey`] MUST specify all levels of the hierarchy (e.g. in a multi-level hierarchical partition key, you must provide values for all levels, not just a prefix).
-    /// Use [`range()`](FeedScope::range) with a [`FeedRange`] that covers the desired partition(s) to specify anything beyond a single logical partition.
+    /// The partition key must include every level of a hierarchical partition
+    /// key. Use [`FeedScope::range`] to target anything broader than one
+    /// logical partition.
     pub fn partition(pk: impl Into<PartitionKey>) -> Self {
         Self::Partition(pk.into())
     }
 
-    /// Returns a [`FeedScope`] that represents the given feed range, which can be used for partition-specific or cross-partition queries depending on the feed range provided.
+    /// Creates a scope from a [`FeedRange`].
     ///
-    /// WARNING: Using a feed range that covers multiple partitions may result in a full scan of those partitions, which can be expensive and slow for large datasets. Use with caution.
+    /// A range can cover one physical partition or many. Broader ranges can
+    /// increase latency and request charges because the query may need to fan
+    /// out across more data.
     pub fn range(fr: impl Into<FeedRange>) -> Self {
         Self::Range(fr.into())
     }
 
-    /// Returns a [`FeedScope`] that represents the full container, which is used for cross-partition queries.
+    /// Creates a scope for the full container.
     ///
-    /// WARNING: Using this query scope may result in a full scan of the container, which can be expensive and slow for large datasets. Use with caution.
+    /// This is a cross-partition query scope and can be more expensive than
+    /// targeting a single logical partition.
     pub fn full_container() -> Self {
         Self::Range(FeedRange::full())
     }
@@ -54,11 +57,11 @@ impl FeedScope {
     }
 }
 
-/// Represents a Cosmos DB Query, with optional parameters.
+/// A Cosmos DB query and its parameters.
 ///
 /// # Examples
 ///
-/// Create a query using [`Query::from()`], and use  [`Query::with_parameter()`] to add parameters to it as needed.
+/// Start with [`Query::from`] and add parameters with [`Query::with_parameter`].
 ///
 /// ```rust
 /// # use azure_data_cosmos::Query;
@@ -67,8 +70,8 @@ impl FeedScope {
 /// # assert_eq!(serde_json::to_string(&query).unwrap(), "{\"query\":\"SELECT * FROM c WHERE c.id = @customer_id\",\"parameters\":[{\"name\":\"@customer_id\",\"value\":42}]}");
 /// ```
 ///
-/// You can also modify the query text using [`Query::with_text()`] to replace it entirely
-/// or [`Query::append_text()`] to add to the existing text:
+/// You can also replace the query text with [`Query::with_text`] or append to
+/// it with [`Query::append_text`]:
 ///
 /// ```rust
 /// # use azure_data_cosmos::Query;
@@ -84,9 +87,11 @@ impl FeedScope {
 ///
 /// # Specifying Parameters
 ///
-/// Any JSON-serializable value, including an empty tuple (`()`), which indicates `null`, can be used as a parameter.
-/// The [`Query::with_parameter()`] method accepts any type that implements [`serde::Serialize`] as a value.
-/// Because the type needs to be serialized in order to be sent as a query parameter, the [`Query::with_parameter()`] method is fallible and may return [`Result::Err`] if the value cannot be serialized.
+/// Any JSON-serializable value can be used as a parameter. An empty tuple
+/// (`()`) is serialized as `null`.
+///
+/// [`Query::with_parameter`] is fallible because the value must be serialized
+/// before the query can be sent.
 ///
 /// ```rust
 /// # use azure_data_cosmos::Query;
@@ -131,9 +136,11 @@ pub struct Query {
 }
 
 impl Query {
-    /// Consumes this [`Query`] instance, adds a new parameter to it, and returns it.
+    /// Adds a parameter and returns the updated query.
     ///
-    /// Returns an error if the value cannot be serialized to JSON.
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be serialized as JSON.
     pub fn with_parameter(
         mut self,
         name: impl Into<String>,
@@ -148,13 +155,13 @@ impl Query {
         Ok(self)
     }
 
-    /// Consumes this [`Query`] instance, replaces its text with the provided value, and returns it.
+    /// Replaces the query text and returns the updated query.
     pub fn with_text(mut self, text: impl Into<String>) -> Self {
         self.text = text.into();
         self
     }
 
-    /// Consumes this [`Query`] instance, appends the provided text to its current text, and returns it.
+    /// Appends text to the query and returns the updated query.
     pub fn append_text(mut self, text: &str) -> Self {
         self.text.push_str(text);
         self

@@ -1,38 +1,28 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Feed/query options: paging, query metrics, and continuation tokens.
+//! Options for paged reads and queries.
 
 use azure_data_cosmos_driver::models::{MaxItemCountHint, SessionToken};
 use azure_data_cosmos_driver::options::OperationOptions;
 
 use crate::feed::ContinuationToken;
 
-/// Options that apply to feed-style operations (paged reads, queries, etc.).
+/// Options shared by feed-style operations such as paged reads and queries.
 ///
-/// These settings control paging behavior — how many items the service should
-/// return per page and where to resume from. They are surfaced as a separate
-/// struct so other feed-style APIs can adopt them without re-declaring the
-/// same fields.
-///
-/// Today, `FeedOptions` is composed into [`QueryOptions`] via its
-/// [`feed`](QueryOptions::feed) field; [`QueryOptions`] also exposes
-/// [`with_max_item_count`](QueryOptions::with_max_item_count) and
-/// [`with_continuation_token`](QueryOptions::with_continuation_token)
-/// shortcuts that delegate to the inner [`FeedOptions`].
+/// These settings control page size and where iteration resumes.
+/// [`QueryOptions`] includes these settings through its [`feed`](QueryOptions::feed)
+/// field and also exposes matching convenience setters.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct FeedOptions {
-    /// Maximum number of items the service should return per page
-    /// (`x-ms-max-item-count`).
+    /// Maximum number of items the service should return per page.
     ///
-    /// `None` omits the header so the SDK / service defaults apply. See
-    /// [`MaxItemCountHint`] for the two explicit values.
+    /// `None` leaves page sizing up to the SDK and service defaults. See
+    /// [`MaxItemCountHint`] for the explicit values you can send.
     ///
-    /// This is a _hint_ to the server, not a client-side guarantee of the
-    /// maximum returned page size. In a cross-partition query, each partition
-    /// may return up to this many items, so the total page size could be up
-    /// to this value times the number of partitions involved.
+    /// This is a hint to the service, not a client-side guarantee of the page
+    /// size returned.
     pub max_item_count: Option<MaxItemCountHint>,
 
     /// Continuation token from a prior page iterator, used to resume the feed.
@@ -58,69 +48,65 @@ impl FeedOptions {
     }
 }
 
-/// Options for query operations.
+/// Options for [`ContainerClient::query_items`](crate::clients::ContainerClient::query_items).
 ///
-/// Used by [`ContainerClient::query_items()`](crate::clients::ContainerClient::query_items()).
-///
-/// General-purpose settings such as custom headers and excluded regions are configured
-/// via the [`with_operation_options`](Self::with_operation_options) setter. See [`OperationOptions`] for details.
-///
-/// Paging-related settings (`max_item_count`, `continuation_token`) are configured via
-/// the [`feed`](Self::feed) field — see [`FeedOptions`]. The convenience setters
-/// [`with_max_item_count`](Self::with_max_item_count) and
-/// [`with_continuation_token`](Self::with_continuation_token) delegate to the inner
-/// [`FeedOptions`].
+/// Use [`operation`](Self::operation) for cross-cutting request settings,
+/// [`feed`](Self::feed) for paging, and the metric flags when you want extra
+/// diagnostics in each [`QueryFeedPage`](crate::feed::QueryFeedPage).
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct QueryOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for this query.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 
-    /// Feed-paging options (max item count, continuation token) for this query.
+    /// Paging settings for this query.
+    ///
     /// See [`FeedOptions`].
     pub feed: FeedOptions,
 
     /// Session token for session-consistent queries.
     pub session_token: Option<SessionToken>,
 
-    /// When `true`, request that the service include index utilization metrics
-    /// in the response (`x-ms-cosmos-populateindexmetrics`). The decoded JSON is
-    /// surfaced via `QueryFeedPage::index_metrics()`.
+    /// When `true`, asks the service to include index utilization metrics in each
+    /// response page.
+    ///
+    /// Read them from [`QueryFeedPage::index_metrics`](crate::feed::QueryFeedPage::index_metrics).
     pub populate_index_metrics: Option<bool>,
 
-    /// When `true`, request that the service include per-query metrics in the
-    /// response (`x-ms-documentdb-populatequerymetrics`). Surfaced via
-    /// `QueryFeedPage::query_metrics()`.
+    /// When `true`, asks the service to include query metrics in each response page.
+    ///
+    /// Read them from [`QueryFeedPage::query_metrics`](crate::feed::QueryFeedPage::query_metrics).
     pub populate_query_metrics: Option<bool>,
 }
 
 impl QueryOptions {
-    /// Sets the session token for this request.
+    /// Sets the session token for session-consistent queries.
     pub fn with_session_token(mut self, session_token: impl Into<SessionToken>) -> Self {
         self.session_token = Some(session_token.into());
         self
     }
 
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for this query.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self
     }
 
-    /// Sets the [`FeedOptions`] (max item count, continuation token) for this query.
+    /// Sets the paging settings for this query.
     pub fn with_feed_options(mut self, feed: FeedOptions) -> Self {
         self.feed = feed;
         self
     }
 
-    /// Enables or disables index-utilization metric collection for this query.
+    /// Enables or disables index utilization metrics for this query.
     pub fn with_populate_index_metrics(mut self, enable: bool) -> Self {
         self.populate_index_metrics = Some(enable);
         self
     }
 
-    /// Enables or disables per-query metric collection for this query.
+    /// Enables or disables query metrics for this query.
     pub fn with_populate_query_metrics(mut self, enable: bool) -> Self {
         self.populate_query_metrics = Some(enable);
         self

@@ -32,20 +32,18 @@ use crate::{
 /// Current SDK token version prefix.
 const SDK_V1_PREFIX: &str = "c1.";
 
-/// Opaque continuation token for resuming a paginated Cosmos DB operation.
+/// An opaque token that resumes a paginated Cosmos DB operation.
 ///
-/// Construct one from a string returned by an earlier query (either the
-/// SDK's `to_continuation_token()` output, or — for trivial operations — a
-/// raw server-side continuation string).
+/// Continuation tokens can be persisted and supplied back to later requests to
+/// continue from the same position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinuationToken(String);
 
 impl ContinuationToken {
-    /// Wraps an opaque continuation string.
+    /// Wraps a continuation token string.
     ///
-    /// No validation is performed here; the string is validated when it is
-    /// passed to
-    /// [`CosmosDriver::plan_operation`](crate::driver::CosmosDriver::plan_operation).
+    /// The token is treated as opaque. Validation happens when the token is
+    /// used to resume an operation.
     pub fn from_string(token: String) -> Self {
         Self(token)
     }

@@ -15,10 +15,10 @@ use serde::Serialize;
 
 pub use super::cosmos_client_builder::CosmosClientBuilder;
 
-/// Client for Azure Cosmos DB.
+/// Client for an Azure Cosmos DB account.
 ///
-/// Use [`CosmosClient::builder()`] to obtain a [`CosmosClientBuilder`] and
-/// construct a configured client.
+/// Use [`CosmosClient::builder`] to create a [`CosmosClientBuilder`] and
+/// configure the client.
 ///
 /// # Examples
 ///
@@ -70,50 +70,24 @@ pub struct CosmosClient {
 }
 
 impl CosmosClient {
-    /// Creates a new [`CosmosClientBuilder`] for constructing a `CosmosClient`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// use azure_data_cosmos::{CosmosClient, AccountReference, AccountEndpoint, RoutingStrategy};
-    /// use azure_data_cosmos::options::{Region};
-    ///
-    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// let credential: std::sync::Arc<dyn azure_core::credentials::TokenCredential> =
-    ///     azure_identity::DeveloperToolsCredential::new(None).unwrap();
-    /// let endpoint: AccountEndpoint = "https://myaccount.documents.azure.com/"
-    ///     .parse()
-    ///     .unwrap();
-    /// let account = AccountReference::with_credential(endpoint, credential);
-    /// let client = CosmosClient::builder()
-    ///     .build(account, RoutingStrategy::ProximityTo(Region::EAST_US))
-    ///     .await?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns a [`CosmosClientBuilder`] for configuring a client.
     pub fn builder() -> CosmosClientBuilder {
         CosmosClientBuilder::new()
     }
 
-    /// Gets a [`DatabaseClient`] that can be used to access the database with the specified ID.
+    /// Returns a [`DatabaseClient`] for the database with the given ID.
     ///
-    /// # Arguments
-    /// * `id` - The ID of the database.
+    /// The returned client is lightweight and does not make a network call.
     pub fn database_client(&self, id: &str) -> DatabaseClient {
         DatabaseClient::new(self.context.clone(), id)
     }
 
-    /// Gets the endpoint of the database account this client is connected to.
+    /// Returns the endpoint for the account this client is connected to.
     pub fn endpoint(&self) -> &Url {
         self.context.driver.account().endpoint()
     }
 
     /// Executes a query against databases in the account.
-    ///
-    /// # Arguments
-    ///
-    /// * `query` - The query to execute.
-    /// * `options` - Optional parameters for the request.
     ///
     /// # Examples
     ///
@@ -130,7 +104,11 @@ impl CosmosClient {
     /// # }
     /// ```
     ///
-    /// See [`Query`] for more information on how to specify a query.
+    /// See [`Query`] for more information about building queries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query cannot be serialized or the request fails.
     pub async fn query_databases(
         &self,
         query: impl Into<Query>,
@@ -163,9 +141,20 @@ impl CosmosClient {
     ///
     #[doc = include_str!("../../docs/control-plane-always-returns-body.md")]
     ///
-    /// # Arguments
-    /// * `id` - The ID of the new database.
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let client: azure_data_cosmos::CosmosClient = panic!("non-running example");
+    /// let database = client.create_database("products", None).await?.into_model()?;
+    /// # let _ = database;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn create_database(
         &self,
         id: &str,

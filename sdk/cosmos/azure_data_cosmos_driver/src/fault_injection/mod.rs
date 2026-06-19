@@ -76,70 +76,72 @@ impl EvaluationCollector {
     }
 }
 
-/// Represents different server error types that can be injected for fault testing.
+/// The error condition a fault injection rule can simulate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FaultInjectionErrorType {
-    /// 500 from server.
+    /// Simulates an HTTP 500 Internal Server Error response.
     InternalServerError,
-    /// 429 from server.
+    /// Simulates an HTTP 429 Too Many Requests response.
     TooManyRequests,
-    /// 404-1002 from server.
+    /// Simulates `404 / 1002`, which maps to read session not available.
     ReadSessionNotAvailable,
-    /// 408 from server.
+    /// Simulates an HTTP 408 Request Timeout response.
     Timeout,
-    /// Simulate service unavailable (503).
+    /// Simulates an HTTP 503 Service Unavailable response.
     ServiceUnavailable,
-    /// 410-1002 from server.
+    /// Simulates `410 / 1002`, which maps to partition key range gone.
     PartitionIsGone,
-    /// 403-3 Forbidden from server.
+    /// Simulates `403 / 3`, which indicates writes are not allowed in the current region.
     WriteForbidden,
-    /// 403-1008 Forbidden from server.
+    /// Simulates `403 / 1008`, which indicates the account is no longer owned by the current region.
     DatabaseAccountNotFound,
-    /// Simulates a connection failure (e.g., connection refused, DNS failure).
-    /// Produces a transport error with `TRANSPORT_CONNECTION_FAILED`
-    /// sub-status, not an HTTP response error.
+    /// Simulates a connection failure, such as connection refusal or name resolution failure.
+    ///
+    /// This produces [`crate::error::CosmosStatus::TRANSPORT_CONNECTION_FAILED`]
+    /// instead of an HTTP response.
     ConnectionError,
-    /// Simulates a response timeout (request sent but no response received).
-    /// Produces a transport error with `TRANSPORT_IO_FAILED` sub-status,
-    /// not an HTTP response error.
+    /// Simulates a timeout after the request is sent but before a response is received.
+    ///
+    /// This produces [`crate::error::CosmosStatus::TRANSPORT_IO_FAILED`]
+    /// instead of an HTTP response.
     ResponseTimeout,
 }
 
-/// The type of operation to which the fault injection applies.
+/// The request operation that a fault injection rule can target.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FaultOperationType {
-    /// Read items.
+    /// Reads an item.
     ReadItem,
-    /// Query items.
+    /// Queries items.
     QueryItem,
-    /// Create item.
+    /// Creates an item.
     CreateItem,
-    /// Upsert item.
+    /// Upserts an item.
     UpsertItem,
-    /// Replace item.
+    /// Replaces an item.
     ReplaceItem,
-    /// Delete item.
+    /// Deletes an item.
     DeleteItem,
-    /// Patch item.
+    /// Patches an item.
     PatchItem,
-    /// Batch item.
+    /// Executes a batch operation.
     BatchItem,
-    /// Read change feed items.
+    /// Reads change feed items.
     ChangeFeedItem,
-    /// Read container request.
+    /// Reads container metadata.
     MetadataReadContainer,
-    /// Read database account request.
+    /// Reads account metadata.
     MetadataReadDatabaseAccount,
-    /// Query query plan request.
+    /// Requests a query plan.
     MetadataQueryPlan,
-    /// Partition key ranges request.
+    /// Reads partition key range metadata.
     MetadataPartitionKeyRanges,
 }
 
 impl FaultOperationType {
-    /// Returns the string representation of this operation type.
+    /// Returns the wire-format name for this operation type.
     pub fn as_str(&self) -> &'static str {
         match self {
             FaultOperationType::ReadItem => "ReadItem",
@@ -158,9 +160,9 @@ impl FaultOperationType {
         }
     }
 
-    /// Converts an operation type and resource type pair into a fault injection operation type.
+    /// Maps an operation type and resource type to a [`FaultOperationType`].
     ///
-    /// Returns `None` if the combination does not map to a known fault operation type.
+    /// Returns `None` when the request does not have a matching fault injection operation.
     pub fn from_operation_and_resource(
         operation_type: &OperationType,
         resource_type: &ResourceType,
@@ -205,9 +207,9 @@ impl fmt::Display for FaultOperationType {
 impl FromStr for FaultOperationType {
     type Err = crate::error::CosmosError;
 
-    /// Parses a string into a `FaultOperationType`.
+    /// Parses a string into a [`FaultOperationType`].
     ///
-    /// Returns an error if the string is not a recognized operation type.
+    /// Returns an error if `s` does not name a supported operation type.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ReadItem" => Ok(FaultOperationType::ReadItem),

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! [`FeedPage`] — a single page of results from a Cosmos DB feed.
+//! A single page returned by a Cosmos DB feed operation.
 
 use std::sync::Arc;
 
@@ -9,14 +9,11 @@ use serde::Deserialize;
 
 use crate::{diagnostics::DiagnosticsContext, models::ResponseHeaders};
 
-/// Represents a single page of results from a Cosmos DB feed.
+/// A single page returned by a Cosmos DB feed operation.
 ///
-/// A feed could be a list of items, databases, containers, etc.
-/// The feed may represent a single-partition or cross-partition query.
-///
-/// Cosmos DB queries can be executed using non-HTTP transports, depending on the circumstances.
-/// They may also produce results that don't directly correlate to specific HTTP responses (as in the case of cross-partition queries).
-/// Because of this, Cosmos DB feed responses use `FeedPage` to represent the results, rather than a more generic type like [`Response`](azure_core::http::Response).
+/// Feed operations include queries and other list-style APIs. Each page
+/// contains the returned items, parsed response headers, and diagnostics for
+/// the work needed to produce that page.
 #[derive(Debug)]
 pub struct FeedPage<T> {
     /// The items in the response.
@@ -58,11 +55,10 @@ impl<T> FeedPage<T> {
         &self.headers
     }
 
-    /// Returns the diagnostics for this page.
+    /// Returns diagnostics for this page.
     ///
-    /// The returned [`DiagnosticsContext`] surfaces the full per-operation
-    /// diagnostics produced by the driver pipeline (request tracking, retries,
-    /// regions contacted, RU charges, status, etc.).
+    /// The returned [`DiagnosticsContext`] includes request tracking, retries,
+    /// contacted regions, and other details about the operation.
     pub fn diagnostics(&self) -> Arc<DiagnosticsContext> {
         Arc::clone(&self.diagnostics)
     }

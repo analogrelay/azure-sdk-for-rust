@@ -51,18 +51,7 @@ pub struct TransactionalBatch {
 }
 
 impl TransactionalBatch {
-    /// Creates a new transactional batch for the specified partition key.
-    ///
-    /// # Arguments
-    /// * `partition_key` - The partition key for all operations in this batch.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use azure_data_cosmos::TransactionalBatch;
-    ///
-    /// let batch = TransactionalBatch::new("my_partition_key");
-    /// ```
+    /// Creates a transactional batch for the given partition key.
     pub fn new(partition_key: impl Into<PartitionKey>) -> Self {
         Self {
             partition_key: partition_key.into(),
@@ -82,32 +71,9 @@ impl TransactionalBatch {
 
     /// Adds a create operation to the batch.
     ///
-    /// # Arguments
-    /// * `item` - The item to create. Must implement [`Serialize`].
+    /// # Errors
     ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use azure_data_cosmos::TransactionalBatch;
-    /// use serde::Serialize;
-    ///
-    /// #[derive(Serialize)]
-    /// struct Product {
-    ///     id: String,
-    ///     name: String,
-    /// }
-    ///
-    /// # fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// let product = Product {
-    ///     id: "product1".to_string(),
-    ///     name: "Product #1".to_string(),
-    /// };
-    ///
-    /// let batch = TransactionalBatch::new("partition1")
-    ///     .create_item(product)?;
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Returns an error if `item` cannot be serialized to JSON.
     pub fn create_item<T: Serialize>(mut self, item: T) -> crate::Result<Self> {
         let resource_body = serde_json::to_value(item)?;
         self.operations.push(TransactionalBatchOperation::Create {
@@ -119,9 +85,11 @@ impl TransactionalBatch {
 
     /// Adds an upsert operation to the batch.
     ///
-    /// # Arguments
-    /// * `item` - The item to upsert. Must implement [`Serialize`].
-    /// * `options` - Optional conditional options for the operation.
+    /// Use `options` to set conditional behavior such as ETag preconditions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `item` cannot be serialized to JSON.
     pub fn upsert_item<T: Serialize>(
         mut self,
         item: T,
@@ -145,10 +113,11 @@ impl TransactionalBatch {
 
     /// Adds a replace operation to the batch.
     ///
-    /// # Arguments
-    /// * `item_id` - The id of the item to replace.
-    /// * `item` - The new item data. Must implement [`Serialize`].
-    /// * `options` - Optional conditional options for the operation (e.g., `if_match` for optimistic concurrency).
+    /// Use `options` to set conditional behavior such as an ETag match.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `item` cannot be serialized to JSON.
     pub fn replace_item<T: Serialize>(
         mut self,
         item_id: impl Into<Cow<'static, str>>,
@@ -170,9 +139,7 @@ impl TransactionalBatch {
 
     /// Adds a read operation to the batch.
     ///
-    /// # Arguments
-    /// * `item_id` - The id of the item to read.
-    /// * `options` - Optional conditional options for the operation.
+    /// Use `options` to set conditional behavior such as ETag preconditions.
     pub fn read_item(
         mut self,
         item_id: impl Into<Cow<'static, str>>,
@@ -194,9 +161,7 @@ impl TransactionalBatch {
 
     /// Adds a delete operation to the batch.
     ///
-    /// # Arguments
-    /// * `item_id` - The id of the item to delete.
-    /// * `options` - Optional conditional options for the operation (e.g., `if_match` to only delete if ETag matches).
+    /// Use `options` to set conditional behavior such as an ETag match.
     pub fn delete_item(
         mut self,
         item_id: impl Into<Cow<'static, str>>,
@@ -282,10 +247,7 @@ pub(crate) enum TransactionalBatchOperation {
     },
 }
 
-/// Response from executing a transactional batch.
-///
-/// The Cosmos DB batch API returns a raw JSON array of operation results,
-/// so we implement a custom deserializer to handle this format.
+/// The result of executing a transactional batch.
 #[derive(Clone, SafeDebug)]
 #[safe(true)]
 #[non_exhaustive]
@@ -318,22 +280,10 @@ impl<'de> Deserialize<'de> for TransactionalBatchResponse {
 #[non_exhaustive]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionalBatchOperationResult {
-    /// HTTP status code for this operation.
-    ///
-    /// This is exposed as a raw `u16` because the per-operation status comes
-    /// directly from the JSON body of the batch response. We deliberately do
-    /// not deserialize into [`azure_core::http::StatusCode`]: that enum is
-    /// closed and would fail deserialization for any non-canonical status
-    /// code returned by the service. Failing the entire batch deserialization
-    /// because the service introduced a new status value would be a much
-    /// worse caller experience than surfacing the integer as-is.
+    /// The HTTP status code for this operation.
     status_code: u16,
 
-    /// The resource body returned by the operation, if any. Stored as
-    /// [`RawValue`](serde_json::value::RawValue) so the JSON bytes are kept
-    /// exactly as the service produced them — callers decide whether (and how)
-    /// to parse them via [`into_model::<T>`](Self::into_model) or
-    /// inspect the raw JSON via [`resource_body`](Self::resource_body).
+    /// The resource body returned by the operation, if any.
     #[serde(default)]
     resource_body: Option<Box<serde_json::value::RawValue>>,
 
@@ -363,10 +313,8 @@ impl TransactionalBatchOperationResult {
 
     /// Returns the resource body returned by the operation, if any.
     ///
-    /// The body is returned as a still-serialized
-    /// [`RawValue`](serde_json::value::RawValue) — its `get()` method yields
-    /// the raw JSON text. To deserialize into a typed value, use
-    /// [`into_model`](Self::into_model) instead.
+    /// The returned [`serde_json::value::RawValue`] exposes the raw JSON text.
+    /// To deserialize it into a typed value, use [`into_model`](Self::into_model).
     pub fn resource_body(&self) -> Option<&serde_json::value::RawValue> {
         self.resource_body.as_deref()
     }

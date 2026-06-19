@@ -6,7 +6,9 @@
 use super::FaultOperationType;
 use crate::options::Region;
 
-/// Defines the condition under which a fault injection rule should be applied.
+/// Filters when a [`FaultInjectionRule`](super::FaultInjectionRule) applies.
+///
+/// Leave a field unset to match any value for that part of the request.
 #[derive(Clone, Default, Debug)]
 #[non_exhaustive]
 pub struct FaultInjectionCondition {
@@ -32,7 +34,7 @@ impl FaultInjectionCondition {
     }
 }
 
-/// Builder for creating a FaultInjectionCondition.
+/// Builder for creating a [`FaultInjectionCondition`].
 #[derive(Default)]
 pub struct FaultInjectionConditionBuilder {
     operation_type: Option<FaultOperationType>,
@@ -41,7 +43,7 @@ pub struct FaultInjectionConditionBuilder {
 }
 
 impl FaultInjectionConditionBuilder {
-    /// Creates a new FaultInjectionConditionBuilder with default values.
+    /// Creates a builder with no filters.
     pub fn new() -> Self {
         Self {
             operation_type: None,
@@ -68,7 +70,7 @@ impl FaultInjectionConditionBuilder {
         self
     }
 
-    /// Builds the FaultInjectionCondition.
+    /// Builds the [`FaultInjectionCondition`].
     pub fn build(self) -> FaultInjectionCondition {
         FaultInjectionCondition {
             operation_type: self.operation_type,

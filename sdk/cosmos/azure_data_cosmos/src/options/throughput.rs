@@ -1,21 +1,22 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! [`ThroughputOptions`] — options for throughput / offer operations.
+//! Options for throughput operations.
 
 use azure_data_cosmos_driver::options::OperationOptions;
 
-/// Options to be passed to operations related to Throughput offers.
+/// Options for reading or replacing throughput on a database or container.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct ThroughputOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for this operation.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 }
 
 impl ThroughputOptions {
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for this operation.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self

@@ -315,11 +315,6 @@ fn merge_tokens_by_partition(tokens: Vec<String>) -> crate::Result<SessionToken>
 /// Session tokens and feed ranges are scoped to a single container. Only pass session
 /// tokens and feed ranges obtained from the same container.
 ///
-/// # Arguments
-///
-/// * `feed_ranges_to_session_tokens` - Pairs of feed ranges and their associated session tokens.
-/// * `target_feed_range` - The feed range to get the most up-to-date session token for.
-///
 /// # Errors
 ///
 /// Returns an error if no input feed ranges overlap with the target feed range,

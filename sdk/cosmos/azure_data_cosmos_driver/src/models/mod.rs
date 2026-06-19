@@ -118,9 +118,10 @@ pub(crate) struct ContainerProperties {
     pub system_properties: SystemProperties,
 }
 
-/// Partition key definition for a container.
+/// Describes how a container partitions items.
 ///
-/// Specifies the JSON path(s) used for partitioning data across physical partitions.
+/// A partition key definition records the JSON path or paths used to compute
+/// the logical partition for each item.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 #[serde(rename_all = "camelCase")]
@@ -195,15 +196,6 @@ impl PartitionKeyDefinition {
 }
 
 /// Creates a single-path [`PartitionKeyDefinition`] from a string slice.
-///
-/// # Examples
-///
-/// ```
-/// use azure_data_cosmos_driver::models::PartitionKeyDefinition;
-///
-/// let pk_def: PartitionKeyDefinition = "/tenantId".into();
-/// assert_eq!(pk_def.paths()[0].as_ref(), "/tenantId");
-/// ```
 impl From<&str> for PartitionKeyDefinition {
     fn from(value: &str) -> Self {
         Self::new(vec![Cow::from(value.to_string())])
@@ -217,17 +209,7 @@ impl From<String> for PartitionKeyDefinition {
     }
 }
 
-/// Creates a two-path (hierarchical) [`PartitionKeyDefinition`] from a tuple.
-///
-/// # Examples
-///
-/// ```
-/// use azure_data_cosmos_driver::models::{PartitionKeyDefinition, PartitionKeyKind};
-///
-/// let pk_def: PartitionKeyDefinition = ("/tenantId", "/userId").into();
-/// assert_eq!(pk_def.paths().len(), 2);
-/// assert_eq!(pk_def.kind(), PartitionKeyKind::MultiHash);
-/// ```
+/// Creates a two-path hierarchical [`PartitionKeyDefinition`] from a tuple.
 impl<S1: Into<String>, S2: Into<String>> From<(S1, S2)> for PartitionKeyDefinition {
     fn from(value: (S1, S2)) -> Self {
         Self::new(vec![Cow::from(value.0.into()), Cow::from(value.1.into())])
@@ -251,11 +233,10 @@ fn default_pk_version() -> PartitionKeyVersion {
     PartitionKeyVersion::V2
 }
 
-/// Partition key version.
+/// The partition key algorithm version used by Cosmos DB.
 ///
-/// Cosmos DB uses numeric wire values for partition key version:
-/// - `1` -> `V1`
-/// - `2` -> `V2`
+/// Cosmos DB represents these values as `1` for [`PartitionKeyVersion::V1`]
+/// and `2` for [`PartitionKeyVersion::V2`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 #[non_exhaustive]
@@ -294,7 +275,7 @@ impl From<PartitionKeyVersion> for u32 {
     }
 }
 
-/// Partition key kind.
+/// The partitioning strategy configured for a container.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PartitionKeyKind {
@@ -624,10 +605,10 @@ impl AsRef<str> for OperationType {
     }
 }
 
-/// A session token for maintaining session consistency.
+/// A session token used to maintain session consistency.
 ///
-/// Session tokens track the logical sequence number of operations, enabling
-/// read-your-writes consistency within a session.
+/// Session tokens track logical sequence numbers so later reads can observe
+/// writes that happened earlier in the same session.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SessionToken(pub Cow<'static, str>);
 
@@ -642,15 +623,12 @@ impl SessionToken {
         &self.0
     }
 
-    /// Merges this session token with another, returning the combined result.
+    /// Merges this session token with another one.
     ///
-    /// Both tokens may be compound (comma-separated segments). Segments with
-    /// the same partition key range ID are merged using version-aware logic
-    /// (higher version wins, then per-region LSN max). Segments with distinct
-    /// IDs are kept as separate entries in the resulting compound token.
-    ///
-    /// This is the primary API for combining session tokens without exposing
-    /// internal token format details.
+    /// Compound tokens contain comma-separated segments. When both tokens
+    /// contain a segment for the same partition key range, the merge keeps the
+    /// newest version and the highest logical sequence number (LSN) for each
+    /// region.
     pub fn merge(&self, other: &Self) -> crate::error::Result<Self> {
         use std::collections::HashMap;
 
@@ -702,10 +680,10 @@ impl std::fmt::Display for SessionToken {
     }
 }
 
-/// Unique name identifying a throughput control group.
+/// The name of a throughput control group.
 ///
-/// This name is serialized into request headers when referencing a control group.
-/// The group configuration is defined separately via [`ThroughputControlGroupOptions`](crate::options::ThroughputControlGroupOptions).
+/// Use the same name when configuring a group and when selecting it for a
+/// request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ThroughputControlGroupName(pub Cow<'static, str>);
 

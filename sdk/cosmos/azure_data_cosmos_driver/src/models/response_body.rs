@@ -10,23 +10,17 @@
 use azure_core::{fmt::SafeDebug, Bytes};
 use serde::de::DeserializeOwned;
 
-/// The body of a [`CosmosResponse`](super::CosmosResponse).
+/// The raw body of a [`CosmosResponse`](super::CosmosResponse).
 ///
-/// Explicitly distinguishes between the three response shapes the driver
-/// returns:
+/// `ResponseBody` distinguishes among the three response shapes exposed by the
+/// service:
 ///
-/// * [`ResponseBody::NoPayload`] — the service returned no body (e.g. HTTP
-///   204 on a successful delete, or any other empty-body response).
-/// * [`ResponseBody::Bytes`] — a single payload buffer. Used for point reads,
-///   writes, batches, and any other operation that returns one document or
-///   envelope.
-/// * [`ResponseBody::Items`] — a list of pre-sliced per-document buffers. Used
-///   for feed responses (Query / ChangeFeed) where the driver pipeline splits
-///   the `Documents` array once via zero-copy [`Bytes::slice`](bytes::Bytes::slice)
-///   so the SDK never needs to re-parse the envelope.
+/// * [`ResponseBody::NoPayload`] for operations with no body.
+/// * [`ResponseBody::Bytes`] for a single payload buffer.
+/// * [`ResponseBody::Items`] for feed-style responses that return multiple
+///   items.
 ///
-/// The payload variants carry shared ownership via reference-counted
-/// [`bytes::Bytes`].
+/// Payload data is stored in reference-counted [`bytes::Bytes`] buffers.
 #[derive(Clone, Default, SafeDebug)]
 pub enum ResponseBody {
     /// The service returned no response body.
@@ -36,7 +30,7 @@ pub enum ResponseBody {
     /// A single response payload (point read/write, batch, metadata, etc.).
     Bytes(Bytes),
 
-    /// A list of per-document slices produced by the feed/query pipeline.
+    /// A list of per-item payload buffers from a feed response.
     Items(Vec<Bytes>),
 }
 
@@ -60,12 +54,7 @@ impl ResponseBody {
         }
     }
 
-    /// Builds a feed-style [`Items`](Self::Items) body from pre-sliced
-    /// per-document buffers.
-    ///
-    /// Use this for Query / ChangeFeed responses where the pipeline has
-    /// already split the `Documents` array via zero-copy
-    /// [`Bytes::slice`](bytes::Bytes::slice).
+    /// Builds a feed-style [`Items`](Self::Items) body from per-item buffers.
     pub fn from_items(items: Vec<Bytes>) -> Self {
         Self::Items(items)
     }
@@ -88,7 +77,7 @@ impl ResponseBody {
     /// [`Items`](Self::Items) response. A [`NoPayload`](Self::NoPayload) body
     /// yields an empty [`Bytes`].
     ///
-    /// Used by single-document response paths (point reads/writes, batch, etc.).
+    /// Use this when the response should contain exactly one payload buffer.
     pub fn single(self) -> crate::error::Result<Bytes> {
         match self {
             Self::NoPayload => Ok(Bytes::new()),

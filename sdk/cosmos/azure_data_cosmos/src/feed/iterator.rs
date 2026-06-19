@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Async iterators for Cosmos DB feed and query operations.
+//! Async iterators for Cosmos DB query results.
 //!
-//! [`QueryItemIterator`] yields individual items; [`QueryPageIterator`] yields
-//! whole [`QueryFeedPage`]s and supports continuation-token snapshotting.
+//! [`QueryItemIterator`] yields deserialized items one at a time.
+//! [`QueryPageIterator`] yields whole [`QueryFeedPage`] values and can capture a
+//! [`ContinuationToken`] for later resumption.
 
 use std::{marker::PhantomData, pin::Pin, sync::Arc, task};
 
@@ -177,9 +178,11 @@ impl<T: Send + DeserializeOwned + 'static> PageSource<T> {
     }
 }
 
-/// Represents a stream of items from a Cosmos DB query.
+/// A stream of items from a Cosmos DB query.
 ///
-/// See [`QueryFeedPage`] for more details on Cosmos DB feeds.
+/// This iterator flattens each [`QueryFeedPage`] into individual items.
+/// Use [`QueryItemIterator::into_pages`] if you need page-level metadata such as
+/// headers, diagnostics, or query metrics.
 #[pin_project::pin_project]
 pub struct QueryItemIterator<T: Send> {
     #[pin]
@@ -203,12 +206,11 @@ impl<T: Send + DeserializeOwned + 'static> QueryItemIterator<T> {
         }
     }
 
-    /// Converts this item iterator into a page iterator, yielding full pages
-    /// instead of individual items.
+    /// Switches to page-by-page iteration.
     ///
-    /// IMPORTANT: This will DISCARD any items from the current page that have
-    /// not yet been yielded by the item iterator. Use this method before
-    /// consuming any items to cleanly switch to page-based iteration.
+    /// Any items buffered from the current page but not yet yielded are
+    /// dropped. Call this before consuming items if you need every
+    /// [`QueryFeedPage`] intact.
     pub fn into_pages(self) -> QueryPageIterator<T> {
         QueryPageIterator {
             source: self.source,
@@ -246,12 +248,11 @@ impl<T: Send + DeserializeOwned + 'static> Stream for QueryItemIterator<T> {
     }
 }
 
-/// A stream of pages from a Cosmos DB feed operation.
+/// A stream of pages from a Cosmos DB query.
 ///
-/// In addition to yielding [`QueryFeedPage`]s like a regular `Stream`, this
-/// iterator can be snapshotted into a [`ContinuationToken`] for later
-/// resumption via
-/// [`to_continuation_token`](Self::to_continuation_token).
+/// Each item in the stream is a [`QueryFeedPage`]. You can also capture a
+/// [`ContinuationToken`] with [`QueryPageIterator::to_continuation_token`] and
+/// resume the query later.
 #[pin_project::pin_project]
 pub struct QueryPageIterator<T: Send> {
     #[pin]
@@ -262,19 +263,19 @@ pub struct QueryPageIterator<T: Send> {
 impl<T: Send + DeserializeOwned + 'static> QueryPageIterator<T> {
     /// Captures the current iterator position as a [`ContinuationToken`].
     ///
-    /// Pass the returned token to a subsequent
+    /// Pass the returned token to a later
     /// [`ContainerClient::query_items`](crate::clients::ContainerClient::query_items)
-    /// call (via [`QueryOptions::with_continuation_token`](crate::options::QueryOptions::with_continuation_token))
-    /// to resume the query at the same position.
+    /// call with
+    /// [`QueryOptions::with_continuation_token`](crate::options::QueryOptions::with_continuation_token)
+    /// to resume from the same position.
     ///
-    /// Snapshotting is non-mutating; the iterator may continue to be used
-    /// afterwards. However, the captured token will resume from the position of the iterator at the time of capture,
-    /// so any subsequent calls to `poll_next` after token capture will not affect the captured token's position.
+    /// Capturing a token does not advance the iterator. You can keep using the
+    /// iterator afterward, and the captured token will still represent the
+    /// position at the time you called this method.
     ///
     /// # Errors
     ///
-    /// Returns an error if a page fetch is currently in flight (the plan
-    /// state is being mutated and cannot be safely snapshotted).
+    /// Returns an error if a page fetch is currently in flight.
     pub fn to_continuation_token(&self) -> crate::Result<ContinuationToken> {
         match &self.source {
             PageSource::Live(state) => state.to_continuation_token(),

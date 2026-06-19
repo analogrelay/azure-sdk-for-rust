@@ -14,7 +14,7 @@ const AZURE_COSMOS_EMULATOR_HOST: &str = "AZURE_COSMOS_EMULATOR_HOST";
 /// Known localhost hostnames that indicate an emulator endpoint.
 const EMULATOR_LOCALHOST_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]", "[0:0:0:0:0:0:0:1]"];
 
-/// Determines if the given endpoint is pointing to a Cosmos DB emulator.
+/// Returns whether the given endpoint points to a Cosmos DB emulator.
 ///
 /// An endpoint is considered an emulator if:
 /// 1. The `AZURE_COSMOS_EMULATOR_HOST` environment variable is set and the
@@ -24,14 +24,6 @@ const EMULATOR_LOCALHOST_HOSTS: &[&str] = &["localhost", "127.0.0.1", "[::1]", "
 ///    - `127.0.0.1`
 ///    - `[::1]`
 ///    - `[0:0:0:0:0:0:0:1]`
-///
-/// # Arguments
-///
-/// * `endpoint` - The account endpoint to check.
-///
-/// # Returns
-///
-/// `true` if the endpoint is an emulator, `false` otherwise.
 pub(crate) fn is_emulator_host(endpoint: &AccountEndpoint) -> bool {
     let host = endpoint.host();
 

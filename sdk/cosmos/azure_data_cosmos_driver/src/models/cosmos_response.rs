@@ -31,7 +31,7 @@ impl CosmosResponsePayload {
         }
     }
 
-    /// Returns a reference to the typed response body.
+    /// Returns the response body.
     pub(crate) fn body(&self) -> &ResponseBody {
         &self.body
     }
@@ -47,32 +47,12 @@ impl CosmosResponsePayload {
     }
 }
 
-/// Result of a Cosmos DB operation.
+/// The raw result of a Cosmos DB operation.
 ///
-/// Contains the response body (as a [`ResponseBody`] of one or more
-/// reference-counted byte slices), relevant headers, and comprehensive status
-/// information for the operation.
-///
-/// # Schema-Agnostic Design
-///
-/// The driver returns response bodies as raw bytes via [`ResponseBody`].
-/// The higher-level SDK (e.g., `azure_data_cosmos`) handles deserialization into
-/// typed structures. This allows the driver to be reused across different
-/// serialization strategies.
-///
-/// # Example
-///
-/// ```ignore
-/// let result = driver.execute_operation(/* ... */).await?;
-///
-/// let status = result.status();
-/// println!("Status: {}", status);
-/// println!("RU Charge: {}", result.headers().request_charge.unwrap_or_default().value());
-/// if status.is_success() {
-///     let body = result.into_body();
-///     // Deserialize body...
-/// }
-/// ```
+/// A `CosmosResponse` bundles the response [`ResponseBody`], Cosmos-specific
+/// headers, the resolved [`CosmosStatus`], and collected diagnostics.
+/// Typed APIs in `azure_data_cosmos` usually deserialize the body for you, but
+/// this type is available when you need direct access to the raw response.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct CosmosResponse {
@@ -110,7 +90,7 @@ impl CosmosResponse {
         &self.payload
     }
 
-    /// Returns a reference to the typed response body.
+    /// Returns the response body.
     pub fn body(&self) -> &ResponseBody {
         self.payload.body()
     }

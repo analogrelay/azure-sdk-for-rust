@@ -12,11 +12,10 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use std::num::NonZeroU32;
 
-/// Per-page item-count hint for Cosmos feed-style operations
-/// (`x-ms-max-item-count`).
+/// A page-size hint for Cosmos feed-style operations (`x-ms-max-item-count`).
 ///
-/// Used by query and changefeed reads. Modeled as an explicit enum so callers
-/// don't have to traffic in the `-1` wire sentinel directly.
+/// Used by query and change feed reads. Modeling this as an enum keeps callers
+/// from working with the `-1` wire sentinel directly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MaxItemCountHint {

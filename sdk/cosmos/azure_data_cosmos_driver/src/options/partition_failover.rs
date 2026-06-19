@@ -13,27 +13,10 @@ use super::env_parsing::{
 /// Configuration for partition-level failover and the per-partition circuit
 /// breaker (PPCB).
 ///
-/// These knobs are read **once** when the driver is constructed and are not
-/// resolved per-operation. Use [`PartitionFailoverOptionsBuilder`] to build a
-/// value, then attach it to
-/// [`DriverOptions`](crate::options::DriverOptions) via
+/// These settings are read once when the driver is created and do not resolve
+/// per request. Use [`PartitionFailoverOptionsBuilder`] to build a value, then
+/// attach it with
 /// [`DriverOptionsBuilder::with_partition_failover_options`](crate::options::DriverOptionsBuilder::with_partition_failover_options).
-///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::options::PartitionFailoverOptions;
-/// use std::time::Duration;
-///
-/// let options = PartitionFailoverOptions::builder()
-///     .with_circuit_breaker_enabled(true)
-///     .with_partition_unavailability_duration(Duration::from_secs(10))
-///     .build()
-///     .expect("valid options");
-///
-/// assert!(options.circuit_breaker_enabled());
-/// assert_eq!(options.partition_unavailability_duration(), Duration::from_secs(10));
-/// ```
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct PartitionFailoverOptions {
@@ -68,14 +51,11 @@ impl PartitionFailoverOptions {
         PartitionFailoverOptionsBuilder::new()
     }
 
-    /// Returns whether the per-partition circuit breaker (PPCB) is enabled
-    /// via driver options.
+    /// Returns whether the per-partition circuit breaker (PPCB) is enabled by
+    /// configuration.
     ///
-    /// The effective in-driver value is `enabled_via_options ||
-    /// account_property_enable_per_partition_failover_behavior`, so PPCB still
-    /// turns on when the account property is set even if this flag is `false`
-    /// — unless the internal incident kill switch
-    /// (`AZURE_COSMOS_PPCB_ENABLED_OVERRIDE`) is set, which wins over both.
+    /// Environment overrides and service capabilities can still affect the
+    /// effective behavior at runtime.
     pub fn circuit_breaker_enabled(&self) -> bool {
         self.circuit_breaker_enabled
     }
@@ -143,8 +123,9 @@ impl PartitionFailoverOptions {
 
 /// Builder for [`PartitionFailoverOptions`].
 ///
-/// Unset fields are populated from environment variables when available,
-/// and otherwise fall back to compile-time defaults.
+/// Explicit builder values take precedence. Any remaining fields can be read
+/// from `AZURE_COSMOS_*` environment variables before falling back to the
+/// built-in defaults.
 ///
 /// # Environment Variables
 ///
@@ -173,16 +154,6 @@ impl PartitionFailoverOptions {
 ///   alternate-region hedge wins on the same `(partition, primary_region)`
 ///   pair before PPCB trips the partition (default: `5`, min: `1`).
 ///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::options::PartitionFailoverOptions;
-///
-/// let options = PartitionFailoverOptions::builder()
-///     .with_circuit_breaker_enabled(true)
-///     .build()
-///     .expect("valid options");
-/// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct PartitionFailoverOptionsBuilder {
@@ -202,12 +173,9 @@ impl PartitionFailoverOptionsBuilder {
         Self::default()
     }
 
-    /// Enables or disables the per-partition circuit breaker (PPCB) via
-    /// driver options. Defaults to `true`.
+    /// Enables or disables the per-partition circuit breaker (PPCB).
     ///
-    /// PPCB still turns on when the account property
-    /// `enable_per_partition_failover_behavior` is set on the server, even
-    /// if this value is `false`.
+    /// Defaults to `true`.
     pub fn with_circuit_breaker_enabled(mut self, value: bool) -> Self {
         self.circuit_breaker_enabled = Some(value);
         self

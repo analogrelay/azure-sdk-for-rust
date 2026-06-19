@@ -12,15 +12,15 @@ use crate::options::{ConnectionPoolOptions, OperationOptions, UserAgentSuffix};
 
 /// Shared runtime for one or more [`CosmosClient`](crate::CosmosClient) instances.
 ///
-/// All [`CosmosClient`](crate::CosmosClient) instances run in the context of a [`CosmosRuntime`].
-/// The runtime serves as a central hub for caches, state, and background monitoring/maintenance tasks.
-/// For most applications, the default runtime is sufficient, but there are a few cases where you
-/// might need to create your own runtime and pass it to a client using [`CosmosClientBuilder::with_runtime`](crate::CosmosClientBuilder::with_runtime).
+/// Most applications can use the default runtime created by
+/// [`CosmosClientBuilder::build`](crate::CosmosClientBuilder::build). Create a
+/// custom runtime and pass it to
+/// [`CosmosClientBuilder::with_runtime`](crate::CosmosClientBuilder::with_runtime)
+/// when you want multiple clients to share the same connection settings or
+/// default [`OperationOptions`].
 ///
-/// * You are creating a lot of [`CosmosClient`](crate::CosmosClient) instances to connect
-///   to different accounts and wish to share some common [`OperationOptions`] between them ([`CosmosRuntimeBuilder::with_default_operation_options`]).
-/// * You need to modify connection pool options, such as connect timeouts, or allowing insecure TLS connections to the emulator
-///   ([`CosmosRuntimeBuilder::with_connection_pool`])
+/// A custom runtime is also useful when you need transport settings that differ
+/// from the defaults, such as emulator-specific TLS settings.
 #[derive(Clone, Debug)]
 pub struct CosmosRuntime(Arc<CosmosDriverRuntime>);
 
@@ -58,12 +58,11 @@ impl CosmosRuntime {
     }
 }
 
-/// Builder for constructing a customized [`CosmosRuntime`].
+/// Builder for constructing a [`CosmosRuntime`].
 ///
-/// Use [`CosmosRuntime::builder`] (or [`CosmosRuntimeBuilder::new`]) to
-/// start, configure with the `with_*` and `register_*` setters, then call
-/// [`CosmosRuntimeBuilder::build`] to obtain the runtime. Attach it to one
-/// or more clients via
+/// Start with [`CosmosRuntime::builder`] or [`CosmosRuntimeBuilder::new`],
+/// configure the runtime, then call [`CosmosRuntimeBuilder::build`]. Attach
+/// the resulting runtime to one or more clients with
 /// [`CosmosClientBuilder::with_runtime`](crate::CosmosClientBuilder::with_runtime).
 #[derive(Default, Debug, Clone)]
 pub struct CosmosRuntimeBuilder(CosmosDriverRuntimeBuilder);
@@ -102,12 +101,10 @@ impl CosmosRuntimeBuilder {
         self
     }
 
-    /// Sets the CPU/memory sampler refresh interval.
+    /// Sets how often the runtime refreshes CPU and memory diagnostics.
     ///
-    /// Controls how frequently the runtime's background sampler refreshes
-    /// CPU and memory diagnostics. Defaults to the value of
-    /// `AZURE_COSMOS_CPU_REFRESH_INTERVAL_MS`, or 5000 ms if unset. Valid
-    /// range: 1000–60000 ms.
+    /// Defaults to `AZURE_COSMOS_CPU_REFRESH_INTERVAL_MS`, or 5000 ms if that
+    /// variable is not set. Valid values are 1000 through 60000 ms.
     pub fn with_cpu_refresh_interval(mut self, interval: Duration) -> Self {
         self.0 = self.0.with_cpu_refresh_interval(interval);
         self
@@ -115,9 +112,8 @@ impl CosmosRuntimeBuilder {
 
     /// Builds the [`CosmosRuntime`].
     ///
-    /// Automatically applies the SDK's wrapping-SDK identifier
-    /// (`azsdk-rust-cosmos/<version>`) so requests issued through clients
-    /// built on this runtime can be attributed to this crate.
+    /// The runtime automatically includes this crate's SDK identifier in the
+    /// User-Agent header for requests sent through clients that use it.
     ///
     /// # Errors
     ///
@@ -134,11 +130,11 @@ impl CosmosRuntimeBuilder {
 }
 
 impl From<CosmosDriverRuntimeBuilder> for CosmosRuntimeBuilder {
-    /// Constructs a `CosmosRuntimeBuilder` from a pre-configured
+    /// Creates a [`CosmosRuntimeBuilder`] from a preconfigured
     /// [`CosmosDriverRuntimeBuilder`].
     ///
-    /// Because this depends on directly creating a [`CosmosDriverRuntimeBuilder`], it is
-    /// not an officially supported way to create a [`CosmosRuntime`]
+    /// This conversion is intended for advanced scenarios and is not the
+    /// primary way to create a [`CosmosRuntime`].
     fn from(value: CosmosDriverRuntimeBuilder) -> Self {
         Self(value)
     }

@@ -30,15 +30,14 @@ struct ThroughputControlSettings {
 
 /// Configuration for a throughput control group.
 ///
-/// Registered at the runtime level and associated with a container.
-/// Throughput control is enforced server-side.
-///
-/// A group can have a throughput bucket, a priority level, or both.
+/// A group is associated with one container and can define a throughput bucket,
+/// a priority level, or both. Register the group with the client or driver
+/// configuration that should use it.
 ///
 /// # Immutability
 ///
-/// Once registered, the group's name, container, and `is_default` flag are immutable.
-/// Only the target values (priority level, bucket) can be modified at runtime.
+/// Once registered, the group's name, container, and `is_default` flag stay
+/// fixed. Only the target values can be updated at runtime.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct ThroughputControlGroupOptions {

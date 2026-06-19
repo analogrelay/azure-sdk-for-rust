@@ -1,8 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! [`SystemProperties`] — common system properties returned for most Cosmos DB
-//! resources.
+//! [`SystemProperties`] shared by most Cosmos DB resources.
 
 use azure_core::{fmt::SafeDebug, http::Etag, time::OffsetDateTime};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -33,26 +32,26 @@ where
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 pub struct SystemProperties {
-    /// The entity tag associated with the resource.
+    /// The ETag for the resource.
     #[serde(default)]
     #[serde(skip_serializing)]
     #[serde(rename = "_etag")]
     pub etag: Option<Etag>,
 
-    /// The self-link associated with the resource.
+    /// The self link for the resource.
     #[serde(default)]
     #[serde(skip_serializing)]
     #[serde(rename = "_self")]
     pub self_link: Option<String>,
 
-    /// The system-generated unique identifier associated with the resource.
+    /// The service-generated resource ID.
     #[serde(default)]
     // Some APIs do expect the "_rid" to be provided (Replace Offer, for example), so we do want to serialize it if it's provided.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "_rid")]
     pub resource_id: Option<String>,
 
-    /// A [`OffsetDateTime`] representing the last modified time of the resource.
+    /// The last modified time of the resource.
     #[serde(default)]
     #[serde(rename = "_ts")]
     #[serde(skip_serializing)]

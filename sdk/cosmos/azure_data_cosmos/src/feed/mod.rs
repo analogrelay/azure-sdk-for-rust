@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Types related to Cosmos DB feed operations, including query and change feed
-//! iteration, pagination and related models.
+//! Types for working with Cosmos DB feed results.
+//!
+//! This module includes query scopes, query definitions, paged response types,
+//! and async iterators for consuming query results item by item or page by page.
 
 // =========================================================================
 // Public API

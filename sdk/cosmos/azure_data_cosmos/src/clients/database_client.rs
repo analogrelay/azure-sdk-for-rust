@@ -16,9 +16,9 @@ use azure_data_cosmos_driver::models::{CosmosOperation, DatabaseReference};
 
 use super::ThroughputPoller;
 
-/// A client for working with a specific database in a Cosmos DB account.
+/// Client for a specific database in an Azure Cosmos DB account.
 ///
-/// You can get a `DatabaseClient` by calling [`CosmosClient::database_client()`](crate::CosmosClient::database_client()).
+/// Get a [`DatabaseClient`] by calling [`CosmosClient::database_client`](crate::CosmosClient::database_client).
 pub struct DatabaseClient {
     database_id: String,
     context: ClientContext,
@@ -38,44 +38,51 @@ impl DatabaseClient {
         }
     }
 
-    /// Gets a [`ContainerClient`] that can be used to access the collection with the specified name.
+    /// Returns a [`ContainerClient`] for the container with the given name.
     ///
-    /// This method eagerly resolves immutable container metadata (resource ID and partition key
-    /// definition) from the service, so the returned client is ready for immediate use without
-    /// per-operation cache lookups.
-    ///
-    /// # Arguments
-    /// * `name` - The name of the container.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the container does not exist or the metadata cannot be resolved.
-    pub async fn container_client(&self, name: &str) -> crate::Result<ContainerClient> {
-        ContainerClient::new(self.context.clone(), name, &self.database_id).await
-    }
-
-    /// Returns the identifier of the Cosmos database.
-    pub fn id(&self) -> &str {
-        &self.database_id
-    }
-
-    /// Reads the properties of the database.
-    ///
-    /// # Arguments
-    ///
-    /// * `options` - Optional parameters for the request.
+    /// This method resolves container metadata up front so the returned client
+    /// is ready to use without an extra lookup on each request.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use azure_data_cosmos::clients::DatabaseClient;
-    /// # let database_client: DatabaseClient = panic!("this is a non-running example");
-    /// let response = database_client.read(None)
-    ///     .await?
-    ///     .into_model()?;
+    /// # let db_client: azure_data_cosmos::clients::DatabaseClient = panic!("non-running example");
+    /// let container_client = db_client.container_client("products").await?;
+    /// # let _ = container_client;
+    /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the container does not exist or its metadata cannot
+    /// be resolved.
+    pub async fn container_client(&self, name: &str) -> crate::Result<ContainerClient> {
+        ContainerClient::new(self.context.clone(), name, &self.database_id).await
+    }
+
+    /// Returns the database ID.
+    pub fn id(&self) -> &str {
+        &self.database_id
+    }
+
+    /// Reads the database properties.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db_client: azure_data_cosmos::clients::DatabaseClient = panic!("non-running example");
+    /// let database = db_client.read(None).await?.into_model()?;
+    /// # let _ = database;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn read(
         &self,
         options: Option<ReadDatabaseOptions>,
@@ -96,11 +103,6 @@ impl DatabaseClient {
 
     /// Executes a query against containers in the database.
     ///
-    /// # Arguments
-    ///
-    /// * `query` - The query to execute.
-    /// * `options` - Optional parameters for the request.
-    ///
     /// # Examples
     ///
     /// The `query` parameter accepts anything that can be transformed [`Into`] a [`Query`].
@@ -116,7 +118,11 @@ impl DatabaseClient {
     /// # }
     /// ```
     ///
-    /// See [`Query`] for more information on how to specify a query.
+    /// See [`Query`] for more information about building queries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query cannot be serialized or the request fails.
     pub async fn query_containers(
         &self,
         query: impl Into<Query>,
@@ -148,9 +154,22 @@ impl DatabaseClient {
     ///
     #[doc = include_str!("../../docs/control-plane-always-returns-body.md")]
     ///
-    /// # Arguments
-    /// * `properties` - A [`ContainerProperties`] describing the new container.
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// use azure_data_cosmos::models::ContainerProperties;
+    /// # let db_client: azure_data_cosmos::clients::DatabaseClient = panic!("non-running example");
+    /// let properties = ContainerProperties::new("products", "/category_id".into());
+    /// let container = db_client.create_container(properties, None).await?.into_model()?;
+    /// # let _ = container;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn create_container(
         &self,
         properties: ContainerProperties,
@@ -188,8 +207,19 @@ impl DatabaseClient {
     ///
     #[doc = include_str!("../../docs/control-plane-warning.md")]
     ///
-    /// # Arguments
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db_client: azure_data_cosmos::clients::DatabaseClient = panic!("non-running example");
+    /// db_client.delete(None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn delete(
         &self,
         options: Option<DeleteDatabaseOptions>,
@@ -208,12 +238,25 @@ impl DatabaseClient {
         ))
     }
 
-    /// Reads database throughput properties, if any.
+    /// Reads the database throughput settings, if any.
     ///
-    /// This will return `None` if the database does not have a throughput offer configured.
+    /// Returns `None` if the database does not have dedicated throughput.
     ///
-    /// # Arguments
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let db_client: azure_data_cosmos::clients::DatabaseClient = panic!("non-running example");
+    /// if let Some(throughput) = db_client.read_throughput(None).await? {
+    /// # let _ = throughput;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database metadata or throughput offer cannot be read.
     pub async fn read_throughput(
         &self,
         options: Option<ThroughputOptions>,
@@ -232,17 +275,17 @@ impl DatabaseClient {
         .await
     }
 
-    /// Begins replacing the database throughput properties.
+    /// Starts replacing the database throughput settings.
     ///
     /// The Cosmos DB service may process throughput changes asynchronously. The returned
-    /// [`ThroughputPoller`] can be awaited directly for the final result, or polled as a
-    /// stream to observe progress.
+    /// [`ThroughputPoller`] can be awaited for the final result or polled as a stream
+    /// to observe progress.
     ///
     #[doc = include_str!("../../docs/control-plane-always-returns-body.md")]
     ///
-    /// # Arguments
-    /// * `throughput` - The new throughput properties to set.
-    /// * `options` - Optional parameters for the request.
+    /// # Errors
+    ///
+    /// Returns an error if the database metadata cannot be read or the replace request fails.
     ///
     /// # Examples
     ///

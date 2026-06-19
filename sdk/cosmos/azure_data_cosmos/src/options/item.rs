@@ -1,46 +1,47 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Options for item-level point reads, writes, and patch operations.
+//! Options for item reads, writes, and patch operations.
 
 use azure_data_cosmos_driver::models::{Precondition, SessionToken};
 use azure_data_cosmos_driver::options::OperationOptions;
 
-/// Options for item point-read operations.
+/// Options for [`ContainerClient::read_item`](crate::clients::ContainerClient::read_item).
 ///
-/// Used by [`ContainerClient::read_item()`](crate::clients::ContainerClient::read_item).
-///
-/// General-purpose settings such as custom headers and excluded regions are configured
-/// via the [`with_operation_options`](Self::with_operation_options) setter. See [`OperationOptions`] for details.
+/// Use [`operation`](Self::operation) for cross-cutting request settings and
+/// [`precondition`](Self::precondition) for conditional reads.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct ItemReadOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for this operation.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 
-    /// Session token for session-consistent reads.
+    /// Session token to use for session-consistent reads.
     pub session_token: Option<SessionToken>,
 
-    /// Conditional ETag check. For reads, typically [`Precondition::IfNoneMatch`]
-    /// (returns 304 Not Modified if unchanged).
+    /// Conditional ETag check for this read.
+    ///
+    /// [`Precondition::IfNoneMatch`] is commonly used to avoid returning an item
+    /// that has not changed.
     pub precondition: Option<Precondition>,
 }
 
 impl ItemReadOptions {
-    /// Sets the session token for this request.
+    /// Sets the session token for session-consistent reads.
     pub fn with_session_token(mut self, session_token: impl Into<SessionToken>) -> Self {
         self.session_token = Some(session_token.into());
         self
     }
 
-    /// Sets a conditional ETag check for this request.
+    /// Sets the conditional ETag check for this read.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self
     }
 
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for this operation.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self
@@ -49,129 +50,96 @@ impl ItemReadOptions {
 
 /// Options for item write operations.
 ///
-/// Used by [`ContainerClient::create_item()`](crate::clients::ContainerClient::create_item),
-/// [`ContainerClient::replace_item()`](crate::clients::ContainerClient::replace_item),
-/// [`ContainerClient::upsert_item()`](crate::clients::ContainerClient::upsert_item), and
-/// [`ContainerClient::delete_item()`](crate::clients::ContainerClient::delete_item).
+/// Used by [`ContainerClient::create_item`](crate::clients::ContainerClient::create_item),
+/// [`ContainerClient::replace_item`](crate::clients::ContainerClient::replace_item),
+/// [`ContainerClient::upsert_item`](crate::clients::ContainerClient::upsert_item), and
+/// [`ContainerClient::delete_item`](crate::clients::ContainerClient::delete_item).
 ///
-/// General-purpose settings such as custom headers, excluded regions, and content
-/// response behavior are configured via the [`with_operation_options`](Self::with_operation_options) setter.
-/// See [`OperationOptions`] for details.
+/// Use [`operation`](Self::operation) for cross-cutting request settings and
+/// [`precondition`](Self::precondition) for conditional writes.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct ItemWriteOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for this operation.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 
-    /// Session token for session-consistent writes.
+    /// Session token to use for session-consistent writes.
     pub session_token: Option<SessionToken>,
 
-    /// Conditional ETag check. For writes, typically [`Precondition::IfMatch`]
-    /// (optimistic concurrency).
+    /// Conditional ETag check for this write.
+    ///
+    /// [`Precondition::IfMatch`] is commonly used for optimistic concurrency.
     pub precondition: Option<Precondition>,
 }
 
 impl ItemWriteOptions {
-    /// Sets the session token for this request.
+    /// Sets the session token for session-consistent writes.
     pub fn with_session_token(mut self, session_token: impl Into<SessionToken>) -> Self {
         self.session_token = Some(session_token.into());
         self
     }
 
-    /// Sets a conditional ETag check for this request.
+    /// Sets the conditional ETag check for this write.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self
     }
 
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for this operation.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self
     }
 }
 
-/// Options for [`ContainerClient::patch_item()`](crate::clients::ContainerClient::patch_item()).
+/// Options for [`ContainerClient::patch_item`](crate::clients::ContainerClient::patch_item).
 ///
-/// PATCH is implemented driver-side as a Read-Modify-Write (RMW) loop:
-/// the driver reads the current item, applies your [`PatchInstructions`](crate::models::PatchInstructions)
-/// locally, and issues an ETag-guarded Replace. If the Replace returns
-/// 412 PreconditionFailed (another writer raced), the loop restarts.
+/// Patch currently reads the item, applies your [`PatchInstructions`](crate::models::PatchInstructions),
+/// and then writes the updated item back with an ETag check. If another writer
+/// changes the item first, the SDK retries the operation.
 ///
-/// The optional [`max_attempts`](Self::max_attempts) field bounds how many
-/// times that loop may retry; `None` falls back to the driver default (5).
+/// Use [`max_attempts`](Self::max_attempts) to cap those retries. `None` uses
+/// the default limit of 5.
 ///
-/// # Conditions are not exposed
+/// This type does not expose a [`Precondition`] because the SDK manages the
+/// ETag used for retries internally.
 ///
-/// PATCH intentionally does **not** expose either flavor of "condition" that
-/// peer SDKs surface on their PATCH options:
-///
-/// * **`Precondition` (`If-Match` / `If-None-Match`).** The handler owns the
-///   `If-Match` precondition on the internal Replace and captures the ETag
-///   off the matching Read; honoring a caller-set value would either shadow
-///   that ETag (silently breaking the RMW guarantee) or require resolving
-///   it against the handler's own ETag (no sensible merge). The driver-side
-///   PATCH handler rejects any caller-set precondition with an error before
-///   issuing any sub-operation.
-/// * **SQL filter predicate** (peer SDKs' `FilterPredicate`). Predicate
-///   evaluation requires either native wire-level PATCH (so the server
-///   evaluates the predicate inside the same transaction) or a client-side
-///   SQL subset evaluator; neither is in scope for this preview. The
-///   driver's [`PatchInstructions`](crate::models::PatchInstructions) has no `condition` field, so
-///   there is no way to attach a predicate to a PATCH request.
-///
-/// The session token lives on the dedicated
-/// [`session_token`](Self::session_token) field (mirroring
-/// [`ItemReadOptions`] / [`ItemWriteOptions`]). All other general-purpose
-/// settings (custom headers, content response behavior, excluded regions,
-/// etc.) are configured via [`with_operation_options`](Self::with_operation_options) — see
-/// [`OperationOptions`] for details.
-///
-/// # Latency
-///
-/// Because every PATCH is at minimum a Read followed by a Replace, the
-/// best-case round-trip floor for ``patch_item`` is **2× the single-RTT
-/// cost** of a comparable Read or Replace against the same partition.
-/// Each retry triggered by a 412 PreconditionFailed adds another full
-/// Read+Replace pair to the wall-clock cost.
-///
-/// When configuring an end-to-end latency budget via
-/// [`OperationOptions`]'s end-to-end request settings, size the budget
-/// accordingly — a useful rule of thumb is **≥ 2× the p99 single-RTT
-/// budget you would set for a plain Replace**, plus headroom for any
-/// 412 retries you want to tolerate. Setting the budget too low can
-/// cancel the RMW between the Read and the Replace, producing a
-/// timeout error even when the service is healthy.
+/// Because each patch includes at least one read and one write, it can take
+/// longer than a point read or replace.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct PatchItemOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for this operation.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 
-    /// Session token for session-consistent writes.
+    /// Session token to use for session-consistent patch operations.
     pub session_token: Option<SessionToken>,
 
-    /// Maximum number of Read-Modify-Write attempts the driver may make
-    /// before surfacing a 412. `None` selects the driver default (5).
+    /// Maximum number of retry attempts the SDK makes if the item changes during
+    /// the patch.
+    ///
+    /// `None` uses the default limit of 5.
     pub max_attempts: Option<std::num::NonZeroU8>,
 }
 
 impl PatchItemOptions {
-    /// Sets the session token for this request.
+    /// Sets the session token for session-consistent patch operations.
     pub fn with_session_token(mut self, session_token: impl Into<SessionToken>) -> Self {
         self.session_token = Some(session_token.into());
         self
     }
 
-    /// Caps the number of Read-Modify-Write attempts the driver may make.
+    /// Caps how many times the SDK retries the patch if the item changes.
     pub fn with_max_attempts(mut self, max_attempts: std::num::NonZeroU8) -> Self {
         self.max_attempts = Some(max_attempts);
         self
     }
 
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for this operation.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self

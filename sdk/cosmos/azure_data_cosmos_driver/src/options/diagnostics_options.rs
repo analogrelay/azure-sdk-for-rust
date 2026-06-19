@@ -128,15 +128,9 @@ impl DiagnosticsOptions {
 
 /// Builder for [`DiagnosticsOptions`].
 ///
-/// The builder doubles as its own environment-variable source: it derives
-/// `CosmosOptions` in `#[options(env_only)]` mode, which generates a
-/// `from_env()` that reads each `#[option(env = "...")]` field from its
-/// `AZURE_COSMOS_*` variable (lenient — a malformed value is logged and
-/// ignored). [`DiagnosticsOptionsBuilder::build`] then resolves
-/// `builder value → env value → default` and applies validation.
-///
-/// Default values are read from environment variables when available,
-/// and can be overridden using builder methods.
+/// Explicit builder values take precedence. Any remaining fields can be read
+/// from `AZURE_COSMOS_*` environment variables before falling back to the
+/// built-in defaults.
 ///
 /// # Environment Variables
 ///
@@ -145,17 +139,6 @@ impl DiagnosticsOptions {
 /// - `AZURE_COSMOS_DIAGNOSTICS_DEFAULT_VERBOSITY`: Default verbosity level.
 ///   Valid values: `default`, `summary`, `detailed` (default: `detailed`)
 ///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::options::{DiagnosticsOptions, DiagnosticsVerbosity};
-///
-/// let options = DiagnosticsOptions::builder()
-///     .with_max_summary_size_bytes(16 * 1024)  // 16 KB
-///     .with_default_verbosity(DiagnosticsVerbosity::Summary)
-///     .build()
-///     .expect("valid options");
-/// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, Default, CosmosOptions)]
 #[options(env_only)]

@@ -1,114 +1,111 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Per-operation options for transactional batch sub-operations, plus the
-//! request-level [`BatchOptions`] passed to
-//! [`ContainerClient::execute_transactional_batch()`](crate::clients::ContainerClient::execute_transactional_batch()).
+//! Options for transactional batch requests and batch sub-operations.
+//!
+//! Use [`BatchOptions`] for settings that apply to the whole request passed to
+//! [`ContainerClient::execute_transactional_batch`](crate::clients::ContainerClient::execute_transactional_batch).
+//! Use the other types in this module for settings on individual batch operations.
 
 use azure_data_cosmos_driver::models::{Precondition, SessionToken};
 use azure_data_cosmos_driver::options::OperationOptions;
 
-/// Options for transactional batch operations.
+/// Options for [`ContainerClient::execute_transactional_batch`](crate::clients::ContainerClient::execute_transactional_batch).
 ///
-/// Used by [`ContainerClient::execute_transactional_batch()`](crate::clients::ContainerClient::execute_transactional_batch()).
-/// ETag-based conditional options are specified per-operation within the batch itself.
-///
-/// General-purpose settings such as custom headers and content response behavior
-/// are configured via the [`with_operation_options`](Self::with_operation_options) setter.
-/// See [`OperationOptions`] for details.
+/// Use this type for settings that apply to the whole batch request. Conditional
+/// ETag checks are configured on each sub-operation instead.
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub struct BatchOptions {
-    /// General-purpose options that apply to this request.
-    /// See [`OperationOptions`] for available settings and layered resolution behavior.
+    /// Cross-cutting request settings for the batch request.
+    ///
+    /// See [`OperationOptions`] for the available settings.
     pub operation: OperationOptions,
 
-    /// Session token for session-consistent batch operations.
+    /// Session token to use for session-consistent execution.
     pub session_token: Option<SessionToken>,
 }
 
 impl BatchOptions {
-    /// Sets the session token for this request.
+    /// Sets the session token for session-consistent execution.
     pub fn with_session_token(mut self, session_token: impl Into<SessionToken>) -> Self {
         self.session_token = Some(session_token.into());
         self
     }
 
-    /// Sets the [`OperationOptions`] for this request.
+    /// Sets the cross-cutting request settings for the batch request.
     pub fn with_operation_options(mut self, operation: OperationOptions) -> Self {
         self.operation = operation;
         self
     }
 }
 
-/// Options for batch upsert operations.
+/// Options for an upsert sub-operation in a transactional batch.
 ///
-/// Upsert supports both conditional options for optimistic concurrency control.
+/// Supports both [`Precondition::IfMatch`] and [`Precondition::IfNoneMatch`].
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct BatchUpsertOptions {
-    /// Conditional ETag check for optimistic concurrency control.
+    /// Conditional ETag check for this upsert operation.
     pub precondition: Option<Precondition>,
 }
 
 impl BatchUpsertOptions {
-    /// Sets the precondition for optimistic concurrency control.
+    /// Sets the conditional ETag check for this upsert operation.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self
     }
 }
 
-/// Options for batch replace operations.
+/// Options for a replace sub-operation in a transactional batch.
 ///
-/// Replace only supports `if_match` for optimistic concurrency control,
-/// since the item must exist to be replaced.
+/// Only [`Precondition::IfMatch`] is applied. Other preconditions are ignored.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct BatchReplaceOptions {
-    /// Conditional ETag check for optimistic concurrency control.
+    /// Conditional ETag check for this replace operation.
     pub precondition: Option<Precondition>,
 }
 
 impl BatchReplaceOptions {
-    /// Sets the precondition for optimistic concurrency control.
+    /// Sets the conditional ETag check for this replace operation.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self
     }
 }
 
-/// Options for batch read operations.
+/// Options for a read sub-operation in a transactional batch.
 ///
-/// Read supports both conditional options, commonly used for cache validation.
+/// Supports both [`Precondition::IfMatch`] and [`Precondition::IfNoneMatch`].
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct BatchReadOptions {
-    /// Conditional ETag check, commonly used for cache validation.
+    /// Conditional ETag check for this read operation.
     pub precondition: Option<Precondition>,
 }
 
 impl BatchReadOptions {
-    /// Sets the precondition (useful for caching or concurrency control).
+    /// Sets the conditional ETag check for this read operation.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self
     }
 }
 
-/// Options for batch delete operations.
+/// Options for a delete sub-operation in a transactional batch.
 ///
-/// Delete only supports `if_match` for optimistic concurrency control,
-/// since the item must exist to be deleted.
+/// Only [`Precondition::IfMatch`] is applied. Other preconditions are ignored.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct BatchDeleteOptions {
-    /// Conditional ETag check for optimistic concurrency control.
+    /// Conditional ETag check for this delete operation.
     pub precondition: Option<Precondition>,
 }
 
 impl BatchDeleteOptions {
-    /// Sets the precondition for optimistic concurrency control.
+    /// Sets the conditional ETag check for this delete operation.
     pub fn with_precondition(mut self, precondition: Precondition) -> Self {
         self.precondition = Some(precondition);
         self

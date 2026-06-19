@@ -10,15 +10,14 @@ use azure_core::credentials::Secret;
 use azure_core::credentials::TokenCredential;
 use std::sync::Arc;
 
-/// A reference to a Cosmos DB account, combining an endpoint with a credential.
+/// A Cosmos DB account endpoint paired with credentials.
 ///
-/// This type bundles together the account endpoint and the credential needed to
-/// authenticate with it. Use convenience constructors [`with_credential()`](Self::with_credential)
-/// or [`with_authentication_key()`](Self::with_authentication_key) (requires the `key_auth` feature) to create instances.
+/// Use [`AccountReference::with_credential`] for Microsoft Entra ID or
+/// [`AccountReference::with_authentication_key`] for key-based authentication.
 ///
 /// # Examples
 ///
-/// Using Entra ID authentication:
+/// Using Microsoft Entra ID authentication:
 ///
 /// ```rust,no_run
 /// use azure_data_cosmos::{AccountReference, AccountEndpoint};
@@ -47,12 +46,7 @@ pub struct AccountReference {
 }
 
 impl AccountReference {
-    /// Creates a new account reference with an Entra ID (Azure AD) token credential.
-    ///
-    /// # Arguments
-    ///
-    /// * `endpoint` - The Cosmos DB account endpoint.
-    /// * `credential` - An Entra ID token credential.
+    /// Creates an account reference that uses a Microsoft Entra ID token credential.
     pub fn with_credential(
         endpoint: AccountEndpoint,
         credential: Arc<dyn TokenCredential>,
@@ -63,12 +57,7 @@ impl AccountReference {
         }
     }
 
-    /// Creates a new account reference with a Cosmos DB account authentication key.
-    ///
-    /// # Arguments
-    ///
-    /// * `endpoint` - The Cosmos DB account endpoint.
-    /// * `key` - The primary or secondary account key.
+    /// Creates an account reference that uses a Cosmos DB account key.
     #[cfg(feature = "key_auth")]
     pub fn with_authentication_key(endpoint: AccountEndpoint, key: impl Into<Secret>) -> Self {
         Self {

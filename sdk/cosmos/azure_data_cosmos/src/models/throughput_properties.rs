@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+//! [`ThroughputProperties`] for manual and autoscale throughput settings.
+
 use std::borrow::Cow;
 
 use azure_core::fmt::SafeDebug;
@@ -10,6 +12,10 @@ use crate::models::SystemProperties;
 
 const OFFER_VERSION_2: &str = "V2";
 
+/// Throughput settings for a database or container.
+///
+/// Use [`ThroughputProperties::manual`] for fixed throughput or
+/// [`ThroughputProperties::autoscale`] for autoscale throughput.
 #[derive(Clone, SafeDebug, Deserialize, Serialize)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +34,7 @@ pub struct ThroughputProperties {
 }
 
 impl ThroughputProperties {
+    /// Creates manual throughput settings.
     pub fn manual(throughput: usize) -> ThroughputProperties {
         ThroughputProperties {
             resource: String::new(),
@@ -43,6 +50,11 @@ impl ThroughputProperties {
         }
     }
 
+    /// Creates autoscale throughput settings.
+    ///
+    /// `starting_maximum_throughput` is the maximum throughput autoscale can
+    /// reach. If `increment_percent` is set, the service can automatically
+    /// raise that maximum by the specified percentage.
     pub fn autoscale(
         starting_maximum_throughput: usize,
         increment_percent: Option<usize>,
@@ -68,14 +80,17 @@ impl ThroughputProperties {
         }
     }
 
+    /// Returns the manual throughput, if this is a manual throughput offer.
     pub fn throughput(&self) -> Option<usize> {
         self.offer.offer_throughput
     }
 
+    /// Returns the autoscale maximum throughput, if autoscale is enabled.
     pub fn autoscale_maximum(&self) -> Option<usize> {
         Some(self.offer.offer_autopilot_settings.as_ref()?.max_throughput)
     }
 
+    /// Returns the autoscale maximum-throughput increment percentage, if set.
     pub fn autoscale_increment(&self) -> Option<usize> {
         Some(
             self.offer

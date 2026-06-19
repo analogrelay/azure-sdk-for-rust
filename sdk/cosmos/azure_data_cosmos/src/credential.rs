@@ -10,14 +10,13 @@ use std::sync::Arc;
 #[cfg(feature = "key_auth")]
 use azure_core::credentials::Secret;
 
-/// Authentication credential for connecting to a Cosmos DB account.
+/// Credentials for connecting to a Cosmos DB account.
 ///
-/// Either key-based authentication using a master key, or token-based
-/// authentication using an Azure credential (e.g., managed identity, service principal).
+/// Use either a Microsoft Entra ID token credential or an account key.
 ///
 /// # Examples
 ///
-/// Using Entra ID (Azure AD) authentication:
+/// Using Microsoft Entra ID authentication:
 ///
 /// ```rust,no_run
 /// use azure_data_cosmos::CosmosCredential;
@@ -39,7 +38,7 @@ use azure_core::credentials::Secret;
 #[derive(Clone, SafeDebug)]
 #[non_exhaustive]
 pub enum CosmosCredential {
-    /// Entra ID (Azure AD) token credential.
+    /// Microsoft Entra ID token credential.
     TokenCredential(Arc<dyn TokenCredential>),
     /// Primary or secondary account key.
     #[cfg(feature = "key_auth")]

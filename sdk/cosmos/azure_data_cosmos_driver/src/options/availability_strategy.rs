@@ -10,25 +10,11 @@
 
 use std::time::Duration;
 
-/// Minimum time the SDK waits for the primary request before issuing a hedged
-/// request to a secondary region.
+/// Minimum time the SDK waits before sending a hedged request to another
+/// region.
 ///
-/// Wrapping [`Duration`] in a newtype lets us enforce the invariant that the
-/// threshold is strictly positive (zero would mean "hedge immediately", which
-/// is never useful and is treated as a configuration error).
-///
-/// # Examples
-///
-/// ```
-/// use std::time::Duration;
-/// use azure_data_cosmos_driver::options::HedgeThreshold;
-///
-/// let threshold = HedgeThreshold::new(Duration::from_millis(500))
-///     .expect("500ms is a valid threshold");
-/// assert_eq!(threshold.get(), Duration::from_millis(500));
-///
-/// assert!(HedgeThreshold::new(Duration::ZERO).is_none());
-/// ```
+/// This wrapper around [`Duration`] guarantees that the threshold is greater
+/// than zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HedgeThreshold(Duration);
 

@@ -14,35 +14,13 @@ use std::fmt;
 
 /// Azure region identifier.
 ///
-/// Represents an Azure region with normalization support (case-insensitive, whitespace-agnostic).
-/// Input strings like "WESTUS2", "WestUS 2", and "West US 2" are all normalized to "westus2".
+/// [`Region`] normalizes input so matching is case-insensitive and ignores
+/// whitespace. For example, `"WESTUS2"`, `"WestUS 2"`, and `"West US 2"`
+/// all normalize to `"westus2"`.
 ///
-/// Normalization is applied both when constructing via [`Region::new`] and when
-/// deserializing from JSON, so a service response containing `"West US 2"` will
-/// produce the same `Region` as the constant [`Region::WEST_US_2`].
-///
-/// # Examples
-///
-/// ```
-/// use azure_data_cosmos_driver::options::Region;
-///
-/// // Use predefined constants
-/// let region = Region::WEST_US_2;
-/// assert_eq!(region.as_str(), "westus2");
-/// assert_eq!(region.display_name(), "West US 2");
-///
-/// // Create from various formats (all equivalent)
-/// let r1 = Region::new("WESTUS2");
-/// let r2 = Region::new("WestUS 2");
-/// let r3 = Region::new("West US 2");
-/// assert_eq!(r1, r2);
-/// assert_eq!(r2, r3);
-///
-/// // Unknown regions use normalized name for display_name()
-/// let custom = Region::new("East US 9");
-/// assert_eq!(custom.as_str(), "eastus9");
-/// assert_eq!(custom.display_name(), "eastus9");
-/// ```
+/// Normalization is applied both when constructing with [`Region::new`] and
+/// when deserializing from JSON, so a service response containing `"West US 2"`
+/// produces the same value as [`Region::WEST_US_2`].
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
@@ -180,56 +158,25 @@ impl Region {
     pub const TAIWAN_NORTHWEST: Region = Region::new_const("taiwannorthwest");
     pub const WEST_US_3: Region = Region::new_const("westus3");
 
-    /// Creates a new region from a string, normalizing the input.
+    /// Creates a new region from a string and normalizes the input.
     ///
-    /// Normalization removes whitespace and converts to lowercase.
-    /// "WESTUS2", "WestUS 2", and "West US 2" all become "westus2".
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use azure_data_cosmos_driver::options::Region;
-    ///
-    /// let region = Region::new("West US 2");
-    /// assert_eq!(region.as_str(), "westus2");
-    /// ```
+    /// Normalization removes whitespace and converts the value to lowercase,
+    /// so `"WESTUS2"`, `"WestUS 2"`, and `"West US 2"` all become
+    /// `"westus2"`.
     pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
         let normalized = normalize_region_name(name.into());
         Self { normalized }
     }
 
-    /// Gets the normalized region name (lowercase, no spaces).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use azure_data_cosmos_driver::options::Region;
-    ///
-    /// let region = Region::WEST_US_2;
-    /// assert_eq!(region.as_str(), "westus2");
-    /// ```
+    /// Returns the normalized region name in lowercase without spaces.
     pub fn as_str(&self) -> &str {
         &self.normalized
     }
 
-    /// Gets the display name for the region.
+    /// Returns the display name for the region.
     ///
-    /// For known regions, returns the standard display name (e.g., "West US 2").
-    /// For unknown regions, returns the normalized name.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use azure_data_cosmos_driver::options::Region;
-    ///
-    /// // Known region uses standard display name
-    /// let known = Region::WEST_US_2;
-    /// assert_eq!(known.display_name(), "West US 2");
-    ///
-    /// // Unknown region returns normalized name
-    /// let custom = Region::new("East US 9");
-    /// assert_eq!(custom.display_name(), "eastus9");
-    /// ```
+    /// Known regions use the standard Azure display name, such as `"West US 2"`.
+    /// Unknown regions return their normalized name.
     pub fn display_name(&self) -> &str {
         DISPLAY_NAME_MAPPING
             .iter()

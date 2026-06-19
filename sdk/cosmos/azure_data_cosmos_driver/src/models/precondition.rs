@@ -5,30 +5,11 @@
 
 use azure_core::http::Etag;
 
-/// Conditional request options based on ETag values.
+/// A conditional request based on an [`Etag`].
 ///
-/// Used for optimistic concurrency control on write operations.
-/// Exactly one condition must be specified - either `IfMatch` or `IfNoneMatch`.
-///
-/// # Variants
-///
-/// - [`IfMatch`](Self::IfMatch): Operation succeeds only if the resource's current ETag matches.
-///   Used for "update if unchanged" semantics (optimistic concurrency).
-/// - [`IfNoneMatch`](Self::IfNoneMatch): Operation succeeds only if the resource's current ETag
-///   does NOT match. Use `Etag::from("*")` for "create if not exists" semantics.
-///
-/// # Example
-///
-/// ```
-/// use azure_core::http::Etag;
-/// use azure_data_cosmos_driver::models::Precondition;
-///
-/// // Update only if the resource hasn't changed (optimistic concurrency)
-/// let condition = Precondition::if_match(Etag::from("\"abc123\""));
-///
-/// // Create only if the resource doesn't exist
-/// let condition = Precondition::if_none_match(Etag::from("*"));
-/// ```
+/// Use [`Precondition::IfMatch`] for "update if unchanged" behavior and
+/// [`Precondition::IfNoneMatch`] for "only if missing" or "only if changed"
+/// behavior, depending on the ETag value you provide.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Precondition {
@@ -44,18 +25,14 @@ pub enum Precondition {
 }
 
 impl Precondition {
-    /// Creates an If-Match condition.
-    ///
-    /// The operation succeeds only if the resource's current ETag matches the given value.
-    /// Used for "update if unchanged" semantics (optimistic concurrency).
+    /// Creates an [`IfMatch`](Self::IfMatch) condition.
     pub fn if_match(etag: impl Into<Etag>) -> Self {
         Self::IfMatch(etag.into())
     }
 
-    /// Creates an If-None-Match condition.
+    /// Creates an [`IfNoneMatch`](Self::IfNoneMatch) condition.
     ///
-    /// The operation succeeds only if the resource's current ETag does NOT match the given value.
-    /// Use `"*"` for "create if not exists" semantics.
+    /// Use `"*"` for "create if not exists" behavior.
     pub fn if_none_match(etag: impl Into<Etag>) -> Self {
         Self::IfNoneMatch(etag.into())
     }

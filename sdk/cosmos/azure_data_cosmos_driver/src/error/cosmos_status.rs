@@ -29,22 +29,15 @@ use std::fmt;
 // depending on the HTTP status code context (e.g., 1002 means `ReadSessionNotAvailable`
 // for 404 but `PartitionKeyRangeGone` for 410).
 
-/// A newtype wrapper for Cosmos DB sub-status codes.
+/// A Cosmos DB sub-status code.
 ///
-/// Sub-status codes provide additional context for HTTP error responses from Cosmos DB.
-/// They are returned in the `x-ms-substatus` header and help distinguish between
-/// different error conditions that share the same HTTP status code.
+/// Sub-status codes add detail to an HTTP status code and are returned in the
+/// `x-ms-substatus` header. Some numeric values are reused for different
+/// conditions, so the paired HTTP status code matters.
 ///
-/// # Important Note on Duplicate Values
-///
-/// Some numeric sub-status codes have different meanings depending on the HTTP status code.
-/// For example, `1002` means:
-/// - `ReadSessionNotAvailable` when paired with HTTP 404
-/// - `PartitionKeyRangeGone` when paired with HTTP 410
-///
-/// Always interpret sub-status codes in the context of their HTTP status code.
-/// Use [`CosmosStatus::name()`] for automatic disambiguation based on the paired
-/// HTTP status code.
+/// For example, `1002` means read session not available on HTTP 404, but it
+/// means partition key range gone on HTTP 410. Use [`CosmosStatus::name`] when
+/// you have both values and want the resolved name.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SubStatusCode(u16);
@@ -833,7 +826,7 @@ impl SubStatusCode {
 
     // ----- 429: Too Many Requests -----
 
-    /// RU budget exceeded (3200).
+    /// Request Unit (RU) budget exceeded (3200).
     pub const RU_BUDGET_EXCEEDED: SubStatusCode = SubStatusCode(3200);
 
     /// Gateway throttled (3201).
@@ -888,7 +881,7 @@ impl SubStatusCode {
     pub const SINK_PARTITION_VALUE_DOES_NOT_MATCH_EXPECTED_BOUND: SubStatusCode =
         SubStatusCode(3083);
 
-    /// RNTBD client channel throttle (3085).
+    /// Client channel throttled (3085).
     pub const RNTBD_CLIENT_CHANNEL: SubStatusCode = SubStatusCode(3085);
 
     /// Log flush queue depth backpressure throttle (3086).
@@ -939,16 +932,16 @@ impl SubStatusCode {
     /// Throttle due to transport buffer usage (3103).
     pub const THROTTLE_DUE_TO_TRANSPORT_BUFFER_USAGE: SubStatusCode = SubStatusCode(3103);
 
-    /// RU per minute partition limit exceeded (3202).
+    /// Request Unit (RU) per-minute partition limit exceeded (3202).
     pub const RUPM_PARTITION_LIMIT_EXCEEDED: SubStatusCode = SubStatusCode(3202);
 
-    /// RU per minute shared budget exceeded (3203).
+    /// Request Unit (RU) per-minute shared budget exceeded (3203).
     pub const RUPM_SHARED_BUDGET_EXCEEDED: SubStatusCode = SubStatusCode(3203);
 
     /// Throttled offer scale down (3204).
     pub const THROTTLED_OFFER_SCALE_DOWN: SubStatusCode = SubStatusCode(3204);
 
-    /// RU budget exceeded for master (3210).
+    /// Request Unit (RU) budget exceeded for the account's primary resource (3210).
     pub const RU_BUDGET_EXCEEDED_FOR_MASTER: SubStatusCode = SubStatusCode(3210);
 
     /// Throttle due to encrypted revoked store log not empty (3211).
@@ -981,7 +974,7 @@ impl SubStatusCode {
     /// Partition failover error code (3010).
     pub const PARTITION_FAILOVER_ERROR_CODE: SubStatusCode = SubStatusCode(3010);
 
-    /// RBAC disabled due to ARM path (5360).
+    /// Role-based access control (RBAC) is disabled for this Azure Resource Manager path (5360).
     pub const RBAC_DISABLED_DUE_TO_ARM_PATH: SubStatusCode = SubStatusCode(5360);
 
     // ----- 503: Service Unavailable -----
@@ -1035,12 +1028,8 @@ impl SubStatusCode {
     pub const TRANSIT_TIMEOUT: SubStatusCode = SubStatusCode(20911);
 
     // ----- Transport sub-status codes (20010-20015) -----
-    // Used directly by typed transport-error constructors (see
-    // `crate::error::Error::transport`) so upstream code can discriminate on
-    // `CosmosStatus` instead of downcasting through the source chain. The
-    // wrapped third-party error (`reqwest`/`hyper`/`h2`/`io`) is always
-    // preserved as the Cosmos error's `source` for callers that still want
-    // low-level detail.
+    // These codes identify failures that happened before the service returned
+    // an HTTP response.
 
     /// Transport connection failed — TCP connect refused / reset before the
     /// request reached the wire (20010).
@@ -1050,32 +1039,26 @@ impl SubStatusCode {
     /// available (20011).
     pub const TRANSPORT_IO_FAILED: SubStatusCode = SubStatusCode(20011);
 
-    /// DNS resolution failed for the target endpoint (20012). Best-effort
-    /// detection via `io::Error` / reqwest error inspection.
+    /// Name resolution failed for the target endpoint (20012).
     pub const TRANSPORT_DNS_FAILED: SubStatusCode = SubStatusCode(20012);
 
-    /// Failure while streaming or reading the response body (20014). Distinct
-    /// from a serde / JSON parse failure on already-buffered bytes.
+    /// Reading the response body failed after the request was sent (20014).
     pub const TRANSPORT_BODY_READ_FAILED: SubStatusCode = SubStatusCode(20014);
 
-    /// HTTP/2 protocol incompatibility — e.g. `HTTP_1_1_REQUIRED`,
-    /// `PROTOCOL_ERROR`, `FRAME_SIZE_ERROR` (20015). Used by the HTTP/2 →
-    /// HTTP/1.1 downgrade path so call-sites can check `status()` instead of
-    /// downcasting through the source chain for `h2::Error`.
+    /// The endpoint rejected the HTTP/2 connection and requires HTTP/1.1 (20015).
     pub const TRANSPORT_HTTP2_INCOMPATIBLE: SubStatusCode = SubStatusCode(20015);
 
     // ----- Serialization boundary mapping code (20020) -----
 
-    /// Response body failed to deserialize (20020). Used by
-    /// `crate::error::Error::serialization`.
+    /// The response body could not be deserialized (20020).
     pub const SERIALIZATION_RESPONSE_BODY_INVALID: SubStatusCode = SubStatusCode(20020);
 
     // ----- Authentication boundary mapping code (20402) -----
 
-    /// Credential / AAD token acquisition failed before the request was
-    /// signed (20402). Distinct from [`SubStatusCode::CLIENT_GENERATED_401`]
-    /// which means the SDK synthesized a 401 itself; this one means the
-    /// credential provider call failed.
+    /// Acquiring a Microsoft Entra ID token failed before the request was signed (20402).
+    ///
+    /// Compare with [`Self::CLIENT_GENERATED_401`], which means the request was
+    /// rejected as unauthorized for another client-side reason.
     pub const AUTHENTICATION_TOKEN_ACQUISITION_FAILED: SubStatusCode = SubStatusCode(20402);
 
     // ----- SDK Server-side codes (21xxx) -----
@@ -1085,13 +1068,13 @@ impl SubStatusCode {
 
     // ----- AAD/Auth codes (5xxx) -----
 
-    /// AAD token expired (5006).
+    /// Microsoft Entra ID token expired (5006).
     pub const AAD_TOKEN_EXPIRED: SubStatusCode = SubStatusCode(5006);
 
     /// Local auth disabled (5202).
     pub const LOCAL_AUTH_DISABLED: SubStatusCode = SubStatusCode(5202);
 
-    /// RBAC request was not authorized (5400).
+    /// Role-based access control (RBAC) denied the request (5400).
     pub const RBAC_REQUEST_NOT_AUTHORIZED: SubStatusCode = SubStatusCode(5400);
 
     // ----- Key Vault extended codes (4010-4019) -----
@@ -1114,7 +1097,7 @@ impl SubStatusCode {
     /// Undefined default identity (4015).
     pub const UNDEFINED_DEFAULT_IDENTITY: SubStatusCode = SubStatusCode(4015);
 
-    /// Key Vault outbound denied by NSP (4016).
+    /// Key Vault outbound access was denied by a network security perimeter (4016).
     pub const KEY_VAULT_OUTBOUND_DENIED_BY_NSP: SubStatusCode = SubStatusCode(4016);
 
     /// Key Vault not found (4017).
@@ -1142,10 +1125,10 @@ impl SubStatusCode {
 
     // ----- 449: Retry With -----
 
-    /// RBAC AAD group unavailable (5350).
+    /// Role-based access control (RBAC) could not evaluate Microsoft Entra ID group membership (5350).
     pub const RBAC_AAD_GROUP_UNAVAILABLE: SubStatusCode = SubStatusCode(5350);
 
-    /// Azure RBAC access decision unavailable (5351).
+    /// Role-based access control (RBAC) could not produce an access decision (5351).
     pub const AZURE_RBAC_ACCESS_DECISION_UNAVAILABLE: SubStatusCode = SubStatusCode(5351);
 
     // ----- Retriable writes (54xx) -----
@@ -1206,12 +1189,11 @@ impl SubStatusCode {
     /// partition-key paths (20101).
     pub const CLIENT_PARTITION_KEY_TOO_MANY_COMPONENTS: SubStatusCode = SubStatusCode(20101);
 
-    /// Prefix partition key supplied for a non-MultiHash (non-hierarchical)
-    /// container (20102).
+    /// A prefix partition key was used for a container that does not use a
+    /// hierarchical partition key (20102).
     pub const CLIENT_PREFIX_PARTITION_KEY_REQUIRES_MULTIHASH: SubStatusCode = SubStatusCode(20102);
 
-    /// Non-MultiHash partition key supplied with a component count that
-    /// doesn't equal the definition's path count (20103).
+    /// A non-hierarchical partition key was given the wrong number of components (20103).
     pub const CLIENT_NON_MULTIHASH_PARTITION_KEY_ARITY_MISMATCH: SubStatusCode =
         SubStatusCode(20103);
 
@@ -1229,19 +1211,16 @@ impl SubStatusCode {
     /// Connection string is missing the required `AccountKey` field (20107).
     pub const CLIENT_CONNECTION_STRING_MISSING_ACCOUNT_KEY: SubStatusCode = SubStatusCode(20107);
 
-    /// Account endpoint URL failed to parse via `url::ParseError` (20108).
+    /// The account endpoint URL is invalid (20108).
     pub const CLIENT_INVALID_ACCOUNT_ENDPOINT_URL: SubStatusCode = SubStatusCode(20108);
 
-    /// Generic `url::ParseError` surfaced through the SDK's
-    /// `From<url::ParseError>` impl (20109).
+    /// A URL value could not be parsed (20109).
     pub const CLIENT_INVALID_URL: SubStatusCode = SubStatusCode(20109);
 
-    /// Caller passed an unrecognized consistency-level string to
-    /// `FromStr` (20110).
+    /// The consistency level string is not recognized (20110).
     pub const CLIENT_UNKNOWN_CONSISTENCY_LEVEL: SubStatusCode = SubStatusCode(20110);
 
-    /// Caller passed an unrecognized priority-level string to `FromStr`
-    /// (20111).
+    /// The priority level string is not recognized (20111).
     pub const CLIENT_UNKNOWN_PRIORITY_LEVEL: SubStatusCode = SubStatusCode(20111);
 
     /// A `FeedRange` was targeted at an operation that lacks the
@@ -1289,9 +1268,7 @@ impl SubStatusCode {
     /// but is not present in the runtime registry (20152).
     pub const CLIENT_THROUGHPUT_CONTROL_GROUP_NOT_REGISTERED: SubStatusCode = SubStatusCode(20152);
 
-    /// HTTP client construction failed inside the driver's default
-    /// transport factory (20153). Inner reqwest / hyper error is
-    /// preserved as `StdError::source`.
+    /// Creating the default HTTP client failed (20153).
     pub const CLIENT_HTTP_CLIENT_CONSTRUCTION_FAILED: SubStatusCode = SubStatusCode(20153);
 
     /// The default transport requires the `reqwest` cargo feature and it
@@ -1306,12 +1283,10 @@ impl SubStatusCode {
     /// missing or unsupported) (20156).
     pub const CLIENT_REQUEST_URL_MISSING_KNOWN_PORT: SubStatusCode = SubStatusCode(20156);
 
-    /// IMDS HTTP client construction failed (20157). Inner error is
-    /// preserved as `StdError::source`.
+    /// Creating the Azure Instance Metadata Service (IMDS) HTTP client failed (20157).
     pub const CLIENT_IMDS_HTTP_CLIENT_CONSTRUCTION_FAILED: SubStatusCode = SubStatusCode(20157);
 
-    /// IMDS fetch requires the `reqwest` cargo feature and it was not
-    /// enabled (20158).
+    /// Fetching from the Azure Instance Metadata Service (IMDS) requires the `reqwest` feature (20158).
     pub const CLIENT_IMDS_REQWEST_FEATURE_REQUIRED: SubStatusCode = SubStatusCode(20158);
 
     // ----- 20200-20249: SDK internal invariants -----
@@ -1464,41 +1439,28 @@ impl From<SubStatusCode> for u16 {
     }
 }
 
-/// Combined HTTP status code and optional Cosmos DB sub-status code.
+/// An HTTP status code paired with an optional Cosmos DB sub-status code.
 ///
-/// This type keeps the HTTP status code and Cosmos sub-status code together,
-/// which is essential because the meaning of a sub-status code depends on
-/// the HTTP status code it's paired with.
-///
-/// # Sub-Status Ambiguity
-///
-/// Some sub-status codes have different meanings depending on the HTTP status code:
-///
-/// | Sub-Status | HTTP 404 | HTTP 410 |
-/// |-----------|----------|----------|
-/// | 1002 | ReadSessionNotAvailable | PartitionKeyRangeGone |
-/// | 1007 | — | CompletingSplitOrMerge (410), InsufficientBindablePartitions (503) |
-/// | 1008 | — | CompletingPartitionMigration (410), DatabaseAccountNotFound (403) |
-///
-/// By pairing both codes, `CosmosStatus` can always resolve the correct name.
+/// Keep these values together whenever you need to inspect a Cosmos DB error.
+/// Some sub-status values are ambiguous on their own, but the pair always
+/// identifies the intended condition.
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
+/// # use azure_data_cosmos_driver as azure_data_cosmos;
 /// use azure_core::http::StatusCode;
-/// use azure_data_cosmos_driver::models::CosmosStatus;
+/// use azure_data_cosmos::error::CosmosStatus;
 ///
-/// // Unambiguous status
 /// let throttled = CosmosStatus::new(StatusCode::TooManyRequests).with_sub_status(3200);
 /// assert_eq!(throttled.name(), Some("RUBudgetExceeded"));
 /// assert!(throttled.is_throttled());
 ///
-/// // Disambiguated by HTTP status code
 /// let session_not_available = CosmosStatus::new(StatusCode::NotFound).with_sub_status(1002);
 /// assert_eq!(session_not_available.name(), Some("ReadSessionNotAvailable"));
 ///
-/// let pk_range_gone = CosmosStatus::new(StatusCode::Gone).with_sub_status(1002);
-/// assert_eq!(pk_range_gone.name(), Some("PartitionKeyRangeGone"));
+/// let partition_range_gone = CosmosStatus::new(StatusCode::Gone).with_sub_status(1002);
+/// assert_eq!(partition_range_gone.name(), Some("PartitionKeyRangeGone"));
 /// ```
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct CosmosStatus {
@@ -1743,9 +1705,10 @@ impl CosmosStatus {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
+    /// # use azure_data_cosmos_driver as azure_data_cosmos;
     /// use azure_core::http::StatusCode;
-    /// use azure_data_cosmos_driver::models::CosmosStatus;
+    /// use azure_data_cosmos::error::CosmosStatus;
     ///
     /// let status = CosmosStatus::new(StatusCode::NotFound).with_sub_status(1002);
     /// assert_eq!(status.name(), Some("ReadSessionNotAvailable"));
@@ -1754,7 +1717,7 @@ impl CosmosStatus {
     /// assert_eq!(status.name(), Some("PartitionKeyRangeGone"));
     ///
     /// let status = CosmosStatus::new(StatusCode::Ok);
-    /// assert_eq!(status.name(), None); // No sub-status
+    /// assert_eq!(status.name(), None);
     /// ```
     pub fn name(&self) -> Option<&'static str> {
         let sub = self.sub_status?;
@@ -1769,8 +1732,9 @@ impl CosmosStatus {
 
     /// Transport-generated 503 Service Unavailable (sub-status 20003).
     ///
-    /// Generated by the SDK when a transport-level error occurs (connection failure,
-    /// DNS error, TLS error, etc.) and no HTTP response was received.
+    /// Returned when the request fails before the service sends an HTTP response.
+    ///
+    /// Common causes include connection failures, name resolution failures, and TLS negotiation failures.
     pub const TRANSPORT_GENERATED_503: CosmosStatus = CosmosStatus {
         status_code: StatusCode::ServiceUnavailable,
         sub_status: Some(SubStatusCode::TRANSPORT_GENERATED_503),
@@ -1778,8 +1742,9 @@ impl CosmosStatus {
 
     /// Client-generated 401 Unauthorized (sub-status 20401).
     ///
-    /// Generated by the SDK when request signing/authorization fails before
-    /// the request is sent (e.g., credential error, token acquisition failure).
+    /// Returned when the request cannot be authorized before it is sent.
+    ///
+    /// This can happen when signing fails or when credentials cannot produce a usable token.
     pub const CLIENT_GENERATED_401: CosmosStatus = CosmosStatus {
         status_code: StatusCode::Unauthorized,
         sub_status: Some(SubStatusCode::CLIENT_GENERATED_401),
@@ -1809,7 +1774,7 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::TRANSPORT_BODY_READ_FAILED),
     };
 
-    /// HTTP/2 incompatibility — caller should downgrade to HTTP/1.1
+    /// The endpoint rejected the HTTP/2 connection and requires HTTP/1.1
     /// (HTTP 503, sub-status 20015).
     pub const TRANSPORT_HTTP2_INCOMPATIBLE: CosmosStatus = CosmosStatus {
         status_code: StatusCode::ServiceUnavailable,
@@ -1822,7 +1787,7 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::SERIALIZATION_RESPONSE_BODY_INVALID),
     };
 
-    /// AAD / credential provider token acquisition failed
+    /// Acquiring a Microsoft Entra ID token failed
     /// (HTTP 401, sub-status 20402).
     pub const AUTHENTICATION_TOKEN_ACQUISITION_FAILED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::Unauthorized,
@@ -1834,12 +1799,10 @@ impl CosmosStatus {
     /// Cross-partition query not servable by the client
     /// (HTTP 400, sub-status 1004).
     ///
-    /// The service rejected the query because it requires client-side
-    /// features the calling SDK does not support (e.g. cross-partition
-    /// `ORDER BY`, aggregates, or other features that need a query plan
-    /// the SDK cannot execute). Callers should upgrade the SDK to a
-    /// version that implements the requested features, or rewrite the
-    /// query.
+    /// The service rejected the query because it needs client-side query
+    /// features that are not available for this request shape.
+    ///
+    /// Rewriting the query or changing how it is executed may avoid this status.
     pub const CROSS_PARTITION_QUERY_NOT_SERVABLE: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CROSS_PARTITION_QUERY_NOT_SERVABLE),
@@ -1905,7 +1868,7 @@ impl CosmosStatus {
 
     // ----- 429: Too Many Requests -----
 
-    /// RU budget exceeded (HTTP 429, sub-status 3200).
+    /// Request Unit (RU) budget exceeded (HTTP 429, sub-status 3200).
     pub const RU_BUDGET_EXCEEDED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::TooManyRequests,
         sub_status: Some(SubStatusCode::RU_BUDGET_EXCEEDED),
@@ -1933,14 +1896,14 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::CLIENT_PARTITION_KEY_TOO_MANY_COMPONENTS),
     };
 
-    /// 400 / 20102 — prefix partition key supplied for a non-MultiHash
-    /// container.
+    /// 400 / 20102 — a prefix partition key was used for a container that
+    /// does not use a hierarchical partition key.
     pub const CLIENT_PREFIX_PARTITION_KEY_REQUIRES_MULTIHASH: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_PREFIX_PARTITION_KEY_REQUIRES_MULTIHASH),
     };
 
-    /// 400 / 20103 — non-MultiHash partition key supplied with the wrong
+    /// 400 / 20103 — a non-hierarchical partition key was given the wrong
     /// number of components.
     pub const CLIENT_NON_MULTIHASH_PARTITION_KEY_ARITY_MISMATCH: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
@@ -1977,26 +1940,25 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::CLIENT_INVALID_ACCOUNT_ENDPOINT_URL),
     };
 
-    /// 400 / 20109 — generic `url::ParseError` surfaced through the SDK's
-    /// `From<url::ParseError>` impl.
+    /// 400 / 20109 — a URL value could not be parsed.
     pub const CLIENT_INVALID_URL: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_INVALID_URL),
     };
 
-    /// 400 / 20110 — unrecognized consistency level string in `FromStr`.
+    /// 400 / 20110 — the consistency level string is not recognized.
     pub const CLIENT_UNKNOWN_CONSISTENCY_LEVEL: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_UNKNOWN_CONSISTENCY_LEVEL),
     };
 
-    /// 400 / 20111 — unrecognized priority level string in `FromStr`.
+    /// 400 / 20111 — the priority level string is not recognized.
     pub const CLIENT_UNKNOWN_PRIORITY_LEVEL: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_UNKNOWN_PRIORITY_LEVEL),
     };
 
-    /// 400 / 20112 — `FeedRange` targeting requires a fan-out pipeline.
+    /// 400 / 20112 — this operation cannot target a feed range directly.
     pub const CLIENT_FEED_RANGE_REQUIRES_FANOUT_PIPELINE: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_FEED_RANGE_REQUIRES_FANOUT_PIPELINE),
@@ -2063,7 +2025,7 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::CLIENT_HTTP_CLIENT_CONSTRUCTION_FAILED),
     };
 
-    /// 400 / 20154 — `reqwest` cargo feature required but not enabled.
+    /// 400 / 20154 — the `reqwest` feature is required but not enabled.
     pub const CLIENT_REQWEST_FEATURE_REQUIRED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_REQWEST_FEATURE_REQUIRED),
@@ -2081,13 +2043,15 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::CLIENT_REQUEST_URL_MISSING_KNOWN_PORT),
     };
 
-    /// 400 / 20157 — IMDS HTTP client construction failed.
+    /// 400 / 20157 — creating the Azure Instance Metadata Service (IMDS)
+    /// HTTP client failed.
     pub const CLIENT_IMDS_HTTP_CLIENT_CONSTRUCTION_FAILED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_IMDS_HTTP_CLIENT_CONSTRUCTION_FAILED),
     };
 
-    /// 400 / 20158 — IMDS fetch requires the `reqwest` cargo feature.
+    /// 400 / 20158 — fetching from the Azure Instance Metadata Service
+    /// (IMDS) requires the `reqwest` feature.
     pub const CLIENT_IMDS_REQWEST_FEATURE_REQUIRED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::BadRequest,
         sub_status: Some(SubStatusCode::CLIENT_IMDS_REQWEST_FEATURE_REQUIRED),
@@ -2109,7 +2073,7 @@ impl CosmosStatus {
         sub_status: Some(SubStatusCode::CLIENT_TOPOLOGY_PROVIDER_MISSING),
     };
 
-    /// 500 / 20202 — operation issued on an uninitialized driver.
+    /// 500 / 20202 — the client was used before initialization finished.
     pub const CLIENT_DRIVER_NOT_INITIALIZED: CosmosStatus = CosmosStatus {
         status_code: StatusCode::InternalServerError,
         sub_status: Some(SubStatusCode::CLIENT_DRIVER_NOT_INITIALIZED),

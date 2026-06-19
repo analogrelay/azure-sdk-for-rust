@@ -16,12 +16,10 @@ use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Write;
 
-/// A newtype wrapping the hex-encoded effective partition key string.
+/// A hex-encoded effective partition key (EPK).
 ///
-/// An `EffectivePartitionKey` is the result of hashing a [`PartitionKey`](crate::models::PartitionKey)
-/// into a hex string that determines which partition key range owns a given item.
-/// Using a newtype ensures callers cannot accidentally pass an arbitrary string
-/// where an EPK is expected.
+/// An `EffectivePartitionKey` is derived from a [`PartitionKey`](crate::models::PartitionKey)
+/// and identifies the partition key range that owns an item.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EffectivePartitionKey(Cow<'static, str>);

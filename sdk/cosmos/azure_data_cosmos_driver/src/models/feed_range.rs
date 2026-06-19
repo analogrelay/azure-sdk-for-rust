@@ -16,11 +16,11 @@ use std::{fmt, str::FromStr};
 use crate::models::{effective_partition_key::EffectivePartitionKey, ItemReference, PartitionKey};
 use crate::models::{partition_key_range::PartitionKeyRange, PartitionKeyDefinition};
 
-/// A contiguous range of the effective partition key space.
+/// A contiguous range of the effective partition key (EPK) space.
 ///
-/// Defined by `[min_inclusive, max_exclusive)` EPK boundaries. A `FeedRange` may
-/// map to one or several physical partitions depending on the current partition
-/// topology.
+/// A feed range can represent the full container, a specific EPK interval, or a
+/// logical partition key prefix. Depending on the container layout, a single
+/// `FeedRange` may map to one or more physical partitions.
 ///
 /// Use [`FeedRange::full()`] for the entire key space (`""..FF`).
 #[derive(Clone, SafeDebug, PartialEq, Eq, Hash)]
@@ -105,10 +105,10 @@ impl FeedRange {
         )
     }
 
-    /// Creates a feed range for the given logical partition key or prefix.
+    /// Creates a feed range for a logical partition key or hierarchical prefix.
     ///
-    /// Because the version of the partition hashing scheme must be known to compute the effective partition key,
-    /// the caller must provide a reference to the partition key definition.
+    /// The partition key definition is required so the SDK can compute the
+    /// effective partition key for the supplied values.
     pub fn for_partition(partition_key: PartitionKey, definition: &PartitionKeyDefinition) -> Self {
         let effective_partition_key = EffectivePartitionKey::compute(
             partition_key.values(),
@@ -132,14 +132,9 @@ impl FeedRange {
         }
     }
 
-    /// Returns `true` if this feed range represents a single logical partition (or
-    /// a hierarchical-partition-key prefix), as opposed to an explicit `[min, max)`
-    /// EPK range.
-    ///
-    /// Logical-partition feed ranges have implicit single-partition targeting semantics
-    /// that are lost when combined with arbitrary EPK ranges, so callers that wish to
-    /// merge feed ranges (for example, session-token coalescing) typically exclude this
-    /// variant before doing so.
+    /// Returns `true` if this feed range was created from a logical partition
+    /// key or hierarchical partition key prefix, rather than explicit effective
+    /// partition key bounds.
     pub fn is_logical_partition(&self) -> bool {
         matches!(self.0, FeedRangeRepr::LogicalPartition { .. })
     }
@@ -157,8 +152,8 @@ impl FeedRange {
 
     /// Returns the exclusive upper bound of this range.
     ///
-    /// NOTE: The [`min_inclusive`](FeedRange::min_inclusive) value overrides this limit. Thus, a range with
-    /// `min_inclusive == max_exclusive` is valid and represents exactly one EPK value, not an empty range.
+    /// When [`min_inclusive`](Self::min_inclusive) and `max_exclusive()` are
+    /// equal, the range represents a single effective partition key value.
     pub fn max_exclusive(&self) -> &EffectivePartitionKey {
         match &self.0 {
             FeedRangeRepr::LogicalPartition {
@@ -220,10 +215,10 @@ impl FeedRange {
 impl TryFrom<&PartitionKeyRange> for FeedRange {
     type Error = crate::error::CosmosError;
 
-    /// Creates a `FeedRange` from a driver `PartitionKeyRange`.
+    /// Creates a [`FeedRange`] from a [`PartitionKeyRange`].
     ///
-    /// Partition key ranges from the service always use `[min, max)` semantics
-    /// (min inclusive, max exclusive). Returns an error if the range is inverted.
+    /// Partition key ranges from the service always use `[min, max)` semantics.
+    /// Returns an error if the range is inverted.
     fn try_from(pkr: &PartitionKeyRange) -> Result<Self, Self::Error> {
         if pkr.min_inclusive > pkr.max_exclusive {
             return Err(crate::error::CosmosError::builder()

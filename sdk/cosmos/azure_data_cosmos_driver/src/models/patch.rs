@@ -32,12 +32,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// A typed numeric increment delta for [`PatchOperation::Increment`].
+/// A numeric increment value for [`PatchOperation::Increment`].
 ///
-/// Distinguishes integer increments (which preserve integer fidelity end-to-end)
-/// from floating-point increments. Mixing an `Int(i64)` with a `f64` target —
-/// or vice versa — is rejected by the patch evaluator at apply time rather than
-/// silently demoting integer values to floating point.
+/// This type preserves whether the increment is an integer or a floating-point
+/// value so PATCH requests keep the intended numeric semantics.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum CosmosNumber {
@@ -85,14 +83,9 @@ impl<'de> Deserialize<'de> for CosmosNumber {
 
 /// A single operation in a Cosmos DB PATCH document.
 ///
-/// PATCH operations follow the JSON Pointer (RFC 6901) path syntax. Mutation
-/// semantics are evaluated locally by the driver's PATCH handler against the
-/// item read from the service.
-///
-/// Both the enum variants and the equivalent factory functions (`PatchOperation::add`,
-/// `PatchOperation::set`, ...) are part of the public API. The factories mirror the
-/// .NET SDK's `PatchOperation.Add` / `.Set` / etc. methods and are the
-/// recommended way to construct ops.
+/// Paths use JSON Pointer syntax as defined by RFC 6901. You can construct
+/// values either with the enum variants directly or with the convenience
+/// methods such as [`PatchOperation::add`] and [`PatchOperation::set`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "lowercase")]
 #[non_exhaustive]
@@ -210,10 +203,9 @@ impl PatchOperation {
     }
 }
 
-/// A set of instructions for a Cosmos DB PATCH operation, consisting of an ordered list of
-/// [`PatchOperation`] values representing the individual operations to apply to an item.
+/// An ordered list of [`PatchOperation`] values for one Cosmos DB PATCH request.
 ///
-/// [`PatchOperation`]: crate::models::PatchOperation
+/// Operations are applied in the order they appear in [`PatchInstructions::operations`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub struct PatchInstructions {
@@ -222,7 +214,7 @@ pub struct PatchInstructions {
 }
 
 impl PatchInstructions {
-    /// Builds a [`PatchInstructions`] from a list of operations.
+    /// Creates an empty set of patch instructions.
     pub fn new() -> Self {
         Self {
             operations: Vec::new(),

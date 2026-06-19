@@ -18,33 +18,9 @@ use crate::fault_injection::FaultInjectionRule;
 
 /// Configuration options for a Cosmos DB driver instance.
 ///
-/// A driver represents a connection to a specific Cosmos DB account. It inherits
-/// runtime-level defaults but can override them with driver-specific settings.
-///
-/// # Example
-///
-/// ```
-/// use azure_data_cosmos_driver::models::AccountReference;
-/// use azure_data_cosmos_driver::options::{
-///     DriverOptions, DriverOptionsBuilder,
-///     OperationOptions, OperationOptionsBuilder,
-/// };
-/// use url::Url;
-///
-/// let account = AccountReference::with_master_key(
-///     Url::parse("https://myaccount.documents.azure.com:443/").unwrap(),
-///     "my-master-key",
-/// );
-///
-/// let operation = OperationOptionsBuilder::new()
-///     .with_max_failover_retry_count(5)
-///     .with_max_session_retry_count(3)
-///     .build();
-///
-/// let options = DriverOptionsBuilder::new(account)
-///     .with_operation_options(operation)
-///     .build();
-/// ```
+/// A driver represents a connection to a specific Cosmos DB account. It can
+/// override runtime defaults with account-specific request routing, retry, and
+/// throughput-control settings.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct DriverOptions {
@@ -142,7 +118,8 @@ impl DriverOptions {
         &self.throughput_control_groups
     }
 
-    /// Returns the driver-level partition-failover / PPCB tuning options.
+    /// Returns the driver-level partition failover and per-partition circuit
+    /// breaker tuning options.
     pub fn partition_failover_options(&self) -> &PartitionFailoverOptions {
         &self.partition_failover_options
     }
@@ -282,7 +259,8 @@ impl DriverOptionsBuilder {
         Ok(self)
     }
 
-    /// Sets the partition-failover / PPCB tuning options for this driver.
+    /// Sets the partition failover and per-partition circuit breaker tuning
+    /// options for this driver.
     ///
     /// These knobs are read once at driver construction time and control
     /// the per-partition circuit breaker (PPCB) and partition-level failover

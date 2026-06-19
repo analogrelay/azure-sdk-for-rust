@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Per-request options types for Cosmos DB SDK operations.
+//! Client and per-request option types for Azure Cosmos DB operations.
+//!
+//! Most operation-specific types wrap [`OperationOptions`] for cross-cutting request
+//! settings and add any extra fields needed for a specific API.
 
 // =========================================================================
 // Public API

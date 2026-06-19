@@ -10,29 +10,11 @@ use std::fmt;
 use std::iter::Sum;
 use std::ops::Add;
 
-/// Request charge measured in Request Units (RU).
+/// A request charge measured in Request Units (RU).
 ///
-/// All Cosmos DB operations consume Request Units (RU), which represent
-/// the compute, memory, and I/O resources consumed by the operation.
-/// This newtype wraps `f64` to provide type safety and clarity.
-///
-/// # Examples
-///
-/// ```
-/// use azure_data_cosmos_driver::models::RequestCharge;
-///
-/// let charge = RequestCharge::new(3.5);
-/// assert_eq!(charge.value(), 3.5);
-///
-/// // Supports addition
-/// let total = charge + RequestCharge::new(2.0);
-/// assert_eq!(total.value(), 5.5);
-///
-/// // Supports summing iterators
-/// let charges = vec![RequestCharge::new(1.0), RequestCharge::new(2.0), RequestCharge::new(3.0)];
-/// let sum: RequestCharge = charges.into_iter().sum();
-/// assert_eq!(sum.value(), 6.0);
-/// ```
+/// Every Cosmos DB operation consumes Request Units, which represent the
+/// compute, memory, and I/O resources used by the request. This wrapper keeps
+/// request charges distinct from other floating-point values.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(transparent)]
 pub struct RequestCharge(FiniteF64);

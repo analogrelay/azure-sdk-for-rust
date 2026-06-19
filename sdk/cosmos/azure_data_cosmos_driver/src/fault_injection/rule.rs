@@ -10,7 +10,10 @@ use std::time::Instant;
 use super::condition::FaultInjectionCondition;
 use super::result::FaultInjectionResult;
 
-/// A fault injection rule that defines when and how to inject faults.
+/// A fault injection rule that combines a condition with a result.
+///
+/// A rule can also be enabled or disabled, limited to a time window, and
+/// capped with a hit limit.
 #[derive(Debug)]
 #[non_exhaustive]
 pub struct FaultInjectionRule {
@@ -81,7 +84,7 @@ impl FaultInjectionRule {
     }
 }
 
-/// Builder for creating a fault injection rule.
+/// Builder for creating a [`FaultInjectionRule`].
 pub struct FaultInjectionRuleBuilder {
     condition: FaultInjectionCondition,
     result: FaultInjectionResult,
@@ -94,9 +97,9 @@ pub struct FaultInjectionRuleBuilder {
 }
 
 impl FaultInjectionRuleBuilder {
-    /// Creates a new FaultInjectionRuleBuilder with default values.
+    /// Creates a builder for a rule with the given ID and result.
     ///
-    /// By default the rule starts immediately and never expires.
+    /// By default, the rule is enabled, starts immediately, and never expires.
     pub fn new(id: impl Into<String>, result: FaultInjectionResult) -> Self {
         Self {
             condition: FaultInjectionCondition::default(),
@@ -140,8 +143,10 @@ impl FaultInjectionRuleBuilder {
         self
     }
 
-    /// Sets externally-owned enabled/hit_count state so that multiple rules
-    /// (e.g., across SDK and driver) share the same mutable state.
+    /// Shares the enabled flag and hit count with another rule state.
+    ///
+    /// This is mainly useful when multiple wrappers need to observe and update
+    /// the same rule state.
     pub fn with_shared_state(
         mut self,
         enabled: Arc<AtomicBool>,
@@ -152,7 +157,7 @@ impl FaultInjectionRuleBuilder {
         self
     }
 
-    /// Builds the FaultInjectionRule.
+    /// Builds the [`FaultInjectionRule`].
     pub fn build(self) -> FaultInjectionRule {
         FaultInjectionRule {
             condition: self.condition,

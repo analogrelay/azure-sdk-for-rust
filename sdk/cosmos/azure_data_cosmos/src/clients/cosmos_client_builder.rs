@@ -17,32 +17,25 @@ use crate::{
 
 /// Builder for creating [`CosmosClient`] instances.
 ///
-/// Use this builder to configure and create a `CosmosClient` for interacting with Azure Cosmos DB.
+/// Use this builder to configure a client for an Azure Cosmos DB account.
+/// Call [`Self::build`] with an [`AccountReference`] and a [`RoutingStrategy`]
+/// when you're ready to create the client.
 ///
-/// An account reference (endpoint + credential) is required when calling [`build()`](Self::build).
-/// Construct an [`AccountReference`] via [`AccountReference::with_credential`] (for token-credential
-/// auth) or [`AccountReference::with_authentication_key`] (for shared-key auth, requires the
-/// `key_auth` feature), then pass it to `build`.
+/// Build an [`AccountReference`] with [`AccountReference::with_credential`]
+/// for token-based authentication or
+/// [`AccountReference::with_authentication_key`] for shared-key
+/// authentication.
 ///
-/// A [`RoutingStrategy`] is also required to specify how the SDK should select regions.
+/// # Clients and runtimes
 ///
-/// # Clients and Runtimes
+/// By default, clients created by this builder use the process-wide
+/// [`CosmosRuntime`]. Call [`Self::with_runtime`] to supply a custom runtime
+/// when you want multiple clients to share custom connection settings or other
+/// runtime-level defaults.
 ///
-/// [`CosmosClient`] instances share some common state and mechanics between each other.
-/// This allows for efficiently creating differently-configured clients for the same account,
-/// as well as connecting to multiple accounts in the same application. To do this efficiently,
-/// the [`CosmosRuntime`] serves as a single hub for all this background state and management.
-/// When building a [`CosmosClient`], the [`CosmosClientBuilder`] uses a single shared process-wide
-/// [`CosmosRuntime`]. However, by calling [`CosmosClientBuilder::with_runtime`], you can override
-/// this and provide your own [`CosmosRuntime`] configured as necessary.
-///
-/// Configuring a [`CosmosRuntime`] manually for a production application is an advanced operation.
-/// For most applications, the default global [`CosmosRuntime`] is sufficient.
-/// However, it may sometimes be necessary to configure a custom [`CosmosRuntime`] in testing scenarios.
-/// For example, when running against an emulator with an untrusted TLS certificate.
-/// Server certificate validation is configured at the runtime layer.
-///
-/// See the documentation for [`CosmosRuntime`] for more information.
+/// For most applications, the default runtime is enough. A custom runtime is
+/// mainly useful when you need to tweak transport settings, such as allowing
+/// an emulator's self-signed certificate.
 ///
 /// # Examples
 ///
@@ -102,10 +95,7 @@ pub struct CosmosClientBuilder {
 }
 
 impl CosmosClientBuilder {
-    /// Creates a new empty builder.
-    ///
-    /// Configure the builder with the desired options, then call [`build()`](Self::build)
-    /// with the account endpoint and credential.
+    /// Returns a new builder with default settings.
     pub fn new() -> Self {
         Self::default()
     }
@@ -132,15 +122,13 @@ impl CosmosClientBuilder {
         self
     }
 
-    /// Configures the driver-level partition-failover / PPCB tuning for this
-    /// client.
+    /// Configures partition-level failover behavior for this client.
     ///
-    /// These knobs are read once when the client's underlying driver is
-    /// constructed (in [`build`](Self::build)) and govern the per-partition
-    /// circuit breaker and partition-level failover for the lifetime of the
-    /// client. They are independent of per-request [`OperationOptions`].
+    /// These settings are read when the client is built and apply for the
+    /// lifetime of that client. They are separate from per-request
+    /// [`OperationOptions`].
     ///
-    /// When this setter is not called, the driver falls back to
+    /// If you do not call this method, the client uses
     /// [`PartitionFailoverOptions::default`], which honors the
     /// `AZURE_COSMOS_PPCB_*` environment variables.
     pub fn with_partition_failover_options(mut self, options: PartitionFailoverOptions) -> Self {
@@ -148,19 +136,12 @@ impl CosmosClientBuilder {
         self
     }
 
-    /// Sets a per-client suffix to append to the User-Agent header for
-    /// telemetry, overriding any runtime-wide default suffix.
+    /// Sets a per-client suffix for the User-Agent header.
     ///
-    /// Construct the suffix explicitly via
-    /// [`UserAgentSuffix::new`](crate::options::UserAgentSuffix::new) for trusted
-    /// values, or [`UserAgentSuffix::try_new`](crate::options::UserAgentSuffix::try_new)
-    /// for untrusted input. Validation rules (max 25 characters,
-    /// HTTP-header-safe) are enforced at the construction site rather than
-    /// here, which keeps any panic local to the caller's input handling.
-    ///
-    /// # Arguments
-    ///
-    /// * `suffix` - The suffix to append to the User-Agent header.
+    /// This overrides any runtime-wide suffix. Build the suffix with
+    /// [`UserAgentSuffix::new`](crate::options::UserAgentSuffix::new) for
+    /// trusted input or [`UserAgentSuffix::try_new`](crate::options::UserAgentSuffix::try_new)
+    /// for untrusted input.
     pub fn with_user_agent_suffix(mut self, suffix: UserAgentSuffix) -> Self {
         self.options.user_agent_suffix = Some(suffix);
         self
@@ -179,6 +160,9 @@ impl CosmosClientBuilder {
     /// Calling this multiple times replaces the previously-configured rule
     /// set; pass the complete final set on the last call.
     ///
+    /// This method stores the rules without validating them. Invalid
+    /// configurations are reported by [`Self::build`].
+    ///
     /// This is only available when the `fault_injection` feature is enabled.
     #[cfg(feature = "fault_injection")]
     pub fn with_fault_injection_rules(
@@ -192,12 +176,13 @@ impl CosmosClientBuilder {
         Ok(self)
     }
 
-    /// Registers a per-client [`ThroughputControlGroupOptions`].
+    /// Registers a [`ThroughputControlGroupOptions`] for this client.
     ///
-    /// Throughput-control groups are scoped to this client's driver — the
-    /// per-runtime registry has been removed, so every client owns its own
-    /// set of groups. Duplicate group names supplied to the same builder are
-    /// surfaced as an error at `build()` time.
+    /// Throughput control groups are scoped to the client. If you register the
+    /// same group name more than once, [`Self::build`] returns an error.
+    ///
+    /// This method stores the group without validating it. Invalid
+    /// configurations are reported by [`Self::build`].
     pub fn register_throughput_control_group(
         mut self,
         group: ThroughputControlGroupOptions,
@@ -208,8 +193,8 @@ impl CosmosClientBuilder {
         Ok(self)
     }
 
-    /// Sets backup endpoints for resilience when the primary global endpoint
-    /// is unavailable during initialization.
+    /// Sets backup endpoints to use if the primary global endpoint is
+    /// unavailable while the client starts up.
     ///
     /// # When to use
     ///
@@ -229,24 +214,17 @@ impl CosmosClientBuilder {
     /// regional endpoints discovered during bootstrap handle subsequent
     /// refreshes automatically.
     ///
-    /// # Arguments
-    ///
-    /// * `endpoints` - Ordered list of fallback endpoint URLs.
     pub fn with_backup_endpoints(mut self, endpoints: Vec<crate::AccountEndpoint>) -> Self {
         self.backup_endpoints = endpoints.into_iter().map(|e| e.into_url()).collect();
         self
     }
 
-    /// Builds the [`CosmosClient`] with the specified account reference and region selection strategy.
+    /// Builds a [`CosmosClient`] for the given account and routing strategy.
     ///
-    /// The account reference bundles an endpoint and credential. Construct one using
-    /// [`AccountReference::with_credential()`] or [`AccountReference::with_authentication_key()`]
-    /// (the latter requires the `key_auth` feature).
-    ///
-    /// # Arguments
-    ///
-    /// * `account` - The account reference containing the endpoint and credential.
-    /// * `routing_strategy` - The strategy for selecting which Azure regions to route requests to.
+    /// The account reference bundles the endpoint and credential. Construct one
+    /// with [`AccountReference::with_credential`] or
+    /// [`AccountReference::with_authentication_key`] (requires the `key_auth`
+    /// feature).
     ///
     /// # Errors
     ///

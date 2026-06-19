@@ -1,15 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! SDK-owned newtype wrapper around the driver's [`CosmosError`].
+//! Error and result types for `azure_data_cosmos`.
 //!
-//! The wrapper is `#[repr(transparent)]` so converting between the SDK and
-//! driver representations is a zero-cost move. All construction, status-code
-//! constants, and predicates live in the driver crate
-//! (`azure_data_cosmos_driver::error`); the SDK layer adds only thin
-//! delegating accessors, the [`From<CosmosError>`] bridge into
-//! [`azure_core::Error`] required by the Azure SDK for Rust guidelines, and the
-//! public [`Result`] alias.
+//! [`CosmosError`] is returned by fallible APIs in this crate. It carries the
+//! Cosmos DB status, any service response that was received, and diagnostics for
+//! the operation.
 
 use std::error::Error as StdError;
 use std::fmt;
@@ -20,47 +16,42 @@ use azure_data_cosmos_driver::models::CosmosResponse;
 
 use crate::diagnostics::DiagnosticsContext;
 
-/// Typed Cosmos status (HTTP status code + optional sub-status) — type
-/// alias re-exporting the driver definition so SDK-only callers can stay
-/// on a single crate import.
+/// A Cosmos DB status code paired with an optional sub-status code.
 pub type CosmosStatus = azure_data_cosmos_driver::error::CosmosStatus;
 
-/// Sub-status code — type alias re-exporting the driver definition.
+/// A Cosmos DB sub-status code.
 pub type SubStatusCode = azure_data_cosmos_driver::error::SubStatusCode;
 
-/// The error type returned by every fallible public API in `azure_data_cosmos`.
+/// The error type returned by fallible `azure_data_cosmos` APIs.
 ///
-/// `CosmosError` carries the typed Cosmos status (HTTP status + sub-status,
-/// including synthetic client-side codes such as `408 / 20008` for end-to-end
-/// operation timeout), the wire-level [`CosmosResponse`] when one was
-/// received, and the operation diagnostics — for both service-side and
-/// client-side failures.
+/// [`CosmosError`] includes the Cosmos DB status, the
+/// [`CosmosResponse`] when the service returned one, and any available
+/// diagnostics for the operation.
 ///
-/// Any underlying source error is reachable via
+/// Any underlying source error is available through
 /// [`std::error::Error::source`].
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct CosmosError(DriverCosmosError);
 
 impl CosmosError {
-    /// Returns the typed Cosmos status (HTTP status code + optional
-    /// sub-status). Always present — non-service errors carry a synthetic
-    /// status with a placeholder HTTP code (e.g.
-    /// [`CosmosStatus::TRANSPORT_GENERATED_503`] for transport failures).
+    /// Returns the Cosmos DB status for this error.
+    ///
+    /// This includes the HTTP status code and, when present, a Cosmos DB
+    /// sub-status code.
     pub fn status(&self) -> CosmosStatus {
         self.0.status()
     }
 
-    /// Returns the originating [`CosmosResponse`] when a wire response was
-    /// received and fully assembled with finalized diagnostics. Returns
-    /// `None` for synthetic errors (transport, client, configuration, …).
+    /// Returns the service response for this error, if one was received.
+    ///
+    /// This is `None` for client-side failures such as transport,
+    /// credential, or serialization errors.
     pub fn response(&self) -> Option<&CosmosResponse> {
         self.0.response()
     }
 
-    /// Returns the diagnostics context for the failed operation. For
-    /// wire-response errors this is `Some(response.diagnostics())`; for
-    /// synthetic errors it is whatever the pipeline attached, or `None`.
+    /// Returns diagnostics for the failed operation, if available.
     pub fn diagnostics(&self) -> Option<Arc<DiagnosticsContext>> {
         self.0.diagnostics()
     }
@@ -114,32 +105,11 @@ impl From<url::ParseError> for CosmosError {
     }
 }
 
-/// Per Azure SDK for Rust guideline: every service-crate error type provides a
-/// [`From`] impl into [`azure_core::Error`] so callers using the foundation
-/// error type via `?`/`From` continue to compose.
-///
-/// The conversion uses two discriminators that don't require an
-/// architectural categorical enum on the Cosmos side:
-///
-/// 1. [`CosmosError::response`] is the primary signal for "did we get a
-///    wire response from Cosmos" — when present, the error maps to
-///    [`azure_core::error::ErrorKind::HttpResponse`].
-/// 2. Synthetic errors (no wire response) are categorized by their
-///    Cosmos sub-status code, which the SDK boundary mapper assigns from
-///    a well-known set (`TRANSPORT_*`, `AUTHENTICATION_*`,
-///    `SERIALIZATION_*`, `CLIENT_OPERATION_TIMEOUT`). The mapping is
-///    intentionally finer than the prior architectural-kind version
-///    could express — notably, `TRANSPORT_DNS_FAILED`,
-///    `TRANSPORT_CONNECTION_FAILED`, and `TRANSPORT_HTTP2_INCOMPATIBLE`
-///    map to [`azure_core::error::ErrorKind::Connection`] because those
-///    failure modes provably never sent request bytes (safe to retry
-///    non-idempotent writes per `azure_core`'s `Connection` semantics),
-///    while generic `TRANSPORT_IO_FAILED` maps to
-///    [`azure_core::error::ErrorKind::Io`].
+/// Converts a [`CosmosError`] into [`azure_core::Error`].
 ///
 /// The original [`CosmosError`] is preserved as the
-/// [`azure_core::Error`] source so callers can `downcast_ref::<CosmosError>()`
-/// for the typed Cosmos surface.
+/// [`azure_core::Error`] source so you can downcast back to it when you need
+/// Cosmos DB-specific details.
 impl From<CosmosError> for azure_core::Error {
     fn from(err: CosmosError) -> Self {
         let core_kind = classify_for_azure_core(&err);
@@ -228,15 +198,9 @@ fn classify_for_azure_core(err: &CosmosError) -> azure_core::error::ErrorKind {
     }
 }
 
-/// `azure_data_cosmos` crate-wide `Result` alias.
+/// A convenient alias for [`std::result::Result`] with [`CosmosError`].
 ///
-/// The fluent builder for [`CosmosError`] lives in the driver crate as
-/// [`azure_data_cosmos_driver::error::CosmosErrorBuilder`]. Call sites
-/// inside this crate build a driver `CosmosError` first and then convert
-/// it into the public [`CosmosError`] newtype via the
-/// [`From<azure_data_cosmos_driver::error::CosmosError>`](From) impl
-/// (either explicitly with [`CosmosError::from`](From::from) or
-/// implicitly through `?`).
+/// Use this with fallible Cosmos DB operations.
 pub type Result<T> = std::result::Result<T, CosmosError>;
 
 #[cfg(test)]

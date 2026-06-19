@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! [`QueryFeedPage`] — a single page of query results with query-specific metadata.
+//! A single page of Cosmos DB query results.
 
 use std::sync::Arc;
 
@@ -14,13 +14,15 @@ use crate::{
     models::{CosmosResponse, ResponseHeaders},
 };
 
-/// Represents a single page of results from a Cosmos DB query.
+/// A single page of results from a Cosmos DB query.
 ///
-/// Wraps a [`FeedPage`] and adds query-specific metadata such as
-/// [`index_metrics()`](Self::index_metrics) and [`query_metrics()`](Self::query_metrics).
+/// This type adds query-specific metadata such as
+/// [`QueryFeedPage::index_metrics`] and [`QueryFeedPage::query_metrics`] on top
+/// of the common [`FeedPage`] data.
 ///
-/// This type is yielded by [`QueryItemIterator`](crate::feed::QueryItemIterator)
-/// and [`QueryPageIterator`](crate::feed::QueryPageIterator) for query operations.
+/// Query operations yield [`QueryFeedPage`] values directly through
+/// [`QueryPageIterator`](crate::feed::QueryPageIterator), or flatten them into
+/// individual items through [`QueryItemIterator`](crate::feed::QueryItemIterator).
 #[derive(Debug)]
 pub struct QueryFeedPage<T> {
     /// The underlying feed page with common fields.
@@ -34,13 +36,10 @@ pub struct QueryFeedPage<T> {
 }
 
 impl<T> QueryFeedPage<T> {
-    /// Returns a reference to the underlying [`FeedPage`].
+    /// Returns this page as a [`FeedPage`].
     ///
-    /// Use this when passing a query page to APIs that accept the more general
-    /// [`FeedPage`] type. The query-specific metadata (index metrics, query
-    /// metrics) is not visible through the returned reference; access it via
-    /// [`index_metrics`](Self::index_metrics) and
-    /// [`query_metrics`](Self::query_metrics) on this `QueryFeedPage` instead.
+    /// Use [`QueryFeedPage::index_metrics`] and [`QueryFeedPage::query_metrics`]
+    /// when you also need query-specific metadata.
     pub fn as_feed_page(&self) -> &FeedPage<T> {
         &self.page
     }
@@ -60,11 +59,10 @@ impl<T> QueryFeedPage<T> {
         self.page.headers()
     }
 
-    /// Returns the diagnostics for this page.
+    /// Returns diagnostics for this page.
     ///
-    /// The returned [`DiagnosticsContext`] surfaces the full per-operation
-    /// diagnostics produced by the driver pipeline (request tracking, retries,
-    /// regions contacted, RU charges, status, etc.).
+    /// The returned [`DiagnosticsContext`] includes request tracking, retries,
+    /// contacted regions, and other details about the operation.
     pub fn diagnostics(&self) -> Arc<DiagnosticsContext> {
         self.page.diagnostics()
     }

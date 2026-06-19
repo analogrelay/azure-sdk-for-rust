@@ -21,9 +21,10 @@ use azure_data_cosmos_driver::models::{
 };
 use serde::{de::DeserializeOwned, Serialize};
 
-/// A client for working with a specific container in a Cosmos DB account.
+/// Client for a specific container in an Azure Cosmos DB account.
 ///
-/// You can get a `Container` by calling [`DatabaseClient::container_client()`](crate::clients::DatabaseClient::container_client()).
+/// Get a [`ContainerClient`] by calling
+/// [`DatabaseClient::container_client`](crate::clients::DatabaseClient::container_client).
 #[derive(Clone)]
 pub struct ContainerClient {
     container_ref: ContainerReference,
@@ -55,22 +56,22 @@ impl ContainerClient {
         })
     }
 
-    /// Reads the properties of the container.
-    ///
-    /// # Arguments
-    ///
-    /// * `options` - Optional parameters for the request.
+    /// Reads the container properties.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
     /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("this is a non-running example");
-    /// let response = container_client.read(None)
-    ///     .await?
-    ///     .into_model()?;
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// let container = container_client.read(None).await?.into_model()?;
+    /// # let _ = container;
+    /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn read(
         &self,
         options: Option<ReadContainerOptions>,
@@ -89,16 +90,18 @@ impl ContainerClient {
         ))
     }
 
-    /// Updates the indexing policy of the container.
+    /// Replaces the container properties.
     ///
-    /// **NOTE**: The [`ContainerProperties::id`] and [`ContainerProperties::partition_key`] must be the same as the existing container, they cannot be changed.
+    /// The [`ContainerProperties::id`] and
+    /// [`ContainerProperties::partition_key`] values must match the existing
+    /// container. This operation cannot rename a container or change its
+    /// partition key.
     ///
     #[doc = include_str!("../../docs/control-plane-always-returns-body.md")]
     ///
-    /// # Arguments
+    /// # Errors
     ///
-    /// * `properties` - The [`ContainerProperties`] to update the container with.
-    /// * `options` - Optional parameters for the request.
+    /// Returns an error if the request fails.
     ///
     /// # Examples
     ///
@@ -142,12 +145,25 @@ impl ContainerClient {
         ))
     }
 
-    /// Reads container throughput properties, if any.
+    /// Reads the container throughput settings, if any.
     ///
-    /// This will return `None` if the database does not have a throughput offer configured.
+    /// Returns `None` if the container does not have dedicated throughput.
     ///
-    /// # Arguments
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// if let Some(throughput) = container_client.read_throughput(None).await? {
+    /// # let _ = throughput;
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the throughput offer cannot be read.
     pub async fn read_throughput(
         &self,
         options: Option<ThroughputOptions>,
@@ -162,17 +178,17 @@ impl ContainerClient {
         .await
     }
 
-    /// Begins replacing the container throughput properties.
+    /// Starts replacing the container throughput settings.
     ///
     /// The Cosmos DB service may process throughput changes asynchronously. The returned
-    /// [`ThroughputPoller`] can be awaited directly for the final result, or polled as a
-    /// stream to observe progress.
+    /// [`ThroughputPoller`] can be awaited for the final result or polled as a stream
+    /// to observe progress.
     ///
     #[doc = include_str!("../../docs/control-plane-always-returns-body.md")]
     ///
-    /// # Arguments
-    /// * `throughput` - The new throughput properties to set.
-    /// * `options` - Optional parameters for the request.
+    /// # Errors
+    ///
+    /// Returns an error if the replace request fails.
     ///
     /// # Examples
     ///
@@ -208,8 +224,19 @@ impl ContainerClient {
     ///
     #[doc = include_str!("../../docs/control-plane-warning.md")]
     ///
-    /// # Arguments
-    /// * `options` - Optional parameters for the request.
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// container_client.delete(None).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn delete(
         &self,
         options: Option<DeleteContainerOptions>,
@@ -230,11 +257,9 @@ impl ContainerClient {
 
     /// Creates a new item in the container.
     ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the new item.
-    /// * `item_id` - The id of the new item.
-    /// * `item` - The item to create. The type must implement [`Serialize`] and [`Deserialize`](serde::Deserialize)
-    /// * `options` - Optional parameters for the request
+    /// # Errors
+    ///
+    /// Returns an error if the item cannot be serialized or the request fails.
     ///
     /// # Examples
     ///
@@ -329,11 +354,12 @@ impl ContainerClient {
 
     /// Replaces an existing item in the container.
     ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the item to replace.
-    /// * `item_id` - The id of the item to replace.
-    /// * `item` - The item to create. The type must implement [`Serialize`] and [`Deserialize`](serde::Deserialize)
-    /// * `options` - Optional parameters for the request
+    /// This operation overwrites the stored item body with the serialized value
+    /// you provide.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the item cannot be serialized or the request fails.
     ///
     /// # Examples
     ///
@@ -425,19 +451,14 @@ impl ContainerClient {
         ))
     }
 
-    /// Applies a JSON-PATCH-style update to an item by reading it, applying
-    /// the [`PatchInstructions`] locally, and issuing an ETag-guarded Replace.
+    /// Applies a patch to an item.
     ///
-    /// The handler refuses to PATCH paths that overlap the container's
-    /// partition-key paths: rewriting the partition key would move the
-    /// document to a different physical partition, so such requests are
-    /// rejected by the client.
+    /// The SDK reads the current item, applies the [`PatchInstructions`]
+    /// locally, and writes the updated item back with ETag protection.
     ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the item to patch.
-    /// * `item_id` - The id of the item to patch.
-    /// * `patch` - The [`PatchInstructions`] describing the ops to apply.
-    /// * `options` - Optional parameters for the request.
+    /// This method rejects patch paths that overlap the container's partition
+    /// key paths. Changing a partition key would move the item to a different
+    /// partition, which this operation does not support.
     ///
     /// # Examples
     ///
@@ -469,31 +490,26 @@ impl ContainerClient {
     /// # }
     /// ```
     ///
-    /// # Response Body
+    /// # Response body
     ///
-    /// Unlike a wire-level Cosmos PATCH (which honors
-    /// `content_response_on_write`), this method always returns the post-image
-    /// of the patched item. The SDK constructs it locally from the merged
-    /// document it just wrote, so no extra round trip is required to read it
-    /// back. Callers that don't need the body can use
-    /// [`ItemResponse::<serde_json::Value>`] or simply discard the response.
+    /// This method always returns the updated item body, even if
+    /// `content_response_on_write` is disabled. The SDK builds that response
+    /// from the merged document it just wrote, so no extra read is required.
     ///
-    /// # Failure Semantics
+    /// # Errors
     ///
-    /// PATCH is **not exactly-once** under transport failures. The SDK
-    /// issues the inner Replace as `OperationType::Replace`, which the
-    /// pipeline classifies as idempotent. If a transport-layer error fires
-    /// *after* the inner Replace has been sent but before its response is
-    /// received and the server has already committed the write, the pipeline
-    /// may cross-region retry it. A retry against a replica that has already
-    /// replicated the original commit returns 412, which the RMW loop
-    /// recovers by re-Reading and re-applying. Non-idempotent operations
-    /// (`PatchOperation::increment`, `PatchOperation::add` on an array, `PatchOperation::move`)
-    /// may therefore be applied **more than once** under this scenario.
-    /// Callers that require exactly-once semantics for counters or array
-    /// appends should either build idempotent ops (`PatchOperation::set` on a
-    /// caller-computed value) or detect duplicate-application via a
-    /// monotonic application-level sequence number.
+    /// Returns an error if the patch cannot be serialized, if the item cannot
+    /// be read or replaced, or if the patch targets a partition-key path.
+    ///
+    /// # Retry behavior
+    ///
+    /// Under some transport failures, non-idempotent patch operations such as
+    /// [`crate::models::PatchOperation::increment`],
+    /// [`crate::models::PatchOperation::add`] on an array, or
+    /// [`crate::models::PatchOperation::move_value`] may be applied more than once.
+    /// If you need exactly-once behavior, prefer idempotent updates such as
+    /// [`crate::models::PatchOperation::set`] with a caller-computed value, or
+    /// track duplicate application in your own data model.
     pub async fn patch_item(
         &self,
         partition_key: impl Into<PartitionKey>,
@@ -531,16 +547,11 @@ impl ContainerClient {
         ))
     }
 
-    /// Creates or replaces an item in the container.
+    /// Creates an item if it does not exist, or replaces it if it does.
     ///
-    /// If an item with the same ID is found in the container, it is updated with the provided content.
-    /// If no item with the same ID is found in the container, a new item is created with the provided content.
+    /// # Errors
     ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the item to create or replace.
-    /// * `item_id` - The id of the item to create or replace.
-    /// * `item` - The item to create. The type must implement [`Serialize`] and [`Deserialize`](serde::Deserialize)
-    /// * `options` - Optional parameters for the request
+    /// Returns an error if the item cannot be serialized or the request fails.
     ///
     /// # Examples
     ///
@@ -633,34 +644,33 @@ impl ContainerClient {
         ))
     }
 
-    /// Reads a specific item from the container.
-    ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the item to read. See [`PartitionKey`] for more information on how to specify a partition key.
-    /// * `item_id` - The id of the item to read.
-    /// * `options` - Optional parameters for the request
+    /// Reads an item from the container. See [`PartitionKey`] for more
+    /// information about specifying partition keys.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use serde::{Deserialize, Serialize};
+    /// use serde::Deserialize;
     /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// #[derive(Debug, Deserialize, Serialize)]
-    /// pub struct Product {
-    ///     #[serde(rename = "id")] // Use serde attributes to control serialization
-    ///     product_id: String,
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// #[derive(Deserialize)]
+    /// struct Product {
+    ///     id: String,
     ///     category_id: String,
-    ///     product_name: String,
     /// }
-    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("this is a non-running example");
-    /// let item: Product = container_client
-    ///     .read_item("partition1", "item1", None)
+    ///
+    /// let product: Product = container_client
+    ///     .read_item("category1", "product1", None)
     ///     .await?
     ///     .into_model()?;
-    /// println!("Read Item: {:#?}", item);
+    /// # let _ = product;
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn read_item(
         &self,
         partition_key: impl Into<PartitionKey>,
@@ -695,24 +705,22 @@ impl ContainerClient {
 
     /// Deletes an item from the container.
     ///
-    /// # Arguments
-    /// * `partition_key` - The partition key of the item to delete.
-    /// * `item_id` - The id of the item to delete.
-    /// * `options` - Optional parameters for the request
-    ///
-    /// NOTE: The deleted item is never returned by the Cosmos API, so any content response option is ignored.
+    /// The deleted item is never returned by the service, so
+    /// `content_response_on_write` is ignored for this operation.
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use serde::{Deserialize, Serialize};
     /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("this is a non-running example");
-    /// container_client
-    ///     .delete_item("partition1", "item1", None)
-    ///     .await?;
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// container_client.delete_item("category1", "product1", None).await?;
+    /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn delete_item(
         &self,
         partition_key: impl Into<PartitionKey>,
@@ -745,26 +753,20 @@ impl ContainerClient {
         ))
     }
 
-    /// Executes a single-partition query against items in the container.
+    /// Executes a query against items in the container.
     ///
-    /// The resulting document will be deserialized into the type provided as `T`.
-    /// If you want to deserialize the document to a direct representation of the JSON returned, use [`serde_json::Value`] as the target type.
+    /// Query results are deserialized into `T`. To work with the raw JSON
+    /// instead, use [`serde_json::Value`] for `T`.
     ///
-    /// We recommend using ["turbofish" syntax](https://doc.rust-lang.org/book/appendix-02-operators.html#:~:text=turbofish) (`query_items::<SomeTargetType>(...)`) to specify the target type, as it makes type inference easier.
+    /// Using [turbofish syntax](https://doc.rust-lang.org/book/appendix-02-operators.html#turbofish)
+    /// (`query_items::<SomeType>(...)`) often makes type inference clearer.
     ///
-    /// **NOTE:** Currently, the Azure Cosmos DB SDK for Rust only supports single-partition querying. Cross-partition queries may be supported in the future.
+    /// # Cross-partition queries
     ///
-    /// # Arguments
-    ///
-    /// * `query` - The query to execute.
-    /// * `scope` - The [`FeedScope`] specifying the scope of the query.
-    /// * `options` - Optional parameters for the request.
-    ///
-    /// # Cross Partition Queries
-    ///
-    /// Cross-partition queries are significantly limited in the current version of the Cosmos DB SDK.
-    /// They are run on the gateway and limited to simple projections (`SELECT`) and filtering (`WHERE`).
-    /// For more details, see [the Cosmos DB documentation page on cross-partition queries](https://learn.microsoft.com/en-us/rest/api/cosmos-db/querying-cosmosdb-resources-using-the-rest-api#queries-that-cannot-be-served-by-gateway).
+    /// Cross-partition queries are currently more limited than single-partition
+    /// queries. They run through the gateway and are limited to simpler `SELECT`
+    /// and `WHERE` shapes. For details, see the Cosmos DB documentation on
+    /// [gateway-served cross-partition queries](https://learn.microsoft.com/en-us/rest/api/cosmos-db/querying-cosmosdb-resources-using-the-rest-api#queries-that-cannot-be-served-by-gateway).
     ///
     /// # Examples
     ///
@@ -806,7 +808,14 @@ impl ContainerClient {
     /// # }
     /// ```
     ///
-    /// See [`PartitionKey`](crate::PartitionKey) for more information on how to specify a partition key, and [`Query`] for more information on how to specify a query.
+    /// See [`PartitionKey`](crate::PartitionKey) for more information about
+    /// partition keys, and [`Query`] for more information about building
+    /// queries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query cannot be serialized, the query plan
+    /// cannot be created, or a request fails.
     pub async fn query_items<T: DeserializeOwned + Send + 'static>(
         &self,
         query: impl Into<Query>,
@@ -856,12 +865,8 @@ impl ContainerClient {
 
     /// Executes a transactional batch of operations.
     ///
-    /// All operations in the batch are executed atomically within the same partition key.
-    /// If any operation fails, the entire batch is rolled back.
-    ///
-    /// # Arguments
-    /// * `batch` - The [`TransactionalBatch`] containing the operations to execute.
-    /// * `options` - Optional parameters for the request.
+    /// All operations in the batch run atomically within the same partition.
+    /// If any operation fails, the whole batch fails.
     ///
     /// # Examples
     ///
@@ -893,8 +898,12 @@ impl ContainerClient {
     /// # Limitations
     ///
     /// * Maximum 100 operations per batch
-    /// * Maximum payload size is 2 MB
+    /// * Maximum payload size of 2 MB
     /// * All operations must target the same partition key
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch cannot be serialized or the request fails.
     pub async fn execute_transactional_batch(
         &self,
         batch: TransactionalBatch,
@@ -919,7 +928,22 @@ impl ContainerClient {
         ))
     }
 
-    /// Gets the feed ranges for this container.
+    /// Reads the feed ranges for this container.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// let feed_ranges = container_client.read_feed_ranges(None).await?;
+    /// # let _ = feed_ranges;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the routing map cannot be resolved.
     pub async fn read_feed_ranges(
         &self,
         options: Option<ReadFeedRangesOptions>,
@@ -983,10 +1007,29 @@ impl ContainerClient {
             .map_err(Into::into)
     }
 
-    /// Returns the [`FeedRange`]s covering the given partition key.
+    /// Returns the [`FeedRange`] values that cover the given partition key.
     ///
-    /// Full keys return a single-element `Vec`. Prefix keys on MultiHash
-    /// containers return one or more feed ranges.
+    /// A full partition key returns a single-element `Vec`. Prefix partition
+    /// keys on hierarchical partition key containers may return more than one
+    /// feed range.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("non-running example");
+    /// let feed_ranges = container_client
+    ///     .feed_range_from_partition_key("category1", None)
+    ///     .await?;
+    /// # let _ = feed_ranges;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the partition key shape is invalid or the routing
+    /// map cannot be resolved.
     pub async fn feed_range_from_partition_key(
         &self,
         partition_key: impl Into<PartitionKey>,
@@ -1083,20 +1126,14 @@ impl ContainerClient {
         }
     }
 
-    /// Gets the most up-to-date session token from a list of feed range and session token pairs
-    /// for a specific target feed range.
+    /// Returns the newest session token for a target feed range.
     ///
-    /// This method merges session tokens from feed ranges that overlap with the target,
-    /// handling partition split and merge scenarios automatically. It is useful when
-    /// maintaining your own session token cache across multiple clients.
+    /// This method merges session tokens from feed ranges that overlap the
+    /// target and handles partition splits and merges automatically. It is
+    /// useful when you maintain your own session token cache across clients.
     ///
     /// Session tokens and feed ranges are scoped to a single container. Only pass session
     /// tokens and feed ranges obtained from this container.
-    ///
-    /// # Arguments
-    ///
-    /// * `feed_ranges_to_session_tokens` - Pairs of feed ranges and their associated session tokens.
-    /// * `target_feed_range` - The feed range to get the most up-to-date session token for.
     ///
     /// # Errors
     ///

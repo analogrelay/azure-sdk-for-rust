@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Provides the [`BatchResponse`] type for transactional batch operation responses.
+//! [`BatchResponse`] for transactional batch operation responses.
 
 use std::sync::Arc;
 
@@ -13,13 +13,11 @@ use azure_core::fmt::SafeDebug;
 
 /// A response from a transactional batch operation.
 ///
-/// Provides access to common Cosmos response metadata.
-///
-/// Note: The batch-level ETag (available via `headers().etag()`) differs from a
-/// single-item ETag. It represents the ETag for the entire batch operation, not
-/// an individual item's concurrency token. Use individual
+/// Includes the batch status, response headers, diagnostics, and response body.
+/// The ETag in [`ResponseHeaders`] applies to the batch response as a whole, not
+/// to an individual operation result. For per-operation ETags, inspect the
 /// [`TransactionalBatchOperationResult`](crate::models::TransactionalBatchOperationResult)
-/// entries for per-item ETags.
+/// values in the deserialized [`TransactionalBatchResponse`].
 #[derive(SafeDebug)]
 #[safe(true)]
 #[non_exhaustive]
@@ -37,7 +35,7 @@ impl BatchResponse {
         self.response.status()
     }
 
-    /// Returns a reference to the parsed Cosmos-specific response headers.
+    /// Returns the response headers.
     pub fn headers(&self) -> &ResponseHeaders {
         self.response.cosmos_headers()
     }
@@ -47,16 +45,20 @@ impl BatchResponse {
         self.response.into_body()
     }
 
-    /// Returns the diagnostics for this operation.
+    /// Returns diagnostics for this operation.
     ///
-    /// The returned [`DiagnosticsContext`] surfaces the full per-operation
-    /// diagnostics produced by the driver pipeline (request tracking, retries,
-    /// regions contacted, RU charges, status, etc.).
+    /// The returned [`DiagnosticsContext`] includes details such as request
+    /// timing, retries, contacted regions, request charges, and status.
     pub fn diagnostics(&self) -> Arc<DiagnosticsContext> {
         self.response.diagnostics()
     }
 
-    /// Deserializes the response body into the batch response model.
+    /// Deserializes the response body into a [`TransactionalBatchResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the response body cannot be deserialized as a batch
+    /// response.
     pub fn into_model(self) -> crate::Result<TransactionalBatchResponse> {
         self.response.into_model()
     }

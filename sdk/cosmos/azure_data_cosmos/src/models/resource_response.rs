@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Provides the [`ResourceResponse`] type for resource management operation responses.
+//! [`ResourceResponse`] for resource management operations.
 
 use std::{marker::PhantomData, sync::Arc};
 
@@ -11,15 +11,11 @@ use crate::models::{CosmosResponse, ResponseBody, ResponseHeaders};
 use azure_core::fmt::SafeDebug;
 use serde::de::DeserializeOwned;
 
-/// A response from a resource management operation (databases, containers, throughput).
+/// A response from a resource management operation.
 ///
-/// Carries common Cosmos response metadata plus a type parameter `T` that names
-/// the model the body deserializes into. Unlike [`ItemResponse`](crate::models::ItemResponse)
-/// — where the payload type is user-defined and the SDK never knows it — every
-/// `ResourceResponse`-returning client method statically knows its model
-/// (`DatabaseProperties`, `ContainerProperties`, `ThroughputProperties`, …), so
-/// keeping `T` on the response type lets callers write `.into_model()?` without
-/// a turbofish.
+/// Includes the operation status, response headers, diagnostics, and resource
+/// payload. The type parameter `T` is the model type returned by
+/// [`into_model`](Self::into_model).
 #[derive(SafeDebug)]
 #[safe(true)]
 #[non_exhaustive]
@@ -41,7 +37,7 @@ impl<T> ResourceResponse<T> {
         self.response.status()
     }
 
-    /// Returns a reference to the parsed Cosmos-specific response headers.
+    /// Returns the response headers.
     pub fn headers(&self) -> &ResponseHeaders {
         self.response.cosmos_headers()
     }
@@ -51,19 +47,21 @@ impl<T> ResourceResponse<T> {
         self.response.into_body()
     }
 
-    /// Returns the diagnostics for this operation.
+    /// Returns diagnostics for this operation.
     ///
-    /// The returned [`DiagnosticsContext`] surfaces the full per-operation
-    /// diagnostics produced by the driver pipeline (request tracking, retries,
-    /// regions contacted, RU charges, status, etc.).
+    /// The returned [`DiagnosticsContext`] includes details such as request
+    /// timing, retries, contacted regions, request charges, and status.
     pub fn diagnostics(&self) -> Arc<DiagnosticsContext> {
         self.response.diagnostics()
     }
 }
 
 impl<T: DeserializeOwned> ResourceResponse<T> {
-    /// Deserializes the response body into the model type `T` named by this
-    /// response.
+    /// Deserializes the response body into `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the response body cannot be deserialized as `T`.
     pub fn into_model(self) -> crate::Result<T> {
         self.response.into_model::<T>()
     }

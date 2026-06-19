@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Provides the [`ThroughputPoller`] type for polling asynchronous throughput replacement operations.
+//! Polling support for throughput replacement operations.
 //!
-//! Cosmos DB throughput LROs differ from standard ARM LROs: instead of returning an
-//! `Operation-Location` URL, the service signals async processing via the
-//! `x-ms-offer-replace-pending` response header (or HTTP 202 status). Polling is done by
-//! re-reading the offer resource by its RID. Because of this non-standard pattern,
-//! [`ThroughputPoller`] is a custom type rather than using [`azure_core::http::Poller`], which
-//! expects URL-based [`StatusMonitor`](azure_core::http::poller::StatusMonitor) continuation.
+//! Azure Cosmos DB signals an in-progress throughput update with the
+//! `x-ms-offer-replace-pending` response header, or with HTTP 202, instead of a
+//! continuation URL. [`ThroughputPoller`] handles that service-specific polling
+//! pattern for you.
 
 use crate::{
     clients::offers_client,
@@ -30,16 +28,15 @@ use std::{
 /// Default polling interval for throughput replacement operations.
 const DEFAULT_POLLING_INTERVAL: Duration = Duration::seconds(5);
 
-/// A poller for an asynchronous throughput replacement operation.
+/// Polls a throughput replacement operation until it finishes.
 ///
-/// When Cosmos DB processes a throughput change, it may complete synchronously (HTTP 200) or
-/// asynchronously (HTTP 202 with `x-ms-offer-replace-pending: true`). This type abstracts
-/// that distinction, allowing callers to simply `await` the final result or poll for progress.
+/// Some throughput updates complete in the initial response, while others are
+/// accepted and finish later. You can `await` this type for the final result or
+/// poll it as a stream to observe intermediate responses.
 ///
-/// Dropping the poller does not cancel the server-side throughput change. The operation
-/// continues to completion on the server regardless.
+/// Dropping the poller does not cancel the server-side operation.
 ///
-/// # Usage
+/// # Examples
 ///
 /// ```rust,no_run
 /// # use azure_data_cosmos::models::ThroughputProperties;

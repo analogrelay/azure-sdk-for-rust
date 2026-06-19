@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//! Resource model types sent to and received from the Azure Cosmos DB API.
+//! Types used in Azure Cosmos DB request and response payloads.
 
 // =========================================================================
 // Public API

@@ -10,8 +10,8 @@ const MIN_END_TO_END_OPERATION_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Controls whether the response body is returned for write operations.
 ///
-/// When disabled, reduces networking and CPU load by not sending the payload
-/// back over the network. Does not impact RU usage.
+/// When disabled, this reduces network and CPU overhead by omitting the
+/// response payload. It does not change Request Unit (RU) usage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ContentResponseOnWrite {
     /// Content response is enabled (response body returned).

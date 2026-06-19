@@ -4,9 +4,9 @@
 use azure_core::fmt::SafeDebug;
 use serde::{Deserialize, Serialize};
 
-/// Represents the indexing policy for a container.
+/// Indexing settings for a container.
 ///
-/// For more information see <https://learn.microsoft.com/azure/cosmos-db/index-policy>
+/// For more information, see <https://learn.microsoft.com/azure/cosmos-db/index-policy>.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -36,43 +36,49 @@ pub struct IndexingPolicy {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub spatial_indexes: Vec<SpatialIndex>,
 
-    /// A list of composite indexes in the container
+    /// The composite indexes defined for the container.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub composite_indexes: Vec<CompositeIndex>,
 
-    /// A list of vector indexes in the container
+    /// The vector indexes defined for the container.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub vector_indexes: Vec<VectorIndex>,
 }
 
 impl IndexingPolicy {
+    /// Sets the indexing mode.
     pub fn with_indexing_mode(mut self, indexing_mode: IndexingMode) -> Self {
         self.indexing_mode = Some(indexing_mode);
         self
     }
 
+    /// Adds an included property path.
     pub fn with_included_path(mut self, included_path: impl Into<PropertyPath>) -> Self {
         self.included_paths.push(included_path.into());
         self
     }
 
+    /// Adds an excluded property path.
     pub fn with_excluded_path(mut self, excluded_path: impl Into<PropertyPath>) -> Self {
         self.excluded_paths.push(excluded_path.into());
         self
     }
 
+    /// Adds a spatial index.
     pub fn with_spatial_index(mut self, spatial_index: SpatialIndex) -> Self {
         self.spatial_indexes.push(spatial_index);
         self
     }
 
+    /// Adds a composite index.
     pub fn with_composite_index(mut self, composite_index: CompositeIndex) -> Self {
         self.composite_indexes.push(composite_index);
         self
     }
 
+    /// Adds a vector index.
     pub fn with_vector_index(mut self, vector_index: VectorIndex) -> Self {
         self.vector_indexes.push(vector_index);
         self
@@ -85,22 +91,24 @@ impl IndexingPolicy {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum IndexingMode {
+    /// Updates indexes synchronously as items are written.
     Consistent,
+    /// Disables indexing.
     None,
 }
 
-/// Represents a JSON path.
+/// A property path used in an indexing policy.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub struct PropertyPath {
-    // The path to the property referenced in this index.
+    /// The path to the indexed property.
     pub path: String,
 }
 
 impl PropertyPath {
-    /// Sets the path of this `PropertyPath`.
+    /// Sets the property path.
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.path = path.into();
         self
@@ -113,7 +121,7 @@ impl<T: Into<String>> From<T> for PropertyPath {
     }
 }
 
-/// Represents a spatial index
+/// A spatial index definition.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -122,12 +130,12 @@ pub struct SpatialIndex {
     /// The path to the property referenced in this index.
     pub path: String,
 
-    /// The spatial types used in this index
+    /// The spatial types indexed at this path.
     pub types: Vec<SpatialType>,
 }
 
 impl SpatialIndex {
-    /// Creates a new [`SpatialIndex`] over the given path with no spatial types.
+    /// Creates a spatial index for the given path.
     pub fn new(path: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -135,7 +143,7 @@ impl SpatialIndex {
         }
     }
 
-    /// Appends `spatial_type` to the index's list of spatial types.
+    /// Adds a spatial type to the index.
     pub fn with_type(mut self, spatial_type: SpatialType) -> Self {
         self.types.push(spatial_type);
         self
@@ -148,24 +156,28 @@ impl SpatialIndex {
 #[serde(rename_all = "PascalCase")]
 #[non_exhaustive]
 pub enum SpatialType {
+    /// A point value.
     Point,
+    /// A polygon value.
     Polygon,
+    /// A line string value.
     LineString,
+    /// A multi-polygon value.
     MultiPolygon,
 }
 
-/// Represents a composite index
+/// A composite index definition.
 #[derive(Clone, Default, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(transparent)]
 #[non_exhaustive]
 pub struct CompositeIndex {
-    /// The properties in this composite index
+    /// The indexed properties, in order.
     pub properties: Vec<CompositeIndexProperty>,
 }
 
 impl CompositeIndex {
-    /// Appends `property` to the composite index.
+    /// Adds a property to the composite index.
     pub fn with_property(mut self, property: CompositeIndexProperty) -> Self {
         self.properties.push(property);
         self
@@ -181,15 +193,12 @@ pub struct CompositeIndexProperty {
     /// The path to the property referenced in this index.
     pub path: String,
 
-    /// The order of the composite index.
-    ///
-    /// For example, if you want to run the query "SELECT * FROM c ORDER BY c.age asc, c.height desc",
-    /// then you'd specify the order for "/asc" to be *ascending* and the order for "/height" to be *descending*.
+    /// The sort order for this property in the composite index.
     pub order: CompositeIndexOrder,
 }
 
 impl CompositeIndexProperty {
-    /// Creates a new [`CompositeIndexProperty`] with the given path and order.
+    /// Creates a composite index property.
     pub fn new(path: impl Into<String>, order: CompositeIndexOrder) -> Self {
         Self {
             path: path.into(),
@@ -197,13 +206,13 @@ impl CompositeIndexProperty {
         }
     }
 
-    /// Sets the path of this composite index property.
+    /// Sets the property path.
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.path = path.into();
         self
     }
 
-    /// Sets the order of this composite index property.
+    /// Sets the sort order.
     pub fn with_order(mut self, order: CompositeIndexOrder) -> Self {
         self.order = order;
         self
@@ -216,13 +225,15 @@ impl CompositeIndexProperty {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum CompositeIndexOrder {
+    /// Sorts this property in ascending order.
     Ascending,
+    /// Sorts this property in descending order.
     Descending,
 }
 
-/// Represents a vector index
+/// A vector index definition.
 ///
-/// For more information, see <https://learn.microsoft.com/en-us/azure/cosmos-db/index-policy#vector-indexes>
+/// For more information, see <https://learn.microsoft.com/azure/cosmos-db/index-policy#vector-indexes>.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +248,7 @@ pub struct VectorIndex {
 }
 
 impl VectorIndex {
-    /// Creates a new [`VectorIndex`] with the given path and index type.
+    /// Creates a vector index definition.
     pub fn new(path: impl Into<String>, index_type: VectorIndexType) -> Self {
         Self {
             path: path.into(),
@@ -245,32 +256,32 @@ impl VectorIndex {
         }
     }
 
-    /// Sets the path of this vector index.
+    /// Sets the property path.
     pub fn with_path(mut self, path: impl Into<String>) -> Self {
         self.path = path.into();
         self
     }
 
-    /// Sets the type of this vector index.
+    /// Sets the vector index type.
     pub fn with_index_type(mut self, index_type: VectorIndexType) -> Self {
         self.index_type = index_type;
         self
     }
 }
 
-/// Types of vector indexes supported by Cosmos DB
+/// Vector index types supported by Azure Cosmos DB.
 #[derive(Clone, SafeDebug, Deserialize, Serialize, PartialEq, Eq)]
 #[safe(true)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VectorIndexType {
-    /// Represents the `flat` vector index type.
+    /// A flat vector index.
     Flat,
 
-    /// Represents the `quantizedFlat` vector index type.
+    /// A quantized flat vector index.
     QuantizedFlat,
 
-    /// Represents the `diskANN` vector index type.
+    /// A DiskANN vector index.
     DiskANN,
 }
 

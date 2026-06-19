@@ -12,11 +12,10 @@ use azure_core::http::{
 
 use super::FaultInjectionErrorType;
 
-/// A synthetic response to return when a fault injection rule matches.
+/// A synthetic HTTP response returned when a fault injection rule matches.
 ///
-/// Instead of injecting an error, this returns a successful response with
-/// the specified status code, headers, and body. Useful for mocking service
-/// responses such as `GetDatabaseAccount` in tests.
+/// Use this to return a specific status code, header set, and body without
+/// forwarding the request to the service.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct CustomResponse {
@@ -90,7 +89,10 @@ impl CustomResponseBuilder {
     }
 }
 
-/// Represents a server error to be injected.
+/// Describes what happens when a fault injection rule matches.
+///
+/// A result can inject an error, return a [`CustomResponse`], add a delay,
+/// or combine those behaviors.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct FaultInjectionResult {
@@ -122,7 +124,7 @@ impl FaultInjectionResult {
     }
 }
 
-/// Builder for creating a FaultInjectionResult.
+/// Builder for creating a [`FaultInjectionResult`].
 pub struct FaultInjectionResultBuilder {
     error_type: Option<FaultInjectionErrorType>,
     custom_response: Option<CustomResponse>,
@@ -131,7 +133,7 @@ pub struct FaultInjectionResultBuilder {
 }
 
 impl FaultInjectionResultBuilder {
-    /// Creates a new FaultInjectionResultBuilder with default values.
+    /// Creates a builder with no injected behavior and a probability of `1.0`.
     pub fn new() -> Self {
         Self {
             error_type: None,
@@ -163,7 +165,9 @@ impl FaultInjectionResultBuilder {
         self
     }
 
-    /// Sets the probability of injecting the error (0.0 to 1.0).
+    /// Sets the probability that this result is applied.
+    ///
+    /// Values outside `0.0..=1.0` are clamped. Non-finite values become `0.0`.
     pub fn with_probability(mut self, probability: f32) -> Self {
         self.probability = if probability.is_finite() {
             probability.clamp(0.0, 1.0)
@@ -173,11 +177,11 @@ impl FaultInjectionResultBuilder {
         self
     }
 
-    /// Builds the FaultInjectionResult.
+    /// Builds the [`FaultInjectionResult`].
     ///
-    /// **Note**: A result with no `error_type`, no `custom_response`, and no
-    /// `delay` will match requests but produce no observable effect — silently
-    /// consuming any configured `hit_limit`. Ensure at least one of these is set.
+    /// A result with no `error_type`, no `custom_response`, and no `delay`
+    /// still counts as a match, but it has no visible effect. If the rule also
+    /// has a `hit_limit`, those matches still consume that limit.
     pub fn build(self) -> FaultInjectionResult {
         FaultInjectionResult {
             error_type: self.error_type,

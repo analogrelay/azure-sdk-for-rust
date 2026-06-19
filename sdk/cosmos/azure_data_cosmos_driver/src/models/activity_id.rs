@@ -7,92 +7,35 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-/// A unique identifier for tracking and correlating Cosmos DB operations.
+/// A request identifier used to correlate Cosmos DB operations.
 ///
-/// Activity IDs are used by the Cosmos DB service for request tracing and
-/// are essential for troubleshooting. They appear in request and response
-/// headers as `x-ms-activity-id`.
-///
-/// # Creating Activity IDs
-///
-/// Use [`ActivityId::new_uuid`] to generate a new UUID-based activity ID:
-///
-/// ```rust
-/// use azure_data_cosmos_driver::models::ActivityId;
-///
-/// let activity_id = ActivityId::new_uuid();
-/// println!("Activity ID: {}", activity_id);
-/// ```
-///
-/// Or parse an existing string:
-///
-/// ```rust
-/// use azure_data_cosmos_driver::models::ActivityId;
-///
-/// let activity_id: ActivityId = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
-/// ```
+/// Cosmos DB returns an activity ID in the `x-ms-activity-id` header and may
+/// use it in diagnostics or support requests. The value is treated as an opaque
+/// string.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ActivityId(Cow<'static, str>);
 
 impl ActivityId {
-    /// Creates a new activity ID with a generated UUID.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use azure_data_cosmos_driver::models::ActivityId;
-    ///
-    /// let id = ActivityId::new_uuid();
-    /// assert!(!id.as_str().is_empty());
-    /// ```
+    /// Creates a new activity ID backed by a random UUID.
     pub fn new_uuid() -> Self {
         Self(Cow::Owned(uuid::Uuid::new_v4().to_string()))
     }
 
     /// Creates an activity ID from an existing string.
     ///
-    /// This does not validate the format - it accepts any string value.
-    /// Use this when receiving activity IDs from external sources.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use azure_data_cosmos_driver::models::ActivityId;
-    ///
-    /// let id = ActivityId::from_string("my-activity-123".to_string());
-    /// assert_eq!(id.as_str(), "my-activity-123");
-    /// ```
+    /// The value is not validated because activity IDs are treated as opaque
+    /// strings.
     pub fn from_string(value: String) -> Self {
         Self(Cow::Owned(value))
     }
 
     /// Creates an activity ID from a static string.
-    ///
-    /// This is useful for compile-time known activity IDs in tests.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use azure_data_cosmos_driver::models::ActivityId;
-    ///
-    /// const TEST_ID: ActivityId = ActivityId::from_static("test-activity-id");
-    /// assert_eq!(TEST_ID.as_str(), "test-activity-id");
-    /// ```
     pub const fn from_static(value: &'static str) -> Self {
         Self(Cow::Borrowed(value))
     }
 
     /// Returns the activity ID as a string slice.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use azure_data_cosmos_driver::models::ActivityId;
-    ///
-    /// let id = ActivityId::new_uuid();
-    /// println!("ID: {}", id.as_str());
-    /// ```
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -107,9 +50,9 @@ impl std::fmt::Display for ActivityId {
 impl std::str::FromStr for ActivityId {
     type Err = std::convert::Infallible;
 
-    /// Parses a string into an ActivityId.
+    /// Parses an activity ID from a string.
     ///
-    /// This never fails - any string is accepted.
+    /// This never fails because activity IDs are treated as opaque strings.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(Cow::Owned(s.to_owned())))
     }

@@ -101,19 +101,14 @@ impl DatabaseReference {
 
 /// A resolved reference to a Cosmos DB container.
 ///
-/// Always carries both the name-based and RID-based identifiers for the container
-/// and its parent database, along with immutable container properties (partition key
-/// definition and unique key policy). This guarantees that both addressing modes
-/// are available without additional I/O.
+/// `ContainerReference` carries both name-based and resource-ID-based
+/// identifiers for the container and its parent database, plus the container's
+/// [`PartitionKeyDefinition`]. That lets the SDK address the container in either
+/// form without fetching more metadata.
 ///
-/// Instances are created via async factory methods that resolve the container
-/// metadata from the Cosmos DB service or cache.
-///
-/// ## Equality and Hashing
-///
-/// Two `ContainerReference` values are considered equal if they refer to the same
-/// account, container RID, and container name. This detects both delete + recreate
-/// (same name, different RID) and rename scenarios (same RID, different name).
+/// Two `ContainerReference` values are considered equal if they refer to the
+/// same account, container resource ID, and container name. This helps detect
+/// delete-and-recreate or rename scenarios.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct ContainerReference {
@@ -259,12 +254,6 @@ pub struct ItemReference {
 
 impl ItemReference {
     /// Creates a new item reference by name.
-    ///
-    /// # Arguments
-    ///
-    /// * `container` - Reference to the parent container.
-    /// * `partition_key` - The partition key for the item.
-    /// * `item_name` - The document ID (name) of the item.
     pub fn from_name(
         container: &ContainerReference,
         partition_key: PartitionKey,
@@ -281,12 +270,6 @@ impl ItemReference {
     }
 
     /// Creates a new item reference by RID.
-    ///
-    /// # Arguments
-    ///
-    /// * `container` - Reference to the parent container.
-    /// * `partition_key` - The partition key for the item.
-    /// * `item_rid` - The internal RID of the item.
     pub fn from_rid(
         container: &ContainerReference,
         partition_key: PartitionKey,

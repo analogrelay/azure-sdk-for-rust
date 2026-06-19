@@ -361,13 +361,13 @@ impl AsRef<str> for RequestSentStatus {
 // Request Diagnostics
 // =============================================================================
 
-/// Diagnostics for a single HTTP request/response pair.
+/// Diagnostics for one HTTP request attempt.
 ///
-/// Each retry, hedged request, or failover produces a separate `RequestDiagnostics`
-/// entry in the [`DiagnosticsContext`].
+/// Each retry, hedged request, or failover produces a separate
+/// [`RequestDiagnostics`] entry in the [`DiagnosticsContext`].
 ///
-/// This type is non-exhaustive and new fields may be added in future releases.
-/// Use the getter methods to access field values.
+/// This type is non-exhaustive and may gain new fields in future releases, so
+/// use the getter methods instead of pattern-matching on its fields.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub struct RequestDiagnostics {
@@ -396,7 +396,7 @@ pub struct RequestDiagnostics {
     #[serde(flatten)]
     status: CosmosStatus,
 
-    /// Request charge (RU) for this individual request.
+    /// Request charge, in Request Units (RU), for this individual request.
     pub(crate) request_charge: RequestCharge,
 
     /// Activity ID for this attempt.
@@ -658,7 +658,8 @@ impl RequestDiagnostics {
         &self.status
     }
 
-    /// Returns the request charge (RU) for this individual request.
+    /// Returns the request charge, in Request Units (RU), for this individual
+    /// request.
     pub fn request_charge(&self) -> RequestCharge {
         self.request_charge
     }
@@ -749,10 +750,10 @@ impl RequestDiagnostics {
     }
 }
 
-/// Handle for tracking a request within [`DiagnosticsContext`].
+/// Opaque handle for tracking a request within [`DiagnosticsContext`].
 ///
-/// This is an opaque index used to reference a specific request's diagnostics
-/// for updates during request execution.
+/// The SDK uses this handle to associate later updates with an in-flight
+/// request. You typically do not need to construct or inspect it directly.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestHandle(usize);
 
@@ -1594,30 +1595,12 @@ impl DiagnosticsContextBuilder {
 
 /// Diagnostic context for a Cosmos DB operation.
 ///
-/// This is an **immutable** type containing detailed information about request execution
-/// including RU consumption, regions contacted, retry attempts, and timing information.
+/// [`DiagnosticsContext`] captures the operation activity ID, elapsed time,
+/// per-request diagnostics, regions contacted, retry behavior, and total
+/// Request Unit (RU) charge.
 ///
-/// # Immutability
-///
-/// Once created from a `DiagnosticsContextBuilder`, a `DiagnosticsContext` is fully
-/// immutable. All data is frozen at completion time, and no further mutations are possible.
-/// This enables lock-free access and efficient sharing via `Arc`.
-///
-/// # Efficient Multi-Read
-///
-/// The [`requests`](Self::requests) method returns `Arc<Vec<RequestDiagnostics>>`,
-/// allowing multiple readers to share the same allocation without cloning. This is
-/// efficient for repeated access patterns.
-///
-/// # JSON Caching
-///
-/// JSON serialization via [`to_json_string`](Self::to_json_string) is lazily cached.
-/// The first call computes the JSON; subsequent calls return the cached string.
-///
-/// # JSON Verbosity Levels
-///
-/// - **Summary**: Optimized for size constraints, deduplicates similar requests
-/// - **Detailed**: Full information about every request
+/// The value is immutable once the operation finishes. JSON serialization via
+/// [`to_json_string`](Self::to_json_string) is cached per verbosity level.
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct DiagnosticsContext {
@@ -1757,7 +1740,8 @@ impl DiagnosticsContext {
         self.status.as_ref()
     }
 
-    /// Returns the total request charge (RU) across all requests.
+    /// Returns the total request charge, in Request Units (RU), across all
+    /// requests.
     pub fn total_request_charge(&self) -> RequestCharge {
         self.requests.iter().map(|r| r.request_charge).sum()
     }
@@ -1827,15 +1811,8 @@ impl DiagnosticsContext {
     ///
     /// The result is lazily cached - the first call computes the JSON,
     /// subsequent calls return the cached string (for the same verbosity level).
-    ///
-    /// # Arguments
-    ///
-    /// * `verbosity` - Output verbosity level. Pass `None` to use the default from options.
-    ///
-    /// # Returns
-    ///
-    /// JSON string representation of diagnostics, truncated in Summary mode to fit
-    /// within configured size limits.
+    /// Pass `None` for `verbosity` to use the default from options. In Summary
+    /// mode, the output is truncated to fit within configured size limits.
     pub fn to_json_string(&self, verbosity: Option<DiagnosticsVerbosity>) -> &str {
         let effective_verbosity = match verbosity.unwrap_or(self.options.default_verbosity()) {
             DiagnosticsVerbosity::Default => self.options.default_verbosity(),

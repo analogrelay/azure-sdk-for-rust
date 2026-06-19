@@ -1,6 +1,6 @@
 # Azure Cosmos DB SDK for Rust
 
-This client library enables client applications to connect to Azure Cosmos DB via the NoSQL API. Azure Cosmos DB is a globally distributed, multi-model database service.
+`azure_data_cosmos` is an async client library for Azure Cosmos DB for NoSQL. Use it to work with databases, containers, items, queries, and transactional batches from idiomatic Rust.
 
 [Source code] | [Package (crates.io)] | [API reference documentation] | [Azure Cosmos DB for NoSQL documentation]
 
@@ -18,66 +18,63 @@ cargo add azure_data_cosmos
 
 * An [Azure subscription] or free Azure Cosmos DB trial account.
 
-Note: If you don't have an Azure subscription, create a free account before you begin.
-You can Try Azure Cosmos DB for free without an Azure subscription, free of charge and commitments, or create an Azure Cosmos DB free tier account, with the first 400 RU/s and 5 GB of storage for free. You can also use the Azure Cosmos DB Emulator with a URI of <https://localhost:8081>. For the key to use with the emulator, see [how to develop with the emulator](https://learn.microsoft.com/azure/cosmos-db/how-to-develop-emulator).
+If you don't have an Azure subscription, create a free account before you begin. You can also try Azure Cosmos DB for free without an Azure subscription, create an Azure Cosmos DB free tier account with the first 400 RU/s and 5 GB of storage for free, or use the Azure Cosmos DB Emulator at <https://localhost:8081>. For the emulator key, see [how to develop with the emulator](https://learn.microsoft.com/azure/cosmos-db/how-to-develop-emulator).
 
 ### Create an Azure Cosmos DB account
 
 You can create an Azure Cosmos DB account using:
 
-* [Azure Portal](https://portal.azure.com).
-* [Azure CLI](https://learn.microsoft.com/cli/azure).
-* [Azure ARM](https://learn.microsoft.com/azure/cosmos-db/quick-create-template).
+* [Azure Portal](https://portal.azure.com)
+* [Azure CLI](https://learn.microsoft.com/cli/azure)
+* [Azure ARM](https://learn.microsoft.com/azure/cosmos-db/quick-create-template)
 
-#### Authenticate the client
+### Authenticate the client
 
-In order to interact with the Azure Cosmos DB service you'll need to create an instance of the `CosmosClient` struct. To make this possible you will need a URL and key of the Azure Cosmos DB service.
+To work with Azure Cosmos DB, create a [`CosmosClient`] with your account endpoint and credentials.
+
+## Key concepts
+
+* **Client hierarchy**: Start with [`CosmosClient`], use [`CosmosClient::database_client`] to get a [`DatabaseClient`], then call [`DatabaseClient::container_client`] to get a [`ContainerClient`].
+* **Partition keys**: Item operations, queries, and batches are scoped by partition key. Use [`PartitionKey`] when you need explicit partition key values or hierarchical partition keys.
+* **Queries**: Use [`Query`] to build SQL queries, including parameters, and [`FeedScope`] to target a single partition or a broader range.
 
 ## Examples
 
-The following section provides several code snippets covering some of the most common Azure Cosmos DB NoSQL API tasks, including:
+Common scenarios include:
 
-* [Create Client](#create-cosmos-db-client "Create Cosmos DB client")
-* [CRUD operation on Items](#crud-operation-on-items "CRUD operation on Items")
+* [Create a client](#create-a-client)
+* [CRUD operations on items](#crud-operations-on-items)
+* [Querying items](#querying-items)
+* [Transactional batch](#transactional-batch)
 
-### Create Cosmos DB Client
+### Create a client
 
-In order to interact with the Azure Cosmos DB service, you'll need to create an instance of the `CosmosClient`. You need an endpoint URL and credentials to instantiate a client object.
+The following example uses `DeveloperToolsCredential`, which is appropriate for most local development environments. For production workloads, prefer a managed identity. For more information about available credential types, see [Azure Identity].
 
-#### Using Microsoft Entra ID
-
-The example shown below use a `DeveloperToolsCredential`, which is appropriate for most local development environments. Additionally, we recommend using a managed identity for authentication in production environments. You can find more information on different ways of authenticating and their corresponding credential types in the [Azure Identity] documentation.
-
-The `DeveloperToolsCredential` will automatically pick up on an Azure CLI authentication. Ensure you are logged in with the Azure CLI:
+The `DeveloperToolsCredential` automatically picks up Azure CLI authentication. Ensure you are logged in:
 
 ```sh
 az login
 ```
 
-Instantiate a `DeveloperToolsCredential` to pass to the client. The same instance of a token credential can be used with multiple clients if they will be authenticating with the same identity.
-
 ```rust
+use azure_data_cosmos::{AccountEndpoint, AccountReference, CosmosClient, RoutingStrategy};
+use azure_data_cosmos::options::Region;
 use azure_identity::DeveloperToolsCredential;
-use azure_data_cosmos::{
-    CosmosClient, AccountReference, AccountEndpoint, RoutingStrategy,
-};
 
 async fn example() -> Result<(), Box<dyn std::error::Error>> {
     let credential: std::sync::Arc<dyn azure_core::credentials::TokenCredential> =
         DeveloperToolsCredential::new(None)?;
-    let endpoint: AccountEndpoint = "https://myaccount.documents.azure.com/"
-        .parse()?;
+    let endpoint: AccountEndpoint = "https://myaccount.documents.azure.com/".parse()?;
     let account = AccountReference::with_credential(endpoint, credential);
     let cosmos_client = CosmosClient::builder()
-        .build(account, RoutingStrategy::ProximityTo("East US".into()))
+        .build(account, RoutingStrategy::ProximityTo(Region::EAST_US))
         .await?;
     Ok(())
 }
 ```
 
-#### Using account keys
-
-Cosmos DB also supports account keys, though we strongly recommend using Entra ID authentication. To use account keys, you will need to enable the `key_auth` feature:
+Cosmos DB also supports account keys. To use them, enable the `key_auth` feature:
 
 ```sh
 cargo add azure_data_cosmos --features key_auth
@@ -85,12 +82,12 @@ cargo add azure_data_cosmos --features key_auth
 
 For more information, see the [API reference documentation].
 
-### CRUD operation on Items
+### CRUD operations on items
 
 ```rust
-use serde::{Serialize, Deserialize};
 use azure_data_cosmos::CosmosClient;
 use azure_data_cosmos::models::{PatchInstructions, PatchOperation};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Item {
@@ -106,18 +103,17 @@ async fn example(cosmos_client: CosmosClient) -> Result<(), Box<dyn std::error::
         value: "2".into(),
     };
 
-    let container = cosmos_client.database_client("myDatabase").container_client("myContainer").await?;
+    let container = cosmos_client
+        .database_client("myDatabase")
+        .container_client("myContainer")
+        .await?;
 
-    // Create an item
     container.create_item("partition1", "1", item, None).await?;
 
-    // Read an item
     let item_response = container.read_item("partition1", "1", None).await?;
     let mut item: Item = item_response.into_model()?;
 
     item.value = "3".into();
-
-    // Replace an item
     container.replace_item("partition1", "1", item, None).await?;
 
     let patch = PatchInstructions::from(vec![
@@ -129,8 +125,77 @@ async fn example(cosmos_client: CosmosClient) -> Result<(), Box<dyn std::error::
         .into_model()?;
     println!("patched value = {}", patched.value);
 
-    // Delete an item
     container.delete_item("partition1", "1", None).await?;
+    Ok(())
+}
+```
+
+### Querying items
+
+```rust
+use azure_data_cosmos::{CosmosClient, Query};
+use azure_data_cosmos::feed::FeedScope;
+use futures::StreamExt;
+
+async fn example(cosmos_client: CosmosClient) -> Result<(), Box<dyn std::error::Error>> {
+    let container = cosmos_client
+        .database_client("mydb")
+        .container_client("mycontainer")
+        .await?;
+
+    let query = Query::from("SELECT * FROM c WHERE c.category = @category")
+        .with_parameter("@category", "electronics")?;
+
+    let mut pages = container
+        .query_items::<serde_json::Value>(query, FeedScope::partition("electronics"), None)
+        .await?
+        .into_pages();
+
+    while let Some(page) = pages.next().await.transpose()? {
+        for item in page.items() {
+            println!("{item:?}");
+        }
+    }
+    Ok(())
+}
+```
+
+### Transactional batch
+
+```rust
+use azure_data_cosmos::{CosmosClient, TransactionalBatch};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct Item {
+    id: String,
+    partition_key: String,
+    value: String,
+}
+
+async fn example(cosmos_client: CosmosClient) -> Result<(), Box<dyn std::error::Error>> {
+    let container = cosmos_client
+        .database_client("mydb")
+        .container_client("mycontainer")
+        .await?;
+
+    let item1 = Item {
+        id: "1".into(),
+        partition_key: "pk1".into(),
+        value: "a".into(),
+    };
+    let item2 = Item {
+        id: "2".into(),
+        partition_key: "pk1".into(),
+        value: "b".into(),
+    };
+
+    let batch = TransactionalBatch::new("pk1")
+        .create_item(item1)?
+        .create_item(item2)?;
+
+    let response = container.execute_transactional_batch(batch, None).await?;
+    println!("batch status = {:?}", response.status());
     Ok(())
 }
 ```

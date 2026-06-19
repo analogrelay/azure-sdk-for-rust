@@ -3,6 +3,57 @@
 #![allow(dead_code)]
 
 //! Partition key types for Cosmos DB operations.
+//!
+//! Every item in a Cosmos DB container belongs to a logical partition identified
+//! by its partition key. The [`PartitionKey`] type represents one or more
+//! partition key values used to target operations at a specific partition.
+//!
+//! # Creating partition keys
+//!
+//! `PartitionKey` implements [`From`] for common Rust types, so you can pass
+//! values directly to any method that accepts `impl Into<PartitionKey>`:
+//!
+//! ```
+//! use azure_data_cosmos_driver::models::PartitionKey;
+//!
+//! // From a string
+//! let pk = PartitionKey::from("my-partition");
+//!
+//! // From a number
+//! let pk = PartitionKey::from(42);
+//!
+//! // From a boolean
+//! let pk = PartitionKey::from(true);
+//!
+//! // Null partition key (for items where the partition key property is JSON null)
+//! let pk = PartitionKey::from(None::<String>);
+//! ```
+//!
+//! # Hierarchical partition keys
+//!
+//! For containers with hierarchical (multi-level) partition keys, use tuples:
+//!
+//! ```
+//! use azure_data_cosmos_driver::models::PartitionKey;
+//!
+//! // Two-level key
+//! let pk = PartitionKey::from(("tenant-a", "user-123"));
+//!
+//! // Three-level key (maximum)
+//! let pk = PartitionKey::from(("tenant-a", "user-123", 2024));
+//! ```
+//!
+//! You can also build a partition key dynamically from a `Vec<PartitionKeyValue>`:
+//!
+//! ```
+//! use azure_data_cosmos_driver::models::{PartitionKey, PartitionKeyValue};
+//!
+//! let values = vec![
+//!     PartitionKeyValue::from("tenant-a"),
+//!     PartitionKeyValue::from(42),
+//! ];
+//! let pk = PartitionKey::from(values);
+//! ```
 
 use crate::models::FiniteF64;
 use azure_core::http::headers::{AsHeaders, HeaderName, HeaderValue};
@@ -20,10 +71,21 @@ pub(crate) const QUERY_ENABLE_CROSS_PARTITION: HeaderName =
 // PartitionKeyValue
 // =============================================================================
 
-/// Represents a value for a single partition key.
+/// A single component of a [`PartitionKey`].
 ///
-/// You shouldn't need to construct this type directly. The various implementations
-/// of [`Into<PartitionKey>`] will handle it for you.
+/// You rarely need to construct `PartitionKeyValue` directly — most APIs accept
+/// `impl Into<PartitionKey>`, and `PartitionKey` converts from primitives
+/// automatically. Use `PartitionKeyValue` when building partition keys
+/// dynamically (e.g., from a `Vec`).
+///
+/// Supported value types (via [`From`] impls):
+/// - Strings: `&'static str`, [`String`], `&String`, [`Cow<'static, str>`](std::borrow::Cow)
+/// - Numbers: all integer types (`i8`–`i64`, `u8`–`u64`, `isize`, `usize`) and `f32`/`f64`
+/// - Booleans: `bool`
+/// - Null: `Option<T>` where `None` maps to JSON `null`
+///
+/// The special [`PartitionKeyValue::NULL`] and [`PartitionKeyValue::UNDEFINED`]
+/// constants handle items with explicit `null` or missing partition key properties.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct PartitionKeyValue(InnerPartitionKeyValue);
@@ -151,13 +213,15 @@ impl From<InnerPartitionKeyValue> for PartitionKeyValue {
 }
 
 impl PartitionKeyValue {
-    /// The Null partition key value.
+    /// The JSON `null` partition key value.
     pub const NULL: Self = Self(InnerPartitionKeyValue::Null);
 
-    /// The Undefined partition key value.
+    /// The partition key value used for items that do not have the partition key property.
     pub const UNDEFINED: Self = Self(InnerPartitionKeyValue::Undefined);
 
-    /// The special Infinity sentinel partition key value, used for EPK boundary calculations.
+    /// A sentinel value used for advanced effective partition key range calculations.
+    ///
+    /// This value is not valid in request partition keys.
     pub const INFINITY: Self = Self(InnerPartitionKeyValue::Infinity);
 
     /// Writes this value into a byte buffer using the V2 hashing encoding.
@@ -264,26 +328,61 @@ impl<T: Into<PartitionKeyValue>> From<Option<T>> for PartitionKeyValue {
     }
 }
 
-/// A partition key used to identify the target partition for an operation.
+/// A partition key identifying a logical partition in a Cosmos DB container.
 ///
-/// Supports both single and hierarchical partition keys (HPK).
+/// Most Cosmos DB containers use a single partition key path (e.g., `/tenantId`),
+/// but hierarchical partition keys allow up to three levels. `PartitionKey`
+/// handles both cases.
 ///
-/// # Examples
+/// # Creating partition keys
 ///
-/// Single partition key:
+/// For single-value keys, just pass the value — any type that implements
+/// `Into<PartitionKeyValue>` works:
+///
 /// ```
 /// use azure_data_cosmos_driver::models::PartitionKey;
 ///
-/// let pk = PartitionKey::from("my-partition");
-/// let pk_num = PartitionKey::from(42);
+/// let pk = PartitionKey::from("my-tenant");
+/// let pk = PartitionKey::from(42);
+/// let pk = PartitionKey::from(None::<String>); // null
 /// ```
 ///
-/// Hierarchical partition key (tuple):
+/// For hierarchical keys, use tuples:
+///
 /// ```
 /// use azure_data_cosmos_driver::models::PartitionKey;
 ///
-/// let pk = PartitionKey::from(("tenant-1", "user-123"));
-/// let pk3 = PartitionKey::from(("region", "tenant", 42));
+/// let pk = PartitionKey::from(("tenant", "user", 2024));
+/// ```
+///
+/// In most SDK methods, you don't need to call `from` explicitly — the method
+/// accepts `impl Into<PartitionKey>` so you can pass the value directly:
+///
+/// ```rust,no_run
+/// # mod azure_data_cosmos {
+/// #     pub mod clients {
+/// #         #[derive(Clone)]
+/// #         pub struct ContainerClient;
+/// #
+/// #         impl ContainerClient {
+/// #             pub async fn read_item(
+/// #                 &self,
+/// #                 _partition_key: impl Into<azure_data_cosmos_driver::models::PartitionKey>,
+/// #                 _item_id: &str,
+/// #                 _options: Option<()>,
+/// #             ) -> Result<(), Box<dyn std::error::Error>> {
+/// #                 Ok(())
+/// #             }
+/// #         }
+/// #     }
+/// # }
+/// # let container_client: azure_data_cosmos::clients::ContainerClient = panic!("example");
+/// # async fn doc(container_client: azure_data_cosmos::clients::ContainerClient) -> Result<(), Box<dyn std::error::Error>> {
+/// // Just pass a string directly — no need for PartitionKey::from()
+/// let response = container_client.read_item("my-partition-value", "item-id", None).await?;
+/// # let _ = response;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -308,7 +407,7 @@ impl PartitionKey {
         Self(vec![value.into()])
     }
 
-    /// Returns true if this partition key is empty (cross-partition).
+    /// Returns `true` if this partition key has no components.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -426,16 +525,14 @@ impl<T: Into<PartitionKeyValue>> From<T> for PartitionKey {
 }
 
 impl From<Vec<PartitionKeyValue>> for PartitionKey {
-    /// Creates a [`PartitionKey`] from a vector of partition key components.
+    /// Creates a partition key from a vector of components.
     ///
-    /// This is useful when the partition key structure is determined at runtime,
-    /// such as when working with multiple containers with different schemas or
-    /// building partition keys from configuration.
+    /// Use this when the partition key structure is determined at runtime.
     ///
     /// # Panics
     ///
-    /// Panics if the vector contains more than 3 elements, as Cosmos DB supports
-    /// a maximum of 3 hierarchical partition key levels.
+    /// Panics if the vector contains more than 3 elements (Cosmos DB supports
+    /// at most 3 hierarchical partition key levels).
     fn from(values: Vec<PartitionKeyValue>) -> Self {
         assert!(
             values.len() <= 3,

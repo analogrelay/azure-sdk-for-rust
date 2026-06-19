@@ -13,26 +13,8 @@ use crate::options::ServerCertificateValidation;
 
 /// Configuration for connection pooling behavior.
 ///
-/// Controls how the driver manages connections to Cosmos DB endpoints.
-/// This type is immutable after construction - use [`ConnectionPoolOptionsBuilder`]
-/// to create instances with custom values.
-///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::options::ConnectionPoolOptions;
-/// use std::time::Duration;
-///
-/// let options = ConnectionPoolOptions::builder()
-///     .with_max_idle_connections_per_endpoint(5_000)
-///     .with_max_connect_timeout(Duration::from_secs(3))
-///     .build()
-///     .expect("valid options");
-///
-/// // Access via getters
-/// assert_eq!(options.max_idle_connections_per_endpoint(), 5_000);
-/// assert_eq!(options.max_connect_timeout(), Duration::from_secs(3));
-/// ```
+/// Controls how the SDK manages connections to Cosmos DB endpoints.
+/// Use [`ConnectionPoolOptionsBuilder`] to customize values.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct ConnectionPoolOptions {
@@ -230,8 +212,9 @@ impl ConnectionPoolOptions {
 
 /// Builder for [`ConnectionPoolOptions`].
 ///
-/// Default values are read from environment variables when available,
-/// and can be overridden using builder methods.
+/// Explicit builder values take precedence. Any remaining fields can be read
+/// from `AZURE_COSMOS_*` environment variables before falling back to the
+/// built-in defaults.
 ///
 /// # Environment Variables
 ///
@@ -261,16 +244,6 @@ impl ConnectionPoolOptions {
 /// - `AZURE_COSMOS_EMULATOR_SERVER_CERT_VALIDATION_DISABLED`: Whether server certificate validation is disabled for emulator; `true` maps to [`ServerCertificateValidation::RequiredUnlessEmulator`], `false` to [`ServerCertificateValidation::Required`] (default: `false`)
 /// - `AZURE_COSMOS_LOCAL_ADDRESS`: Local IP address to bind to (default: none)
 ///
-/// # Example
-///
-/// ```rust
-/// use azure_data_cosmos_driver::options::ConnectionPoolOptions;
-///
-/// let options = ConnectionPoolOptions::builder()
-///     .with_max_idle_connections_per_endpoint(5_000)
-///     .build()
-///     .expect("valid options");
-/// ```
 /// Parses a millisecond count (e.g. `"5000"`) from an environment variable
 /// into a [`Duration`]. Used as the `#[option(env = "...", parser = ...)]`
 /// parser for the duration-valued connection-pool settings so the builder can
@@ -400,8 +373,12 @@ impl ConnectionPoolOptionsBuilder {
         Self::default()
     }
 
-    /// Sets whether proxy usage is allowed. If true, the HTTPS_PROXY environment variable will be respected.
-    /// When using a proxy, no e2e SLAs are guaranteed by Azure Cosmos DB.
+    /// Sets whether proxy usage is allowed.
+    ///
+    /// If `true`, the `HTTPS_PROXY` environment variable is respected. When a
+    /// proxy is in use, Azure Cosmos DB does not guarantee its normal end-to-end
+    /// service-level agreements.
+    ///
     /// Defaults to `false`.
     pub fn with_proxy_allowed(mut self, value: bool) -> Self {
         self.proxy_allowed = Some(value);
