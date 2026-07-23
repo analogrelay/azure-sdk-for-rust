@@ -109,6 +109,18 @@ pub(crate) trait PipelineNode: Send + std::any::Any {
     fn feed_range(&self) -> Option<&FeedRange> {
         None
     }
+
+    /// Returns the number of leaf request nodes this node fans out to.
+    ///
+    /// Leaf nodes count as `1`. Intermediate ("parent") nodes override this to
+    /// return the sum of their children's widths, so a pipeline of any shape
+    /// reports its total leaf fan-out by recursion. The planner uses this to
+    /// enforce a maximum fan-out on fresh cross-partition plans; because every
+    /// parent node type contributes its own accounting, the check scales to any
+    /// future pipeline shape without special-casing.
+    fn fan_out_width(&self) -> usize {
+        1
+    }
 }
 
 #[cfg(test)]

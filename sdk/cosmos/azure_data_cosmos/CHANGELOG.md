@@ -4,7 +4,11 @@
 
 ### Features Added
 
+- Added `FeedOptions::max_fan_out` (and `FeedOptions::with_max_fan_out`) to cap how many physical partitions a cross-partition query or change feed may fan out to. Applies to `ContainerClient::query_items` and `ContainerClient::query_change_feed`. ([#4855](https://github.com/Azure/azure-sdk-for-rust/pull/4855))
+
 ### Breaking Changes
+
+- Fresh cross-partition queries and change feed reads now fail with a `BadRequest` error if they would fan out to more than 100 physical partitions. Raise `FeedOptions::max_fan_out` to run a broader operation. Resuming from a continuation token is unaffected. ([#4855](https://github.com/Azure/azure-sdk-for-rust/pull/4855))
 
 ### Bugs Fixed
 

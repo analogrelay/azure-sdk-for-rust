@@ -13,6 +13,7 @@ use crate::{
     Query,
 };
 use azure_data_cosmos_driver::models::{CosmosOperation, DatabaseReference};
+use azure_data_cosmos_driver::options::PlanOptions;
 
 use super::ThroughputPoller;
 
@@ -131,7 +132,12 @@ impl DatabaseClient {
         let plan = self
             .context
             .driver
-            .plan_operation(initial_operation, &operation_options, None)
+            .plan_operation(
+                initial_operation,
+                &operation_options,
+                None,
+                &PlanOptions::default(),
+            )
             .await?;
 
         Ok(QueryItemIterator::new(

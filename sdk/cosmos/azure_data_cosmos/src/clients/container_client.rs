@@ -20,6 +20,7 @@ use super::ThroughputPoller;
 use azure_data_cosmos_driver::models::{
     ContainerReference, CosmosOperation, ItemReference, PartitionKeyKind,
 };
+use azure_data_cosmos_driver::options::PlanOptions;
 use serde::{de::DeserializeOwned, Serialize};
 
 /// A client for working with a specific container in a Cosmos DB account.
@@ -851,6 +852,7 @@ impl ContainerClient {
                 initial_operation,
                 &options.operation,
                 options.feed.continuation_token.as_ref(),
+                &PlanOptions::from(&options.feed),
             )
             .await?;
         Ok(QueryItemIterator::new(
@@ -943,6 +945,7 @@ impl ContainerClient {
                 initial_operation,
                 &options.operation,
                 options.feed.continuation_token.as_ref(),
+                &PlanOptions::from(&options.feed),
             )
             .await?;
 

@@ -1489,6 +1489,13 @@ impl SubStatusCode {
     /// error (paired with HTTP 500) instead of panicking the worker
     /// thread, which would deadlock the caller. See issue #4574.
     pub const CLIENT_QUERY_PLAN_RANGE_NOT_COVERED_BY_TOPOLOGY: SubStatusCode = SubStatusCode(20307);
+
+    /// A fresh cross-partition operation fanned out to more leaf request
+    /// nodes than the configured maximum (20308). The pipeline refuses to
+    /// plan an over-broad fan-out; the caller must raise `max_fan_out`
+    /// (via `FeedOptions`) to opt in. Paired with HTTP 400 because it is a
+    /// client-side pre-flight rejection of the request.
+    pub const CLIENT_CROSS_PARTITION_FAN_OUT_EXCEEDED: SubStatusCode = SubStatusCode(20308);
 }
 
 impl Default for SubStatusCode {
@@ -2341,6 +2348,14 @@ impl CosmosStatus {
     pub const CLIENT_QUERY_PLAN_RANGE_NOT_COVERED_BY_TOPOLOGY: CosmosStatus = CosmosStatus {
         status_code: StatusCode::InternalServerError,
         sub_status: Some(SubStatusCode::CLIENT_QUERY_PLAN_RANGE_NOT_COVERED_BY_TOPOLOGY),
+    };
+
+    /// 400 / 20308 — a fresh cross-partition operation fanned out to more
+    /// leaf request nodes than the configured `max_fan_out`. The caller
+    /// must explicitly raise the limit to run a broader query.
+    pub const CLIENT_CROSS_PARTITION_FAN_OUT_EXCEEDED: CosmosStatus = CosmosStatus {
+        status_code: StatusCode::BadRequest,
+        sub_status: Some(SubStatusCode::CLIENT_CROSS_PARTITION_FAN_OUT_EXCEEDED),
     };
 
     /// 500 / 20306 — the service returned a resource read response

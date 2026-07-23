@@ -11,6 +11,7 @@ use crate::{
 };
 use azure_core::http::Url;
 use azure_data_cosmos_driver::models::CosmosOperation;
+use azure_data_cosmos_driver::options::PlanOptions;
 use serde::Serialize;
 
 pub use super::cosmos_client_builder::CosmosClientBuilder;
@@ -180,7 +181,12 @@ impl CosmosClient {
         let plan = self
             .context
             .driver
-            .plan_operation(initial_operation, &operation_options, None)
+            .plan_operation(
+                initial_operation,
+                &operation_options,
+                None,
+                &PlanOptions::default(),
+            )
             .await?;
 
         Ok(QueryItemIterator::new(

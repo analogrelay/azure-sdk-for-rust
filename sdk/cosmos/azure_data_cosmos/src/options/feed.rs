@@ -4,7 +4,7 @@
 //! Feed/query options: paging, query metrics, and continuation tokens.
 
 use azure_data_cosmos_driver::models::{MaxItemCountHint, SessionToken};
-use azure_data_cosmos_driver::options::OperationOptions;
+use azure_data_cosmos_driver::options::{OperationOptions, PlanOptions, DEFAULT_MAX_FAN_OUT};
 
 use crate::feed::ContinuationToken;
 
@@ -39,6 +39,24 @@ pub struct FeedOptions {
     ///
     /// See [`QueryPageIterator::to_continuation_token`](crate::feed::QueryPageIterator::to_continuation_token).
     pub continuation_token: Option<ContinuationToken>,
+
+    /// Maximum number of physical partitions a fresh cross-partition operation
+    /// may fan out to.
+    ///
+    /// Cross-partition queries and change feeds are expensive by design: a
+    /// container can have a very large number of physical partitions, and an
+    /// accidental broad query can span all of them. To guard against this, the
+    /// SDK refuses to start a fresh operation that would fan out to more than
+    /// this many partitions.
+    ///
+    /// `None` applies the default of [`DEFAULT_MAX_FAN_OUT`]. To run a broader
+    /// cross-partition operation, set this to a larger value — there is no
+    /// separate "unlimited" setting; pass a value large enough for the workload.
+    ///
+    /// This limit is only checked when an operation is first planned. Resuming
+    /// from a `continuation_token` does not re-check it, since the fan-out was
+    /// already accepted when the operation started.
+    pub max_fan_out: Option<usize>,
 }
 
 impl FeedOptions {
@@ -55,6 +73,24 @@ impl FeedOptions {
     pub fn with_continuation_token(mut self, continuation_token: ContinuationToken) -> Self {
         self.continuation_token = Some(continuation_token);
         self
+    }
+
+    /// Sets the maximum number of physical partitions a fresh cross-partition
+    /// operation may fan out to.
+    ///
+    /// See [`max_fan_out`](Self::max_fan_out) for details. There is no separate
+    /// "unlimited" setting; pass a value large enough for the workload.
+    pub fn with_max_fan_out(mut self, max_fan_out: usize) -> Self {
+        self.max_fan_out = Some(max_fan_out);
+        self
+    }
+}
+
+impl From<&FeedOptions> for PlanOptions {
+    /// Builds driver [`PlanOptions`] from SDK [`FeedOptions`], applying the
+    /// default fan-out when the caller did not set one.
+    fn from(feed: &FeedOptions) -> Self {
+        PlanOptions::default().with_max_fan_out(feed.max_fan_out.unwrap_or(DEFAULT_MAX_FAN_OUT))
     }
 }
 
@@ -144,5 +180,23 @@ impl QueryOptions {
     pub fn with_continuation_token(mut self, continuation_token: ContinuationToken) -> Self {
         self.feed = self.feed.with_continuation_token(continuation_token);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plan_options_uses_default_fan_out_when_unset() {
+        let plan_options = PlanOptions::from(&FeedOptions::default());
+        assert_eq!(plan_options.max_fan_out, DEFAULT_MAX_FAN_OUT);
+    }
+
+    #[test]
+    fn plan_options_carries_explicit_fan_out() {
+        let feed = FeedOptions::default().with_max_fan_out(250);
+        let plan_options = PlanOptions::from(&feed);
+        assert_eq!(plan_options.max_fan_out, 250);
     }
 }

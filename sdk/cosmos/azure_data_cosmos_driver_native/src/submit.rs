@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use azure_data_cosmos_driver::driver::CosmosDriver;
 use azure_data_cosmos_driver::models::{AccountReference, ContainerReference, CosmosResponse};
-use azure_data_cosmos_driver::options::DriverOptions;
+use azure_data_cosmos_driver::options::{DriverOptions, PlanOptions};
 
 use crate::account_ref::AccountRefHandle;
 use crate::completion::{
@@ -349,7 +349,12 @@ pub extern "C" fn cosmos_submit_operation(
             // plan so we can mint the next-page token.
             let container = operation.container().cloned();
             let mut plan = driver_arc
-                .plan_operation(operation, &options, continuation.as_ref())
+                .plan_operation(
+                    operation,
+                    &options,
+                    continuation.as_ref(),
+                    &PlanOptions::default(),
+                )
                 .await?;
             let page = driver_arc
                 .execute_plan(&mut plan, container, options)

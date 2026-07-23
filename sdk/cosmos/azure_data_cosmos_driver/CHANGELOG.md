@@ -4,7 +4,11 @@
 
 ### Features Added
 
+- Added `PlanOptions` (with `DEFAULT_MAX_FAN_OUT`) to `CosmosDriver::plan_operation`, enforcing a maximum fan-out on fresh cross-partition plans. A fresh plan spanning more leaf request nodes than `PlanOptions::max_fan_out` (default 100) is rejected with the new `CosmosStatus::CLIENT_CROSS_PARTITION_FAN_OUT_EXCEEDED` (HTTP 400); resuming from a continuation token skips the check. ([#4855](https://github.com/Azure/azure-sdk-for-rust/pull/4855))
+
 ### Breaking Changes
+
+- `CosmosDriver::plan_operation` now takes an additional `plan_options: &PlanOptions` argument (after `continuation`). The continuation token remains its own argument. ([#4855](https://github.com/Azure/azure-sdk-for-rust/pull/4855))
 
 ### Bugs Fixed
 
