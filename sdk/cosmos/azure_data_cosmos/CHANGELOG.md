@@ -4,7 +4,11 @@
 
 ### Features Added
 
+- Added the non-default `control_plane` feature that gates the control-plane APIs (database and container CRUD, and throughput/offer management). It is intentionally independent of `key_auth` so these APIs are not tied to key-based authentication. ([#4854](https://github.com/Azure/azure-sdk-for-rust/pull/4854))
+
 ### Breaking Changes
+
+- Control-plane APIs are now gated behind the new `control_plane` feature, which is **not** enabled by default. Code using database or container CRUD (`CosmosClient::create_database`/`query_databases`, `DatabaseClient::read`/`create_container`/`query_containers`/`delete`, `ContainerClient::read`/`replace`/`delete`), throughput management (`read_throughput`/`begin_replace_throughput`, `ThroughputPoller`), or the associated model and options types (`DatabaseProperties`, `ContainerProperties`, `IndexingPolicy`, `ThroughputProperties`, `ResourceResponse`, and the container/database/throughput option types) must now enable the `control_plane` feature. ([#4854](https://github.com/Azure/azure-sdk-for-rust/pull/4854))
 
 ### Bugs Fixed
 

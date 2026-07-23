@@ -17,21 +17,26 @@ pub use batch_response::BatchResponse;
 pub use change_feed_item::{
     ChangeFeedItem, ChangeFeedMetadata, ChangeFeedOperationType, LogicalSequenceNumber,
 };
+#[cfg(feature = "control_plane")]
 pub use container_properties::{
     ConflictResolutionMode, ConflictResolutionPolicy, ContainerProperties, TimeToLive, UniqueKey,
     UniqueKeyPolicy, VectorDataType, VectorDistanceFunction, VectorEmbedding,
     VectorEmbeddingPolicy,
 };
+#[cfg(feature = "control_plane")]
 pub use database_properties::DatabaseProperties;
+#[cfg(feature = "control_plane")]
 pub use indexing_policy::{
     CompositeIndex, CompositeIndexOrder, CompositeIndexProperty, IndexingMode, IndexingPolicy,
     PropertyPath, SpatialIndex, SpatialType, VectorIndex, VectorIndexType,
 };
 pub use item_response::ItemResponse;
+#[cfg(feature = "control_plane")]
 pub use resource_response::ResourceResponse;
 pub use response_body::ResponseBody;
 pub use response_headers::ResponseHeaders;
 pub use system_properties::SystemProperties;
+#[cfg(feature = "control_plane")]
 pub use throughput_properties::ThroughputProperties;
 pub use transactional_batch::{
     TransactionalBatch, TransactionalBatchOperationResult, TransactionalBatchResponse,
@@ -50,14 +55,19 @@ pub(crate) use response_headers::into_driver_headers;
 
 mod batch_response;
 mod change_feed_item;
+#[cfg(feature = "control_plane")]
 mod container_properties;
 mod cosmos_response;
+#[cfg(feature = "control_plane")]
 mod database_properties;
+#[cfg(feature = "control_plane")]
 mod indexing_policy;
 mod item_response;
+#[cfg(feature = "control_plane")]
 mod resource_response;
 mod response_body;
 mod response_headers;
 mod system_properties;
+#[cfg(feature = "control_plane")]
 mod throughput_properties;
 mod transactional_batch;

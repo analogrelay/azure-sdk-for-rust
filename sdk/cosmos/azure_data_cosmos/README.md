@@ -85,6 +85,18 @@ cargo add azure_data_cosmos --features key_auth
 
 For more information, see the [API reference documentation].
 
+#### Control-plane operations
+
+Management operations for databases and containers — creating, reading, replacing, and
+deleting databases and containers, as well as reading and updating throughput (offers) —
+are gated behind the non-default `control_plane` feature:
+
+```sh
+cargo add azure_data_cosmos --features control_plane
+```
+
+NOTE: Currently, these operations require key-based authentication, and are not supported with Entra ID authentication.
+
 ### CRUD operation on Items
 
 ```rust

@@ -16,7 +16,7 @@ use serde::de::DeserializeOwned;
 /// Wraps the SDK-owned [`ResponseBody`], parsed [`ResponseHeaders`],
 /// [`CosmosStatus`], and diagnostics. This type is internal to the SDK; public
 /// wrapper types like [`ItemResponse`](crate::models::ItemResponse),
-/// [`ResourceResponse`](crate::models::ResourceResponse), and
+/// `ResourceResponse` (available under the `control_plane` feature), and
 /// [`BatchResponse`](crate::models::BatchResponse) wrap it and expose only the
 /// accessors relevant to their operation.
 ///

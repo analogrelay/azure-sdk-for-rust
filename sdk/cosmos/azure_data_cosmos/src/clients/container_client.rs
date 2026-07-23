@@ -2,25 +2,32 @@
 // Licensed under the MIT License.
 
 use crate::{
-    clients::{offers_client, ClientContext},
+    clients::ClientContext,
     feed::{ChangeFeedPageIterator, FeedRange, FeedScope, QueryItemIterator},
     models::TransactionalBatch,
-    models::{BatchResponse, ChangeFeedItem, ItemResponse, ResourceResponse},
-    models::{ContainerProperties, PatchInstructions, ThroughputProperties},
+    models::{BatchResponse, ChangeFeedItem, ItemResponse, PatchInstructions},
     options::{
-        BatchOptions, ChangeFeedOptions, ChangeFeedStartFrom, DeleteContainerOptions,
-        ItemReadOptions, ItemWriteOptions, PatchItemOptions, Precondition, QueryOptions,
-        ReadContainerOptions, ReadFeedRangesOptions, ReplaceContainerOptions, SessionToken,
-        ThroughputOptions,
+        BatchOptions, ChangeFeedOptions, ChangeFeedStartFrom, ItemReadOptions, ItemWriteOptions,
+        PatchItemOptions, Precondition, QueryOptions, ReadFeedRangesOptions, SessionToken,
     },
     PartitionKey, Query,
 };
 
-use super::ThroughputPoller;
 use azure_data_cosmos_driver::models::{
     ContainerReference, CosmosOperation, ItemReference, PartitionKeyKind,
 };
 use serde::{de::DeserializeOwned, Serialize};
+
+#[cfg(feature = "control_plane")]
+use super::ThroughputPoller;
+#[cfg(feature = "control_plane")]
+use crate::{
+    clients::offers_client,
+    models::{ContainerProperties, ResourceResponse, ThroughputProperties},
+    options::{
+        DeleteContainerOptions, ReadContainerOptions, ReplaceContainerOptions, ThroughputOptions,
+    },
+};
 
 /// A client for working with a specific container in a Cosmos DB account.
 ///
@@ -78,6 +85,7 @@ impl ContainerClient {
     ///     .into_model()?;
     /// # }
     /// ```
+    #[cfg(feature = "control_plane")]
     pub async fn read(
         &self,
         options: Option<ReadContainerOptions>,
@@ -122,6 +130,7 @@ impl ContainerClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(feature = "control_plane")]
     pub async fn replace(
         &self,
         properties: ContainerProperties,
@@ -155,6 +164,7 @@ impl ContainerClient {
     ///
     /// # Arguments
     /// * `options` - Optional parameters for the request.
+    #[cfg(feature = "control_plane")]
     pub async fn read_throughput(
         &self,
         options: Option<ThroughputOptions>,
@@ -194,6 +204,7 @@ impl ContainerClient {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(feature = "control_plane")]
     pub async fn begin_replace_throughput(
         &self,
         throughput: ThroughputProperties,
@@ -217,6 +228,7 @@ impl ContainerClient {
     ///
     /// # Arguments
     /// * `options` - Optional parameters for the request.
+    #[cfg(feature = "control_plane")]
     pub async fn delete(
         &self,
         options: Option<DeleteContainerOptions>,

@@ -17,6 +17,7 @@ pub use distributed_transaction::{
     DistributedTransactionOperationResult, DistributedTransactionPatchOperationOptions,
     DistributedTransactionResponse, DistributedWriteTransaction,
 };
+#[cfg(feature = "control_plane")]
 pub use throughput_poller::ThroughputPoller;
 
 // =========================================================================
@@ -29,7 +30,9 @@ mod cosmos_client_builder;
 mod database_client;
 #[cfg(feature = "preview_dtx")]
 pub(crate) mod distributed_transaction;
+#[cfg(feature = "control_plane")]
 pub(crate) mod offers_client;
+#[cfg(feature = "control_plane")]
 mod throughput_poller;
 
 // =========================================================================
