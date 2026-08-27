@@ -1224,7 +1224,7 @@ impl ContainerClient {
             .context
             .driver
             .resolve_all_partition_key_ranges(&self.container_ref, options.force_refresh())
-            .await;
+            .await?;
 
         if should_force_refresh_feed_ranges(ranges.as_deref(), options.force_refresh()) {
             // A valid container always has at least one partition key range.
@@ -1233,7 +1233,7 @@ impl ContainerClient {
                 .context
                 .driver
                 .resolve_all_partition_key_ranges(&self.container_ref, true)
-                .await;
+                .await?;
         }
 
         let ranges = ranges.ok_or_else(|| {
@@ -1306,7 +1306,7 @@ impl ContainerClient {
                 &driver_pk,
                 options.force_refresh(),
             )
-            .await
+            .await?
             .ok_or_else(|| {
                 crate::DriverCosmosError::builder()
                     .with_status(crate::error::CosmosStatus::SERIALIZATION_RESPONSE_BODY_INVALID)
@@ -1320,7 +1320,7 @@ impl ContainerClient {
                 .context
                 .driver
                 .resolve_partition_key_ranges_for_key(&self.container_ref, &driver_pk, true)
-                .await
+                .await?
                 .ok_or_else(|| {
                     crate::DriverCosmosError::builder()
                         .with_status(
