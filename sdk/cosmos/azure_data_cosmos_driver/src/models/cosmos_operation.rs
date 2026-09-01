@@ -249,7 +249,7 @@ impl CosmosOperation {
             // `read_feed_ranges` for feed reads and funnels container/database
             // queries through the generic `query_items`. Keep them aligned with
             // this crate's own `read_all_*` / `query_*` public API, not with
-            // .NET. See DIAGNOSTICS-CONTRACT.md.
+            // .NET. See sdk/cosmos/docs/specs/0018-diagnostics-contract.md.
             (OperationType::ReadFeed, ResourceType::Document) => {
                 if self.is_change_feed {
                     "query_change_feed"
@@ -994,7 +994,7 @@ impl CosmosOperation {
     /// operations.
     ///
     /// An interrupted patch may re-apply non-idempotent operations — see
-    /// `docs/PATCH_HANDLER_SPEC.md`.
+    /// `sdk/cosmos/docs/specs/0017-patch-handler.md`.
     pub fn patch_item(item: ItemReference) -> Self {
         Self::for_item(OperationType::Patch, item)
     }
@@ -1197,7 +1197,7 @@ impl CosmosOperation {
     /// the driver, so re-running it can repeat arbitrary mutations with no way
     /// to detect the duplicate. Every other data-plane operation is retried,
     /// because Cosmos DB's conflict detection (409/412) makes the final
-    /// resource state deterministic — see `docs/ErrorCodesAndRetries.md`.
+    /// resource state deterministic — see `sdk/cosmos/docs/specs/0006-error-codes-and-retries.md`.
     ///
     /// This is deliberately *not* `is_idempotent`: the driver retries
     /// non-idempotent writes such as `Create` and `Upsert` on purpose.
