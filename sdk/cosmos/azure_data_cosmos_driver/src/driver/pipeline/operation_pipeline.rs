@@ -960,8 +960,7 @@ pub(crate) async fn execute_operation_pipeline(
                         .await;
                     throughput_control = operation
                         .container()
-                        .map(|container| driver.effective_throughput_control(options, container))
-                        .transpose()?;
+                        .map(|_| CosmosDriver::effective_throughput_control(options));
                     diagnostics = enforce_deadline_or_timeout(deadline, options, diagnostics)?;
                     tracing::info!(
                         activity_id = %activity_id,

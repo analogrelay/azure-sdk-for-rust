@@ -8,8 +8,7 @@ use std::sync::Arc;
 use crate::{
     models::AccountReference,
     options::{
-        HedgingOptions, OperationOptions, PartitionFailoverOptions, Region,
-        ThroughputControlGroupOptions, ThroughputControlGroupRegistry, UserAgentSuffix,
+        HedgingOptions, OperationOptions, PartitionFailoverOptions, Region, UserAgentSuffix,
     },
 };
 
@@ -79,14 +78,6 @@ pub struct DriverOptions {
     /// rules; they do not interact.
     #[cfg(feature = "fault_injection")]
     fault_injection_rules: Option<Vec<Arc<FaultInjectionRule>>>,
-    /// Driver-level throughput control group registrations.
-    ///
-    /// At driver-creation time, the driver merges the runtime's registered
-    /// groups with these driver-level groups into a single registry. The
-    /// driver uses the merged registry to look up groups for every request.
-    /// Cross-layer name collisions (or two `is_default=true` groups for the
-    /// same container) error at driver creation.
-    throughput_control_groups: ThroughputControlGroupRegistry,
     /// Driver-level partition-failover / PPCB tuning.
     ///
     /// These knobs are read once at driver construction time and govern the
@@ -149,15 +140,6 @@ impl DriverOptions {
         self.fault_injection_rules.as_deref()
     }
 
-    /// Returns the driver-level throughput control group registry.
-    ///
-    /// This registry is merged with the runtime's registry at driver
-    /// creation; the merged registry is what gets consulted on the request
-    /// path.
-    pub(crate) fn throughput_control_groups(&self) -> &ThroughputControlGroupRegistry {
-        &self.throughput_control_groups
-    }
-
     /// Returns the driver-level partition-failover / PPCB tuning options.
     pub fn partition_failover_options(&self) -> &PartitionFailoverOptions {
         &self.partition_failover_options
@@ -187,7 +169,6 @@ pub struct DriverOptionsBuilder {
     user_agent_suffix: Option<UserAgentSuffix>,
     #[cfg(feature = "fault_injection")]
     fault_injection_rules: Option<Vec<Arc<FaultInjectionRule>>>,
-    throughput_control_groups: ThroughputControlGroupRegistry,
     partition_failover_options: Option<PartitionFailoverOptions>,
     partition_key_range_cache_enabled: bool,
     hedging_options: Option<HedgingOptions>,
@@ -203,7 +184,6 @@ impl DriverOptionsBuilder {
             user_agent_suffix: None,
             #[cfg(feature = "fault_injection")]
             fault_injection_rules: None,
-            throughput_control_groups: ThroughputControlGroupRegistry::new(),
             partition_failover_options: None,
             partition_key_range_cache_enabled: true,
             hedging_options: None,
@@ -299,31 +279,6 @@ impl DriverOptionsBuilder {
         Ok(self)
     }
 
-    /// Registers a throughput-control group on this driver.
-    ///
-    /// At driver-creation time, the driver merges the runtime's registry
-    /// with the per-driver registry into a single registry consulted on
-    /// every request. Cross-layer collisions (duplicate `(container, name)`
-    /// key, or two `is_default=true` groups for the same container) are
-    /// detected and surfaced at driver creation.
-    ///
-    /// Calling this multiple times appends groups; collisions within this
-    /// builder are surfaced as soon as the conflict is introduced.
-    pub fn register_throughput_control_group(
-        mut self,
-        group: ThroughputControlGroupOptions,
-    ) -> crate::error::Result<Self> {
-        self.throughput_control_groups
-            .register(group)
-            .map_err(|e| {
-                crate::error::CosmosError::builder()
-                    .with_status(crate::error::CosmosStatus::CLIENT_THROUGHPUT_CONTROL_GROUP_REGISTRATION_FAILED)
-                    .with_message(e.to_string())
-                    .build()
-            })?;
-        Ok(self)
-    }
-
     /// Sets the partition-failover / PPCB tuning options for this driver.
     ///
     /// These knobs are read once at driver construction time and control
@@ -387,7 +342,6 @@ impl DriverOptionsBuilder {
             user_agent_suffix: self.user_agent_suffix,
             #[cfg(feature = "fault_injection")]
             fault_injection_rules: self.fault_injection_rules.filter(|r| !r.is_empty()),
-            throughput_control_groups: self.throughput_control_groups,
             partition_failover_options,
             partition_key_range_cache_enabled: self.partition_key_range_cache_enabled,
             hedging_options: self.hedging_options.unwrap_or_default(),

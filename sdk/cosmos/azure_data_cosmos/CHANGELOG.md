@@ -12,6 +12,7 @@
 
 ### Breaking Changes
 
+- Removed throughput-control group registration and the group name/options re-exports; configure priority and throughput buckets directly through `OperationOptions::throughput_control`.
 - Moved `query_plan_mode` from `OperationOptions` to per-query `QueryOptions`; removed client/runtime defaults and environment settings, including the query-plan-mode override. The default remains `LocalPreferred`. ([#5301](https://github.com/Azure/azure-sdk-for-rust/pull/5301))
 - Unordered cross-partition DISTINCT and non-streaming ORDER BY require finite global TOP/LIMIT with OFFSET plus effective take within the configured maximum; missing bounds, excess windows, and overflow fail with 400/20125. ([#5301](https://github.com/Azure/azure-sdk-for-rust/pull/5301))
 - Unified client-buffered continuation errors under 400/20124, retaining the shape-specific constants as aliases; finite-window admission moved from 20126 to 20125 and non-streaming window/storage errors from 20127 to 20126. ([#5301](https://github.com/Azure/azure-sdk-for-rust/pull/5301))
