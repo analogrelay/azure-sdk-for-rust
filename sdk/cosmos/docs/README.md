@@ -19,12 +19,14 @@ docs/
 ├── AGENTS.md
 ├── specs/       # Numbered, mutable feature specifications
 ├── adrs/        # Numbered, finalized architecture decisions
+├── plans/       # High-level plans for coordinated architectural work
 └── reports/     # Unnumbered historical investigations and measurements
 ```
 
 Project and architecture are the top-level design overviews. See
 `specs/` (`specs/`) for detailed feature designs, `adrs/` (`adrs/`) for
-finalized decisions, and `reports/` (`reports/`) for archival technical reports.
+finalized decisions, `plans/` for high-level architectural work, and `reports/`
+(`reports/`) for archival technical reports.
 
 Crate READMEs, changelogs, contributor guidance, and Markdown fragments consumed
 directly by Rust source remain with their crates.
@@ -82,6 +84,12 @@ directly by Rust source remain with their crates.
 | 0013 | Basic control-plane operations (`adrs/0013-basic-control-plane-operations.md`) | Accepted |
 | 0014 | Diagnostics collection and emission (`adrs/0014-diagnostics-collection-and-emission.md`) | Accepted |
 | 0015 | Eager partition topology loading (`adrs/0015-eager-partition-topology-loading.md`) | Accepted |
+
+## Plans
+
+- Pipeline state and effects (`plans/pipeline-state-and-effects.md`): shared
+  refactoring direction for Transport, Operation, and Dataflow, preserving
+  public APIs, behavior, and ordinary async orchestration.
 
 ## Reports
 
